@@ -14,11 +14,13 @@ game/.import/
 game/export_presets.cfg
 *.translation
 
-# Web dApp
-web/node_modules/
-web/dist/
-web/.next/
-web/build/
+# Node / Next.js (apps/web)
+node_modules/
+apps/web/.next/
+apps/web/out/
+apps/web/next-env.d.ts
+.turbo/
+*.tsbuildinfo
 
 # OS / editor / tooling
 .claude/

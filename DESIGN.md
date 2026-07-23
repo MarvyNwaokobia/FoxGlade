@@ -42,6 +42,16 @@ Avalanche's Retro9000 rounds and Build Games competition weight **verifiable on-
 | Wallet/connect | RainbowKit or Web3Modal + wagmi, or **Privy** for embedded/social-login wallets | Standard, fast to integrate; Privy specifically removes the "install a wallet extension" barrier at onboarding, which matters more for a casual game audience than a DeFi audience |
 | Backend (if any) | **Supabase** for leaderboard/session sync, or lightweight Node/Express | Supabase is a proven lightweight choice for exactly this (used by the FocusPet reference project for leaderboard + session sync); skip entirely if v1 stays fully client-authoritative |
 
+> **Engine decision (locked): web-native Three.js / React Three Fiber, not Godot.**
+> The build reuses systems from the Valor codebase (a shipped R3F web FPS) to
+> fast-track movement, NPC AI, game-feel, and UI, and keeps game + wallet +
+> marketplace in one app. This is the stronger fit for Avalanche's grant scoring
+> (judges play instantly in-browser; the whole Avalanche/EVM tooling stack —
+> wagmi, viem, Core wallet, session keys, subnet gas sponsoring — is web-first),
+> and it's why the "Alternative" row above became the primary choice. The game
+> ships as `apps/web` (Next.js + R3F); the fox is rendered in-scene rather than
+> as a separate avatar SDK.
+
 ---
 
 ## 5. Visual style: 2D vs 3D, and where to get assets

@@ -1,0 +1,16 @@
+{
+  "name": "foxglade",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=apps/web",
+    "build": "npm run build --workspace=apps/web",
+    "start": "npm run start --workspace=apps/web"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

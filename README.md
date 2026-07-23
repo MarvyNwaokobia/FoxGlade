@@ -8,33 +8,46 @@ you raise, whose growth and decay *is* your rank.
 Built for an Avalanche grant submission. Full design + technical spec:
 **[DESIGN.md](DESIGN.md)**.
 
+Foxglade is a **browser-native web game**: the game runs in the page (Three.js /
+React Three Fiber) alongside the wallet, marketplace, and leaderboard, so the
+real-time play and the on-chain layer live in one app. (Engine was pivoted from
+Godot to web/R3F — rationale in [DESIGN.md §4](DESIGN.md).)
+
 ## Repo layout
 
 ```
 FoxGlade/
 ├── DESIGN.md          Game design + technical spec (start here)
-├── contracts/         Foundry / Solidity — the on-chain layer
-│   ├── src/           TreasureNFT, VilleToken, ArmoryItems, PetNFT, SeasonRewards
-│   ├── script/        Deploy.s.sol
-│   ├── test/          Foundry tests
-│   └── foundry.toml
-├── game/              Godot 4 project (export target: HTML5)
-│   ├── scenes/        Main.tscn
-│   ├── scripts/       Player, Fox, HUD, HintSystem, ChainBridge, npc/*
-│   └── project.godot
-└── web/               dApp shell that hosts the exported game + wallet/chain glue
+├── package.json       npm workspace root
+├── apps/
+│   └── web/           Next.js + React Three Fiber game + dApp
+│       ├── app/       Next App Router (layout, page)
+│       └── src/
+│           ├── engine/    config/feel, input, player, fox, scene, runtime
+│           └── components/ Game (canvas) + Hud (DOM overlay)
+└── contracts/         Foundry / Solidity — the on-chain layer
+    ├── src/           TreasureNFT, VilleToken, ArmoryItems, PetNFT, SeasonRewards
+    ├── script/        Deploy.s.sol
+    └── test/          Foundry tests
 ```
 
-## The three layers and how they connect
+## Run the game
 
-- **`game/` (Godot 4)** runs all real-time play — movement, shooting, NPC AI,
-  hints. None of it touches the chain.
-- **`web/` (dApp)** hosts the HTML5 export plus wagmi/Privy and the contract
-  calls. It exposes `window.foxglade_*` functions.
-- **`game/scripts/ChainBridge.gd`** is the single seam: on web it calls those JS
-  functions via `JavaScriptBridge`; on desktop/editor it stubs them so the loop
-  stays playable. Only the meaningful moments cross it — egg mint, treasure mint,
-  fox evolve, marketplace buy, reward claim (see [DESIGN.md §11](DESIGN.md)).
+From the repo root:
+
+```bash
+npm install
+npm run dev        # → http://localhost:3000
+```
+
+Click the canvas to capture the mouse. **WASD** move · **Shift** run · **Space**
+jump · **Mouse** look · **Esc** release. All game-feel numbers live in one place —
+[`apps/web/src/engine/config/feel.ts`](apps/web/src/engine/config/feel.ts) — so
+movement, camera, and the fox-follow can be retuned without touching scene code.
+
+Current slice: gray-box third-person movement with the fox companion trailing at
+heel and a rough treasure-zone compass. NPCs, shooting, and on-chain calls land in
+later milestones ([DESIGN.md §8](DESIGN.md)).
 
 ## Contracts
 
@@ -71,18 +84,11 @@ forge script script/Deploy.s.sol --rpc-url fuji --broadcast --verify
 
 The deploy script wires `ArmoryItems` as the sole authorized VILLE spender.
 
-## Game
-
-Open the `game/` folder in **Godot 4.2+**. The current scripts are an
-architecture scaffold (movement, NPC archetypes, hint system, fox, chain seam)
-with `TODO Mx` markers tied to the milestone plan in [DESIGN.md §8](DESIGN.md).
-Run in the editor: `ChainBridge` stubs confirm transactions so the loop is
-playable before the web layer exists.
-
 ## Status
 
-Scaffold. The design is settled (see [DESIGN.md §12 locked decisions](DESIGN.md)
-and [§13 known risks](DESIGN.md)); implementation follows the M0–M9 milestones.
+Design settled ([DESIGN.md §12 locked decisions](DESIGN.md), [§13 known risks](DESIGN.md));
+contracts build and pass tests; the web game is at its first playable slice
+(gray-box movement + fox follow). Remaining work follows the M0–M9 milestones.
 
 ## Known design risks worth re-reading before building
 

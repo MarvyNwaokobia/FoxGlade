@@ -1,0 +1,147 @@
+"use client";
+
+import { useEffect, useRef } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
+import * as THREE from "three";
+import { FEEL } from "@/engine/config/feel";
+import { runtime } from "@/engine/runtime";
+import { useKeyboard } from "@/engine/input/useKeyboard";
+
+function lerpAngle(a: number, b: number, t: number) {
+  let diff = b - a;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  return a + diff * Math.min(t, 1);
+}
+
+/**
+ * Third-person locomotion + orbit-follow camera. Click the canvas to capture
+ * the mouse for looking; Esc releases it. WASD moves relative to where the
+ * camera faces, Shift runs, Space jumps. All feel numbers live in FEEL.
+ */
+export function PlayerController() {
+  const keys = useKeyboard();
+  const { camera, gl } = useThree();
+
+  const body = useRef<THREE.Group>(null);
+  const pos = useRef(new THREE.Vector3(0, 0, 0));
+  const vel = useRef(new THREE.Vector3(0, 0, 0));
+  const yaw = useRef(0); // camera/heading yaw
+  const pitch = useRef(0.35);
+  const bodyRot = useRef(0);
+  const grounded = useRef(true);
+
+  // Mouse look via pointer lock.
+  useEffect(() => {
+    const canvas = gl.domElement;
+    const onClick = () => {
+      if (document.pointerLockElement !== canvas) canvas.requestPointerLock();
+    };
+    const onMove = (e: MouseEvent) => {
+      if (document.pointerLockElement !== canvas) return;
+      yaw.current -= e.movementX * FEEL.mouseSensitivity;
+      pitch.current = THREE.MathUtils.clamp(
+        pitch.current - e.movementY * FEEL.mouseSensitivity,
+        FEEL.pitchMin,
+        FEEL.pitchMax
+      );
+    };
+    canvas.addEventListener("click", onClick);
+    window.addEventListener("mousemove", onMove);
+    return () => {
+      canvas.removeEventListener("click", onClick);
+      window.removeEventListener("mousemove", onMove);
+    };
+  }, [gl]);
+
+  useFrame((_, rawDt) => {
+    const dt = Math.min(rawDt, 1 / 30); // clamp big frame gaps so physics stays sane
+    const k = keys.current;
+
+    // Movement basis from camera yaw.
+    const forward = new THREE.Vector3(-Math.sin(yaw.current), 0, -Math.cos(yaw.current));
+    const right = new THREE.Vector3(Math.cos(yaw.current), 0, -Math.sin(yaw.current));
+    const wish = new THREE.Vector3();
+    if (k.forward) wish.add(forward);
+    if (k.back) wish.sub(forward);
+    if (k.right) wish.add(right);
+    if (k.left) wish.sub(right);
+
+    const moving = wish.lengthSq() > 0;
+    runtime.running = moving && k.run;
+
+    if (moving) {
+      wish.normalize();
+      const speed = k.run ? FEEL.runSpeed : FEEL.walkSpeed;
+      const t = Math.min(1, FEEL.accel * dt);
+      vel.current.x += (wish.x * speed - vel.current.x) * t;
+      vel.current.z += (wish.z * speed - vel.current.z) * t;
+      // Rotate the body to face where it's heading.
+      const target = Math.atan2(wish.x, wish.z);
+      bodyRot.current = lerpAngle(bodyRot.current, target, FEEL.turnSpeed * dt);
+    } else {
+      const d = Math.exp(-FEEL.decay * dt);
+      vel.current.x *= d;
+      vel.current.z *= d;
+    }
+
+    pos.current.x += vel.current.x * dt;
+    pos.current.z += vel.current.z * dt;
+
+    // Jump + gravity.
+    if (grounded.current && k.jump) {
+      vel.current.y = FEEL.jumpForce;
+      grounded.current = false;
+    }
+    if (!grounded.current) {
+      vel.current.y += FEEL.gravity * dt;
+      pos.current.y += vel.current.y * dt;
+      if (pos.current.y <= 0) {
+        pos.current.y = 0;
+        vel.current.y = 0;
+        grounded.current = true;
+      }
+    }
+
+    // Keep inside the arena.
+    const lim = FEEL.arenaHalfExtent - FEEL.playerRadius;
+    pos.current.x = THREE.MathUtils.clamp(pos.current.x, -lim, lim);
+    pos.current.z = THREE.MathUtils.clamp(pos.current.z, -lim, lim);
+
+    // Apply to the visible body.
+    if (body.current) {
+      body.current.position.copy(pos.current);
+      body.current.rotation.y = bodyRot.current;
+    }
+
+    // Publish for fox + HUD.
+    runtime.playerPos.copy(pos.current);
+    runtime.yaw = yaw.current;
+
+    // Orbit-follow camera.
+    const horiz = FEEL.cameraDistance * Math.cos(pitch.current);
+    const camTarget = new THREE.Vector3(
+      pos.current.x + Math.sin(yaw.current) * horiz,
+      pos.current.y + FEEL.cameraHeight + FEEL.cameraDistance * Math.sin(pitch.current),
+      pos.current.z + Math.cos(yaw.current) * horiz
+    );
+    camera.position.lerp(camTarget, Math.min(1, FEEL.cameraLerp * dt));
+    camera.lookAt(pos.current.x, pos.current.y + FEEL.lookAtHeight, pos.current.z);
+  });
+
+  const h = FEEL.playerHeight;
+  return (
+    <group ref={body}>
+      {/* Body capsule */}
+      <mesh position={[0, h / 2, 0]} castShadow>
+        <capsuleGeometry args={[FEEL.playerRadius, h - FEEL.playerRadius * 2, 6, 12]} />
+        <meshStandardMaterial color="#9aa7b2" roughness={0.7} metalness={0.05} />
+      </mesh>
+      {/* Facing indicator — a nose pointing +Z (the body's forward). */}
+      <mesh position={[0, h * 0.62, 0.45]} rotation={[Math.PI / 2, 0, 0]}>
+        <coneGeometry args={[0.16, 0.4, 12]} />
+        <meshStandardMaterial color="#ffb347" roughness={0.5} />
+      </mesh>
+    </group>
+  );
+}
