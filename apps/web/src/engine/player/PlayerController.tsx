@@ -6,6 +6,8 @@ import * as THREE from "three";
 import { FEEL } from "@/engine/config/feel";
 import { runtime } from "@/engine/runtime";
 import { useKeyboard } from "@/engine/input/useKeyboard";
+import { VILLAGE, COLLIDERS } from "@/engine/world/village";
+import { resolveColliders } from "@/engine/world/collision";
 
 function lerpAngle(a: number, b: number, t: number) {
   let diff = b - a;
@@ -24,12 +26,17 @@ export function PlayerController() {
   const { camera, gl } = useThree();
 
   const body = useRef<THREE.Group>(null);
-  const pos = useRef(new THREE.Vector3(0, 0, 0));
+  const pos = useRef(VILLAGE.spawn.clone());
   const vel = useRef(new THREE.Vector3(0, 0, 0));
-  const yaw = useRef(0); // camera/heading yaw
+  const yaw = useRef(VILLAGE.spawnYaw); // camera/heading yaw
   const pitch = useRef(0.35);
-  const bodyRot = useRef(0);
+  const bodyRot = useRef(VILLAGE.spawnYaw);
   const grounded = useRef(true);
+
+  // Point the HUD compass at the real treasure zone once on mount.
+  useEffect(() => {
+    runtime.treasurePos.copy(VILLAGE.treasure);
+  }, []);
 
   // Mouse look via pointer lock.
   useEffect(() => {
@@ -103,8 +110,9 @@ export function PlayerController() {
       }
     }
 
-    // Keep inside the arena.
-    const lim = FEEL.arenaHalfExtent - FEEL.playerRadius;
+    // Push out of buildings, then keep inside the village walls.
+    resolveColliders(pos.current, FEEL.playerRadius, COLLIDERS);
+    const lim = VILLAGE.half - FEEL.playerRadius;
     pos.current.x = THREE.MathUtils.clamp(pos.current.x, -lim, lim);
     pos.current.z = THREE.MathUtils.clamp(pos.current.z, -lim, lim);
 

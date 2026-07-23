@@ -3,7 +3,7 @@
 import { Canvas } from "@react-three/fiber";
 import { PlayerController } from "@/engine/player/PlayerController";
 import { FoxCompanion } from "@/engine/fox/FoxCompanion";
-import { GrayboxScene } from "@/engine/scene/GrayboxScene";
+import { VillageScene } from "@/engine/scene/VillageScene";
 import { Hud } from "@/components/Hud";
 
 /**
@@ -22,7 +22,7 @@ export default function Game() {
           scene.fog = null;
         }}
       >
-        <GrayboxScene />
+        <VillageScene />
         <PlayerController />
         <FoxCompanion />
       </Canvas>

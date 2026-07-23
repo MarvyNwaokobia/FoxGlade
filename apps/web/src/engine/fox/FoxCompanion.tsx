@@ -5,6 +5,8 @@ import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { FEEL } from "@/engine/config/feel";
 import { runtime } from "@/engine/runtime";
+import { COLLIDERS } from "@/engine/world/village";
+import { resolveColliders } from "@/engine/world/collision";
 
 /**
  * A gray-box stand-in for the fox companion: a small body that trails at the
@@ -34,6 +36,7 @@ export function FoxCompanion() {
 
     const prev = foxPos.current.clone();
     foxPos.current.lerp(target, Math.min(1, FEEL.foxSpeed * dt));
+    resolveColliders(foxPos.current, 0.25, COLLIDERS);
 
     // Face travel direction when actually moving.
     const delta = foxPos.current.clone().sub(prev);
