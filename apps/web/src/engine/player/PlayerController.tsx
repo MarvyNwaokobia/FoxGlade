@@ -26,6 +26,7 @@ export function PlayerController() {
   const { camera, gl } = useThree();
 
   const body = useRef<THREE.Group>(null);
+  const shadow = useRef<THREE.Mesh>(null);
   const pos = useRef(VILLAGE.spawn.clone());
   const vel = useRef(new THREE.Vector3(0, 0, 0));
   const yaw = useRef(VILLAGE.spawnYaw); // camera/heading yaw
@@ -33,9 +34,17 @@ export function PlayerController() {
   const bodyRot = useRef(VILLAGE.spawnYaw);
   const grounded = useRef(true);
 
-  // Point the HUD compass at the real treasure zone once on mount.
+  // Point the HUD compass at the real treasure zone once on mount, and wire the
+  // placeholder "claim" key (the real on-chain mint arrives at M3).
   useEffect(() => {
     runtime.treasurePos.copy(VILLAGE.treasure);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code === "KeyE" && runtime.nearTreasure && !runtime.treasureClaimed) {
+        runtime.treasureClaimed = true;
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
   // Mouse look via pointer lock.
@@ -121,6 +130,14 @@ export function PlayerController() {
       body.current.position.copy(pos.current);
       body.current.rotation.y = bodyRot.current;
     }
+    // Contact shadow stays flat on the ground under the player (even mid-jump).
+    if (shadow.current) {
+      shadow.current.position.set(pos.current.x, 0.02, pos.current.z);
+    }
+
+    // Treasure proximity (placeholder pickup — full mint is M3).
+    const td = Math.hypot(runtime.treasurePos.x - pos.current.x, runtime.treasurePos.z - pos.current.z);
+    runtime.nearTreasure = td < 3.5;
 
     // Publish for fox + HUD.
     runtime.playerPos.copy(pos.current);
@@ -133,6 +150,8 @@ export function PlayerController() {
       pos.current.y + FEEL.cameraHeight + FEEL.cameraDistance * Math.sin(pitch.current),
       pos.current.z + Math.cos(yaw.current) * horiz
     );
+    // Never let the camera dip below ground, or you see under the world.
+    camTarget.y = Math.max(camTarget.y, FEEL.cameraMinHeight);
     camera.position.lerp(camTarget, Math.min(1, FEEL.cameraLerp * dt));
     camera.lookAt(pos.current.x, pos.current.y + FEEL.lookAtHeight, pos.current.z);
 
@@ -145,17 +164,24 @@ export function PlayerController() {
 
   const h = FEEL.playerHeight;
   return (
-    <group ref={body}>
-      {/* Body capsule */}
-      <mesh position={[0, h / 2, 0]} castShadow>
-        <capsuleGeometry args={[FEEL.playerRadius, h - FEEL.playerRadius * 2, 6, 12]} />
-        <meshStandardMaterial color="#9aa7b2" roughness={0.7} metalness={0.05} />
+    <>
+      <group ref={body}>
+        {/* Body capsule */}
+        <mesh position={[0, h / 2, 0]} castShadow>
+          <capsuleGeometry args={[FEEL.playerRadius, h - FEEL.playerRadius * 2, 6, 12]} />
+          <meshStandardMaterial color="#9aa7b2" roughness={0.7} metalness={0.05} />
+        </mesh>
+        {/* Facing indicator — a nose pointing +Z (the body's forward). */}
+        <mesh position={[0, h * 0.62, 0.45]} rotation={[Math.PI / 2, 0, 0]}>
+          <coneGeometry args={[0.16, 0.4, 12]} />
+          <meshStandardMaterial color="#ffb347" roughness={0.5} />
+        </mesh>
+      </group>
+      {/* Soft contact shadow so the player reads as grounded, never floating. */}
+      <mesh ref={shadow} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+        <circleGeometry args={[FEEL.playerRadius * 1.5, 24]} />
+        <meshBasicMaterial color="#000000" transparent opacity={0.35} depthWrite={false} />
       </mesh>
-      {/* Facing indicator — a nose pointing +Z (the body's forward). */}
-      <mesh position={[0, h * 0.62, 0.45]} rotation={[Math.PI / 2, 0, 0]}>
-        <coneGeometry args={[0.16, 0.4, 12]} />
-        <meshStandardMaterial color="#ffb347" roughness={0.5} />
-      </mesh>
-    </group>
+    </>
   );
 }

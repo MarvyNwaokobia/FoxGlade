@@ -12,6 +12,7 @@ export function Hud() {
   const arrow = useRef<HTMLDivElement>(null);
   const distEl = useRef<HTMLSpanElement>(null);
   const runEl = useRef<HTMLDivElement>(null);
+  const treasureEl = useRef<HTMLDivElement>(null);
   const [locked, setLocked] = useState(false);
 
   useEffect(() => {
@@ -35,6 +36,17 @@ export function Hud() {
         distEl.current.textContent = d < 12 ? "near" : d < 30 ? "mid" : "far";
       }
       if (runEl.current) runEl.current.style.opacity = runtime.running ? "1" : "0";
+      if (treasureEl.current) {
+        if (runtime.treasureClaimed) {
+          treasureEl.current.style.opacity = "1";
+          treasureEl.current.textContent = "Treasure claimed  ·  on-chain mint arrives at M3";
+        } else if (runtime.nearTreasure) {
+          treasureEl.current.style.opacity = "1";
+          treasureEl.current.textContent = "Treasure — press E to claim";
+        } else {
+          treasureEl.current.style.opacity = "0";
+        }
+      }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -62,6 +74,9 @@ export function Hud() {
       <div ref={runEl} style={styles.runPill}>
         running
       </div>
+
+      {/* Treasure prompt — proximity claim (placeholder for the M3 mint) */}
+      <div ref={treasureEl} style={styles.treasurePrompt} />
 
       {/* Controls, bottom-left */}
       <div style={styles.controls}>
@@ -124,6 +139,24 @@ const styles: Record<string, React.CSSProperties> = {
     textTransform: "uppercase",
     opacity: 0,
     transition: "opacity 0.12s ease",
+    pointerEvents: "none",
+    userSelect: "none",
+  },
+  treasurePrompt: {
+    position: "absolute",
+    left: "50%",
+    top: "38%",
+    transform: "translateX(-50%)",
+    padding: "10px 20px",
+    borderRadius: 10,
+    background: "rgba(242,193,78,0.14)",
+    border: "1px solid rgba(242,193,78,0.6)",
+    color: "#ffdf8f",
+    fontSize: 16,
+    letterSpacing: 0.5,
+    whiteSpace: "nowrap",
+    opacity: 0,
+    transition: "opacity 0.15s ease",
     pointerEvents: "none",
     userSelect: "none",
   },

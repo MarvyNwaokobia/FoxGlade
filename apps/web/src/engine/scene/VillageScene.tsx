@@ -13,7 +13,7 @@ export function VillageScene() {
       <hemisphereLight args={["#c4d6e6", "#3a3e42", 0.85]} />
       <directionalLight
         position={[30, 45, 20]}
-        intensity={1.15}
+        intensity={1.45}
         castShadow
         shadow-mapSize={[2048, 2048]}
         shadow-camera-left={-50}

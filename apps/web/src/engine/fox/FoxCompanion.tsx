@@ -16,6 +16,7 @@ import { resolveColliders } from "@/engine/world/collision";
  */
 export function FoxCompanion() {
   const group = useRef<THREE.Group>(null);
+  const shadow = useRef<THREE.Mesh>(null);
   const foxPos = useRef(new THREE.Vector3(1, 0, 3));
   const facing = useRef(0);
   const t = useRef(0);
@@ -50,34 +51,44 @@ export function FoxCompanion() {
       group.current.position.set(foxPos.current.x, foxPos.current.y + Math.abs(bob), foxPos.current.z);
       group.current.rotation.y = facing.current;
     }
+    if (shadow.current) {
+      shadow.current.position.set(foxPos.current.x, 0.02, foxPos.current.z);
+    }
   });
 
   return (
+    <>
     <group ref={group}>
-      {/* Body (capsule laid horizontal along Z) */}
-      <mesh position={[0, 0.28, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+      {/* Body (capsule laid horizontal along Z), lowered so it rests on the ground */}
+      <mesh position={[0, 0.2, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow>
         <capsuleGeometry args={[0.18, 0.5, 6, 12]} />
         <meshStandardMaterial color="#e8792b" roughness={0.6} />
       </mesh>
       {/* Snout */}
-      <mesh position={[0, 0.3, 0.42]}>
+      <mesh position={[0, 0.22, 0.42]}>
         <coneGeometry args={[0.1, 0.28, 10]} />
         <meshStandardMaterial color="#f2f2ec" roughness={0.5} />
       </mesh>
       {/* Ears */}
-      <mesh position={[-0.1, 0.52, 0.05]} rotation={[0.2, 0, -0.2]}>
+      <mesh position={[-0.1, 0.44, 0.05]} rotation={[0.2, 0, -0.2]}>
         <coneGeometry args={[0.07, 0.18, 8]} />
         <meshStandardMaterial color="#c85f1e" />
       </mesh>
-      <mesh position={[0.1, 0.52, 0.05]} rotation={[0.2, 0, 0.2]}>
+      <mesh position={[0.1, 0.44, 0.05]} rotation={[0.2, 0, 0.2]}>
         <coneGeometry args={[0.07, 0.18, 8]} />
         <meshStandardMaterial color="#c85f1e" />
       </mesh>
       {/* Tail */}
-      <mesh position={[0, 0.32, -0.42]} rotation={[Math.PI / 2.4, 0, 0]}>
+      <mesh position={[0, 0.24, -0.42]} rotation={[Math.PI / 2.4, 0, 0]}>
         <coneGeometry args={[0.13, 0.5, 10]} />
         <meshStandardMaterial color="#f2f2ec" roughness={0.6} />
       </mesh>
     </group>
+    {/* Contact shadow so the fox reads as grounded, not hovering */}
+    <mesh ref={shadow} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+      <circleGeometry args={[0.35, 20]} />
+      <meshBasicMaterial color="#000000" transparent opacity={0.3} depthWrite={false} />
+    </mesh>
+    </>
   );
 }

@@ -12,4 +12,8 @@ export const runtime = {
   running: false,
   /** Fixed landmark the HUD compass points at (the treasure marker). */
   treasurePos: new THREE.Vector3(18, 0, -26),
+  /** True while the player stands in the treasure zone. */
+  nearTreasure: false,
+  /** Placeholder pickup flag (the real on-chain mint lands at M3). */
+  treasureClaimed: false,
 };

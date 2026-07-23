@@ -32,6 +32,7 @@ export const FEEL = {
   pitchMax: 0.95, // radians (look up)
   cameraDistance: 6.0,
   cameraHeight: 2.3,
+  cameraMinHeight: 0.8, // camera never dips below this, so you can't see under the world
   /** Camera position smoothing (higher = tighter follow, lower = floatier). */
   cameraLerp: 12,
   /** Height on the player the camera aims at. */
