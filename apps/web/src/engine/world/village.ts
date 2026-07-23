@@ -22,6 +22,15 @@ export interface Rect {
   maxZ: number;
 }
 
+export interface Box3 {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  minZ: number;
+  maxZ: number;
+}
+
 export const VILLAGE = {
   /** Half-extent of the square walled bounds (metres). */
   half: 36,
@@ -72,3 +81,26 @@ export const COLLIDERS: Rect[] = BUILDINGS.map((b) => ({
   minZ: b.z - b.d / 2,
   maxZ: b.z + b.d / 2,
 }));
+
+const H = VILLAGE.half;
+const WALL_H = 3;
+
+/**
+ * 3D boxes (buildings + perimeter walls) for the camera-collision raycast, so
+ * the camera pulls in when a wall comes between it and the player instead of
+ * clipping inside geometry.
+ */
+export const BOXES3D: Box3[] = [
+  ...BUILDINGS.map((b) => ({
+    minX: b.x - b.w / 2,
+    maxX: b.x + b.w / 2,
+    minY: 0,
+    maxY: b.h,
+    minZ: b.z - b.d / 2,
+    maxZ: b.z + b.d / 2,
+  })),
+  { minX: -H, maxX: H, minY: 0, maxY: WALL_H, minZ: -H - 0.3, maxZ: -H + 0.3 },
+  { minX: -H, maxX: H, minY: 0, maxY: WALL_H, minZ: H - 0.3, maxZ: H + 0.3 },
+  { minX: -H - 0.3, maxX: -H + 0.3, minY: 0, maxY: WALL_H, minZ: -H, maxZ: H },
+  { minX: H - 0.3, maxX: H + 0.3, minY: 0, maxY: WALL_H, minZ: -H, maxZ: H },
+];

@@ -6,8 +6,8 @@ import * as THREE from "three";
 import { FEEL } from "@/engine/config/feel";
 import { runtime } from "@/engine/runtime";
 import { useKeyboard } from "@/engine/input/useKeyboard";
-import { VILLAGE, COLLIDERS } from "@/engine/world/village";
-import { resolveColliders } from "@/engine/world/collision";
+import { VILLAGE, COLLIDERS, BOXES3D } from "@/engine/world/village";
+import { resolveColliders, raycastBoxes } from "@/engine/world/collision";
 import { useGame } from "@/engine/store";
 
 function lerpAngle(a: number, b: number, t: number) {
@@ -154,7 +154,21 @@ export function PlayerController() {
     // Never let the camera dip below ground, or you see under the world.
     camTarget.y = Math.max(camTarget.y, FEEL.cameraMinHeight);
     camera.position.lerp(camTarget, Math.min(1, FEEL.cameraLerp * dt));
-    camera.lookAt(pos.current.x, pos.current.y + FEEL.lookAtHeight, pos.current.z);
+
+    // Camera collision: if a building is between the player and the camera, pull
+    // the camera in to just in front of it — the wall stays solid, you stay in
+    // view (no more camera ending up inside/behind a block).
+    const head = new THREE.Vector3(pos.current.x, pos.current.y + FEEL.lookAtHeight, pos.current.z);
+    const toCam = camera.position.clone().sub(head);
+    const dist = toCam.length();
+    if (dist > 0.001) {
+      const t = raycastBoxes(head, camera.position, BOXES3D);
+      if (t < 1) {
+        const pulled = Math.max(dist * t - FEEL.cameraCollisionBuffer, FEEL.cameraMinDistance);
+        camera.position.copy(head).addScaledVector(toCam.multiplyScalar(1 / dist), pulled);
+      }
+    }
+    camera.lookAt(head.x, head.y, head.z);
 
     // Widen the lens slightly while running so speed is felt, not just numeric.
     const cam = camera as THREE.PerspectiveCamera;
