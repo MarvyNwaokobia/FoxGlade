@@ -9,7 +9,7 @@ import { useKeyboard } from "@/engine/input/useKeyboard";
 import { VILLAGE, COLLIDERS, BOXES3D } from "@/engine/world/village";
 import { resolveColliders, raycastBoxes } from "@/engine/world/collision";
 import { useGame } from "@/engine/store";
-import { fireHitscan } from "@/engine/combat/enemies";
+import { fireHitscan, enemies } from "@/engine/combat/enemies";
 
 function lerpAngle(a: number, b: number, t: number) {
   let diff = b - a;
@@ -129,8 +129,21 @@ export function PlayerController() {
       }
     }
 
-    // Push out of buildings, then keep inside the village walls.
+    // Push out of buildings, then out of any NPC bodies, then keep inside walls.
     resolveColliders(pos.current, FEEL.playerRadius, COLLIDERS);
+    for (const e of enemies) {
+      const ep = e.getPosition();
+      const dx = pos.current.x - ep.x;
+      const dz = pos.current.z - ep.z;
+      const minD = FEEL.playerRadius + e.bodyRadius;
+      const d2 = dx * dx + dz * dz;
+      if (d2 < minD * minD && d2 > 1e-6) {
+        const d = Math.sqrt(d2);
+        const push = minD - d;
+        pos.current.x += (dx / d) * push;
+        pos.current.z += (dz / d) * push;
+      }
+    }
     const lim = VILLAGE.half - FEEL.playerRadius;
     pos.current.x = THREE.MathUtils.clamp(pos.current.x, -lim, lim);
     pos.current.z = THREE.MathUtils.clamp(pos.current.z, -lim, lim);

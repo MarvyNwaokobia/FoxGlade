@@ -113,7 +113,10 @@ export function Hud() {
           <b>Shift</b> run &nbsp;·&nbsp; <b>Space</b> jump
         </div>
         <div style={styles.row}>
-          <b>Mouse</b> look &nbsp;·&nbsp; <b>Esc</b> release
+          <b>Mouse</b> look &nbsp;·&nbsp; <b>Left-click</b> shoot
+        </div>
+        <div style={styles.row}>
+          <b>Esc</b> release mouse
         </div>
       </div>
 

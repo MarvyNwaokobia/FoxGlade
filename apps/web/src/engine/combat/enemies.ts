@@ -8,8 +8,9 @@ import { raycastBoxes } from "@/engine/world/collision";
  */
 export interface Enemy {
   getPosition: () => THREE.Vector3; // ground position
-  hitRadius: number;
+  hitRadius: number; // shooting hit sphere (generous)
   hitHeight: number; // centre of the hit sphere above the ground position
+  bodyRadius: number; // physical radius for movement collision (tighter)
   takeHit: (damage: number) => void;
 }
 

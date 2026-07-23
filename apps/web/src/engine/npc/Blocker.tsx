@@ -26,6 +26,7 @@ export function Blocker({ position }: { position: [number, number, number] }) {
       getPosition: () => pos,
       hitRadius: 0.85,
       hitHeight: 1.0,
+      bodyRadius: 0.5,
       takeHit: () => {
         setFlash(true);
         setHealth((h) => {
