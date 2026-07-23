@@ -1,0 +1,29 @@
+# Foundry / Solidity
+# lib/ is tracked as git submodules (forge install) — restore with:
+#   git submodule update --init --recursive
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+.env
+.env.*
+!.env.example
+
+# Godot 4
+game/.godot/
+game/.import/
+game/export_presets.cfg
+*.translation
+
+# Web dApp
+web/node_modules/
+web/dist/
+web/.next/
+web/build/
+
+# OS / editor / tooling
+.claude/
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/
