@@ -36,10 +36,16 @@ export const FEEL = {
   cameraLerp: 12,
   /** Height on the player the camera aims at. */
   lookAtHeight: 1.4,
+  baseFov: 60,
+  runFovKick: 7, // camera widens slightly while running, so speed is felt
+  fovLerp: 8,
 
   // --- Fox companion follow ---
-  foxTrailDistance: 2.4, // how far behind the player the fox trails
-  foxSideOffset: 1.0, // sits slightly to the player's side
+  // The fox stays BESIDE (and slightly ahead of) the player so it's always in
+  // view — a companion you watch and care for, never hidden behind you.
+  foxForwardOffset: 0.9, // how far ahead of the player it walks (keeps it on-screen)
+  foxSideOffset: 1.3, // how far out to the side it walks
+  foxSide: 1, // 1 = player's right, -1 = left
   foxSpeed: 9, // how quickly it catches up (higher = tighter to heel)
   foxBobAmplitude: 0.12,
   foxBobSpeed: 9,

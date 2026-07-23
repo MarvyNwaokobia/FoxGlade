@@ -127,6 +127,12 @@ export function PlayerController() {
     );
     camera.position.lerp(camTarget, Math.min(1, FEEL.cameraLerp * dt));
     camera.lookAt(pos.current.x, pos.current.y + FEEL.lookAtHeight, pos.current.z);
+
+    // Widen the lens slightly while running so speed is felt, not just numeric.
+    const cam = camera as THREE.PerspectiveCamera;
+    const targetFov = FEEL.baseFov + (runtime.running ? FEEL.runFovKick : 0);
+    cam.fov += (targetFov - cam.fov) * Math.min(1, FEEL.fovLerp * dt);
+    cam.updateProjectionMatrix();
   });
 
   const h = FEEL.playerHeight;

@@ -22,14 +22,15 @@ export function FoxCompanion() {
     const dt = Math.min(rawDt, 1 / 30);
     t.current += dt;
 
-    // Target: behind + to the side of the player, relative to camera yaw.
+    // Target: BESIDE and slightly AHEAD of the player, relative to camera yaw,
+    // so the fox is always on-screen — never trailing behind out of view.
     const yaw = runtime.yaw;
-    const back = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)); // opposite of forward
+    const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
     const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
     const target = runtime.playerPos
       .clone()
-      .addScaledVector(back, FEEL.foxTrailDistance)
-      .addScaledVector(right, FEEL.foxSideOffset);
+      .addScaledVector(forward, FEEL.foxForwardOffset)
+      .addScaledVector(right, FEEL.foxSideOffset * FEEL.foxSide);
 
     const prev = foxPos.current.clone();
     foxPos.current.lerp(target, Math.min(1, FEEL.foxSpeed * dt));

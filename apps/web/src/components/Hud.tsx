@@ -11,6 +11,7 @@ import { runtime } from "@/engine/runtime";
 export function Hud() {
   const arrow = useRef<HTMLDivElement>(null);
   const distEl = useRef<HTMLSpanElement>(null);
+  const runEl = useRef<HTMLDivElement>(null);
   const [locked, setLocked] = useState(false);
 
   useEffect(() => {
@@ -22,10 +23,18 @@ export function Hud() {
       const dx = runtime.treasurePos.x - runtime.playerPos.x;
       const dz = runtime.treasurePos.z - runtime.playerPos.z;
       // Bearing to treasure in world space, minus camera yaw = screen-relative angle.
+      // Quantized to 45° and shown as a coarse near/mid/far band so it reads as a
+      // ROUGH hint, not a GPS pin. Placeholder until the M3 hint system replaces
+      // it with real + decoy hints the fox can help disambiguate (DESIGN §2/§3).
       const worldAngle = Math.atan2(dx, dz);
-      const rel = worldAngle - runtime.yaw;
+      const step = Math.PI / 4;
+      const rel = Math.round((worldAngle - runtime.yaw) / step) * step;
       if (arrow.current) arrow.current.style.transform = `rotate(${-rel}rad)`;
-      if (distEl.current) distEl.current.textContent = `${Math.round(Math.hypot(dx, dz))}m`;
+      if (distEl.current) {
+        const d = Math.hypot(dx, dz);
+        distEl.current.textContent = d < 12 ? "near" : d < 30 ? "mid" : "far";
+      }
+      if (runEl.current) runEl.current.style.opacity = runtime.running ? "1" : "0";
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -45,8 +54,13 @@ export function Hud() {
           </div>
         </div>
         <div style={styles.compassLabel}>
-          treasure&nbsp;·&nbsp;<span ref={distEl}>—</span>
+          hint&nbsp;·&nbsp;<span ref={distEl}>—</span>
         </div>
+      </div>
+
+      {/* Run indicator — fades in while Shift-running so the state is visible */}
+      <div ref={runEl} style={styles.runPill}>
+        running
       </div>
 
       {/* Controls, bottom-left */}
@@ -95,6 +109,24 @@ const styles: Record<string, React.CSSProperties> = {
   },
   arrow: { color: "#f2c14e", fontSize: 22, lineHeight: 1, transformOrigin: "50% 50%" },
   compassLabel: { marginTop: 6, fontSize: 12, color: "rgba(232,238,242,0.7)", letterSpacing: 0.3 },
+  runPill: {
+    position: "absolute",
+    left: "50%",
+    bottom: 26,
+    transform: "translateX(-50%)",
+    padding: "4px 12px",
+    borderRadius: 999,
+    background: "rgba(242,193,78,0.15)",
+    border: "1px solid rgba(242,193,78,0.5)",
+    color: "#f2c14e",
+    fontSize: 12,
+    letterSpacing: 1.5,
+    textTransform: "uppercase",
+    opacity: 0,
+    transition: "opacity 0.12s ease",
+    pointerEvents: "none",
+    userSelect: "none",
+  },
   controls: {
     position: "absolute",
     left: 18,
