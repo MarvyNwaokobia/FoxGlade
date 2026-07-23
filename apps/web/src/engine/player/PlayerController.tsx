@@ -9,6 +9,7 @@ import { useKeyboard } from "@/engine/input/useKeyboard";
 import { VILLAGE, COLLIDERS, BOXES3D } from "@/engine/world/village";
 import { resolveColliders, raycastBoxes } from "@/engine/world/collision";
 import { useGame } from "@/engine/store";
+import { fireHitscan } from "@/engine/combat/enemies";
 
 function lerpAngle(a: number, b: number, t: number) {
   let diff = b - a;
@@ -48,11 +49,19 @@ export function PlayerController() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Mouse look via pointer lock.
+  // Mouse look via pointer lock; left-click fires once the mouse is captured.
   useEffect(() => {
     const canvas = gl.domElement;
-    const onClick = () => {
-      if (document.pointerLockElement !== canvas) canvas.requestPointerLock();
+    const onDown = (e: MouseEvent) => {
+      if (document.pointerLockElement !== canvas) {
+        canvas.requestPointerLock();
+        return;
+      }
+      if (e.button === 0) {
+        const hit = fireHitscan(camera);
+        runtime.fireAt = performance.now();
+        if (hit) runtime.hitAt = performance.now();
+      }
     };
     const onMove = (e: MouseEvent) => {
       if (document.pointerLockElement !== canvas) return;
@@ -63,13 +72,13 @@ export function PlayerController() {
         FEEL.pitchMax
       );
     };
-    canvas.addEventListener("click", onClick);
+    canvas.addEventListener("mousedown", onDown);
     window.addEventListener("mousemove", onMove);
     return () => {
-      canvas.removeEventListener("click", onClick);
+      canvas.removeEventListener("mousedown", onDown);
       window.removeEventListener("mousemove", onMove);
     };
-  }, [gl]);
+  }, [gl, camera]);
 
   useFrame((_, rawDt) => {
     const dt = Math.min(rawDt, 1 / 30); // clamp big frame gaps so physics stays sane

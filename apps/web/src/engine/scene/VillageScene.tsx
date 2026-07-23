@@ -1,6 +1,7 @@
 "use client";
 
 import { Village } from "@/engine/world/VillageMesh";
+import { Blockers } from "@/engine/npc/Blockers";
 
 /**
  * Lighting rig + the village. Kept separate from the world geometry so the
@@ -25,6 +26,7 @@ export function VillageScene() {
         shadow-bias={-0.0004}
       />
       <Village />
+      <Blockers />
     </>
   );
 }

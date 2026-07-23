@@ -14,4 +14,7 @@ export const runtime = {
   treasurePos: new THREE.Vector3(18, 0, -26),
   /** True while the player stands in the treasure zone. */
   nearTreasure: false,
+  /** Timestamps (performance.now) for crosshair feedback. */
+  fireAt: -1,
+  hitAt: -1,
 };

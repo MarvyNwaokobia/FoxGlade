@@ -14,6 +14,7 @@ export function Hud() {
   const distEl = useRef<HTMLSpanElement>(null);
   const runEl = useRef<HTMLDivElement>(null);
   const treasureEl = useRef<HTMLDivElement>(null);
+  const crossEl = useRef<HTMLDivElement>(null);
   const [locked, setLocked] = useState(false);
   const claimed = useGame((s) => s.treasureClaimed);
   const [showClaimed, setShowClaimed] = useState(false);
@@ -47,6 +48,14 @@ export function Hud() {
         distEl.current.textContent = d < 12 ? "near" : d < 30 ? "mid" : "far";
       }
       if (runEl.current) runEl.current.style.opacity = runtime.running ? "1" : "0";
+      if (crossEl.current) {
+        const now = performance.now();
+        const firing = now - runtime.fireAt < 90;
+        const hitting = now - runtime.hitAt < 160;
+        crossEl.current.style.transform = `translate(-50%, -50%) scale(${firing ? 1.4 : 1})`;
+        crossEl.current.style.background = hitting ? "#ff5a5a" : "#e8eef2";
+        crossEl.current.style.boxShadow = hitting ? "0 0 0 3px rgba(255,90,90,0.35)" : "none";
+      }
       if (treasureEl.current) {
         if (runtime.nearTreasure && !useGame.getState().treasureClaimed) {
           treasureEl.current.style.opacity = "1";
@@ -76,6 +85,9 @@ export function Hud() {
           hint&nbsp;·&nbsp;<span ref={distEl}>—</span>
         </div>
       </div>
+
+      {/* Crosshair — only while the mouse is captured (aiming) */}
+      {locked && <div ref={crossEl} style={styles.crosshair} />}
 
       {/* Run indicator — fades in while Shift-running so the state is visible */}
       <div ref={runEl} style={styles.runPill}>
@@ -135,6 +147,18 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
     margin: "0 auto",
+  },
+  crosshair: {
+    position: "absolute",
+    left: "50%",
+    top: "50%",
+    transform: "translate(-50%, -50%)",
+    width: 7,
+    height: 7,
+    borderRadius: "50%",
+    background: "#e8eef2",
+    transition: "transform 0.06s ease, background 0.06s ease",
+    pointerEvents: "none",
   },
   arrow: { color: "#f2c14e", fontSize: 22, lineHeight: 1, transformOrigin: "50% 50%" },
   compassLabel: { marginTop: 6, fontSize: 12, color: "rgba(232,238,242,0.7)", letterSpacing: 0.3 },
