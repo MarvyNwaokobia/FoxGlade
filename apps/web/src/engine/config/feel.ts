@@ -30,11 +30,11 @@ export const FEEL = {
   mouseSensitivity: 0.0024,
   pitchMin: -0.55, // radians (look down)
   pitchMax: 0.95, // radians (look up)
-  cameraDistance: 6.0,
-  cameraHeight: 2.3,
+  cameraDistance: 5.2,
+  cameraHeight: 2.6,
   cameraMinHeight: 0.8, // camera never dips below this, so you can't see under the world
-  cameraMinDistance: 1.0, // closest the camera can be pulled to the player on collision
-  cameraCollisionBuffer: 0.35, // gap kept in front of a wall the camera pulls up to
+  cameraMinDistance: 2.4, // closest the camera pulls to the player on collision (avoids face-cam)
+  cameraCollisionBuffer: 0.3, // gap kept in front of a wall the camera pulls up to
   /** Camera position smoothing (higher = tighter follow, lower = floatier). */
   cameraLerp: 12,
   /** Height on the player the camera aims at. */

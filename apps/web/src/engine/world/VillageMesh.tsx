@@ -6,6 +6,7 @@ import { Grid, Html } from "@react-three/drei";
 import * as THREE from "three";
 import { BUILDINGS, VILLAGE, type Building } from "./village";
 import { useGame } from "@/engine/store";
+import { runtime } from "@/engine/runtime";
 
 const HALF = VILLAGE.half;
 const WALL_H = 3;
@@ -41,13 +42,23 @@ function BuildingBlock({ b, i }: { b: Building; i: number }) {
 
 /**
  * Floating billboard label marking a zone. `occlude` hides it behind buildings,
- * so a label only shows when its zone is actually in view (no more bleeding
- * through walls onto the player).
+ * and it fades out as the player approaches — labels are for finding a zone from
+ * a distance, not for standing on top of it (no more MARKET plastered on you).
  */
 function ZoneLabel({ position, text, color }: { position: [number, number, number]; text: string; color: string }) {
+  const inner = useRef<HTMLDivElement>(null);
+  useFrame(() => {
+    if (!inner.current) return;
+    const dx = position[0] - runtime.playerPos.x;
+    const dz = position[2] - runtime.playerPos.z;
+    const dist = Math.hypot(dx, dz);
+    // Hidden within ~7m (you've arrived), full opacity beyond ~14m.
+    inner.current.style.opacity = String(THREE.MathUtils.clamp((dist - 7) / 7, 0, 1));
+  });
   return (
-    <Html position={position} center distanceFactor={30} occlude style={{ pointerEvents: "none" }}>
+    <Html position={position} center distanceFactor={34} occlude style={{ pointerEvents: "none" }}>
       <div
+        ref={inner}
         style={{
           padding: "2px 9px",
           borderRadius: 6,
@@ -161,7 +172,7 @@ export function Village() {
 
       {/* Market district */}
       <Zone position={[m.x, 0, m.z]} color="#4e93f2" radius={4} />
-      <ZoneLabel position={[m.x, 3.4, m.z]} text="Market" color="#8fc0ff" />
+      <ZoneLabel position={[m.x, 5.5, m.z]} text="Market" color="#8fc0ff" />
       <Stall position={[m.x - 3, 0, m.z - 1]} color="#c0553b" />
       <Stall position={[m.x + 3, 0, m.z + 1]} color="#3b7cc0" />
       <Stall position={[m.x, 0, m.z + 3]} color="#c0a13b" />
@@ -170,7 +181,7 @@ export function Village() {
       {!claimed && (
         <>
           <Zone position={[VILLAGE.treasure.x, 0, VILLAGE.treasure.z]} color="#f2c14e" radius={3.5} />
-          <ZoneLabel position={[VILLAGE.treasure.x, 3.4, VILLAGE.treasure.z]} text="Treasure" color="#ffdf8f" />
+          <ZoneLabel position={[VILLAGE.treasure.x, 5.5, VILLAGE.treasure.z]} text="Treasure" color="#ffdf8f" />
           <TreasureGem />
         </>
       )}
