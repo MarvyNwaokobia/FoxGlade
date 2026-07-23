@@ -50,18 +50,18 @@ export function Village() {
       {/* Ground */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[HALF * 2, HALF * 2]} />
-        <meshStandardMaterial color="#15181c" roughness={1} />
+        <meshStandardMaterial color="#5b6068" roughness={0.95} />
       </mesh>
       <Grid
         args={[HALF * 2, HALF * 2]}
         cellSize={2}
-        cellThickness={0.5}
-        cellColor="#252c33"
+        cellThickness={0.6}
+        cellColor="#4a505a"
         sectionSize={12}
-        sectionThickness={1}
-        sectionColor="#333c45"
-        fadeDistance={95}
-        fadeStrength={1.2}
+        sectionThickness={1.2}
+        sectionColor="#6b7580"
+        fadeDistance={110}
+        fadeStrength={1}
         followCamera={false}
         infiniteGrid={false}
         position={[0, 0.01, 0]}

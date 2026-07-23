@@ -9,8 +9,8 @@ import { Village } from "@/engine/world/VillageMesh";
 export function VillageScene() {
   return (
     <>
-      <ambientLight intensity={0.5} />
-      <hemisphereLight args={["#9fb8cc", "#181c20", 0.55]} />
+      <ambientLight intensity={0.85} />
+      <hemisphereLight args={["#c4d6e6", "#3a3e42", 0.85]} />
       <directionalLight
         position={[30, 45, 20]}
         intensity={1.15}
