@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { runtime } from "@/engine/runtime";
+import { useGame } from "@/engine/store";
 
 /**
  * DOM overlay: control hints + a rough treasure-zone compass. The compass reads
@@ -14,6 +15,16 @@ export function Hud() {
   const runEl = useRef<HTMLDivElement>(null);
   const treasureEl = useRef<HTMLDivElement>(null);
   const [locked, setLocked] = useState(false);
+  const claimed = useGame((s) => s.treasureClaimed);
+  const [showClaimed, setShowClaimed] = useState(false);
+
+  // Show a brief confirmation toast when the treasure is claimed, then fade it.
+  useEffect(() => {
+    if (!claimed) return;
+    setShowClaimed(true);
+    const id = setTimeout(() => setShowClaimed(false), 3500);
+    return () => clearTimeout(id);
+  }, [claimed]);
 
   useEffect(() => {
     const onLockChange = () => setLocked(!!document.pointerLockElement);
@@ -37,12 +48,8 @@ export function Hud() {
       }
       if (runEl.current) runEl.current.style.opacity = runtime.running ? "1" : "0";
       if (treasureEl.current) {
-        if (runtime.treasureClaimed) {
+        if (runtime.nearTreasure && !useGame.getState().treasureClaimed) {
           treasureEl.current.style.opacity = "1";
-          treasureEl.current.textContent = "Treasure claimed  ·  on-chain mint arrives at M3";
-        } else if (runtime.nearTreasure) {
-          treasureEl.current.style.opacity = "1";
-          treasureEl.current.textContent = "Treasure — press E to claim";
         } else {
           treasureEl.current.style.opacity = "0";
         }
@@ -76,7 +83,14 @@ export function Hud() {
       </div>
 
       {/* Treasure prompt — proximity claim (placeholder for the M3 mint) */}
-      <div ref={treasureEl} style={styles.treasurePrompt} />
+      <div ref={treasureEl} style={styles.treasurePrompt}>
+        Treasure — press <b>E</b> to claim
+      </div>
+
+      {/* Brief confirmation toast after claiming */}
+      {showClaimed && (
+        <div style={styles.claimedToast}>Treasure claimed&nbsp;·&nbsp;on-chain mint arrives at M3</div>
+      )}
 
       {/* Controls, bottom-left */}
       <div style={styles.controls}>
@@ -145,7 +159,7 @@ const styles: Record<string, React.CSSProperties> = {
   treasurePrompt: {
     position: "absolute",
     left: "50%",
-    top: "38%",
+    top: "40%",
     transform: "translateX(-50%)",
     padding: "10px 20px",
     borderRadius: 10,
@@ -157,6 +171,22 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: "nowrap",
     opacity: 0,
     transition: "opacity 0.15s ease",
+    pointerEvents: "none",
+    userSelect: "none",
+  },
+  claimedToast: {
+    position: "absolute",
+    left: "50%",
+    top: "34%",
+    transform: "translateX(-50%)",
+    padding: "10px 20px",
+    borderRadius: 10,
+    background: "rgba(78,242,142,0.14)",
+    border: "1px solid rgba(120,242,170,0.6)",
+    color: "#aef2cb",
+    fontSize: 15,
+    letterSpacing: 0.5,
+    whiteSpace: "nowrap",
     pointerEvents: "none",
     userSelect: "none",
   },

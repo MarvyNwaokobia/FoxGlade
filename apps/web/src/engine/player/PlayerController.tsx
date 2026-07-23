@@ -8,6 +8,7 @@ import { runtime } from "@/engine/runtime";
 import { useKeyboard } from "@/engine/input/useKeyboard";
 import { VILLAGE, COLLIDERS } from "@/engine/world/village";
 import { resolveColliders } from "@/engine/world/collision";
+import { useGame } from "@/engine/store";
 
 function lerpAngle(a: number, b: number, t: number) {
   let diff = b - a;
@@ -39,8 +40,8 @@ export function PlayerController() {
   useEffect(() => {
     runtime.treasurePos.copy(VILLAGE.treasure);
     const onKey = (e: KeyboardEvent) => {
-      if (e.code === "KeyE" && runtime.nearTreasure && !runtime.treasureClaimed) {
-        runtime.treasureClaimed = true;
+      if (e.code === "KeyE" && runtime.nearTreasure && !useGame.getState().treasureClaimed) {
+        useGame.getState().claimTreasure();
       }
     };
     window.addEventListener("keydown", onKey);

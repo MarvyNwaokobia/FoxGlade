@@ -5,7 +5,7 @@ import { useFrame } from "@react-three/fiber";
 import { Grid, Html } from "@react-three/drei";
 import * as THREE from "three";
 import { BUILDINGS, VILLAGE, type Building } from "./village";
-import { runtime } from "@/engine/runtime";
+import { useGame } from "@/engine/store";
 
 const HALF = VILLAGE.half;
 const WALL_H = 3;
@@ -39,20 +39,24 @@ function BuildingBlock({ b, i }: { b: Building; i: number }) {
   );
 }
 
-/** Floating billboard label so a zone is findable from anywhere. */
+/**
+ * Floating billboard label marking a zone. `occlude` hides it behind buildings,
+ * so a label only shows when its zone is actually in view (no more bleeding
+ * through walls onto the player).
+ */
 function ZoneLabel({ position, text, color }: { position: [number, number, number]; text: string; color: string }) {
   return (
-    <Html position={position} center distanceFactor={26} style={{ pointerEvents: "none" }}>
+    <Html position={position} center distanceFactor={30} occlude style={{ pointerEvents: "none" }}>
       <div
         style={{
-          padding: "3px 10px",
+          padding: "2px 9px",
           borderRadius: 6,
-          background: "rgba(11,13,16,0.65)",
+          background: "rgba(11,13,16,0.6)",
           border: `1px solid ${color}`,
           color,
-          fontSize: 22,
+          fontSize: 15,
           fontWeight: 600,
-          letterSpacing: 2,
+          letterSpacing: 1.5,
           whiteSpace: "nowrap",
           fontFamily: "ui-sans-serif, system-ui, sans-serif",
           textTransform: "uppercase",
@@ -85,7 +89,6 @@ function TreasureGem() {
   const gem = useRef<THREE.Group>(null);
   useFrame((_, dt) => {
     if (!gem.current) return;
-    gem.current.visible = !runtime.treasureClaimed;
     gem.current.rotation.y += dt * 1.2;
     gem.current.position.y = 1.6 + Math.sin(performance.now() / 600) * 0.15;
   });
@@ -122,6 +125,7 @@ function Stall({ position, color }: { position: [number, number, number]; color:
  */
 export function Village() {
   const m = VILLAGE.market;
+  const claimed = useGame((s) => s.treasureClaimed);
   return (
     <>
       {/* Ground */}
@@ -162,10 +166,14 @@ export function Village() {
       <Stall position={[m.x + 3, 0, m.z + 1]} color="#3b7cc0" />
       <Stall position={[m.x, 0, m.z + 3]} color="#c0a13b" />
 
-      {/* Treasure */}
-      <Zone position={[VILLAGE.treasure.x, 0, VILLAGE.treasure.z]} color="#f2c14e" radius={3.5} />
-      <ZoneLabel position={[VILLAGE.treasure.x, 3.4, VILLAGE.treasure.z]} text="Treasure" color="#ffdf8f" />
-      <TreasureGem />
+      {/* Treasure — disappears once claimed (placeholder for the M3 pickup/mint) */}
+      {!claimed && (
+        <>
+          <Zone position={[VILLAGE.treasure.x, 0, VILLAGE.treasure.z]} color="#f2c14e" radius={3.5} />
+          <ZoneLabel position={[VILLAGE.treasure.x, 3.4, VILLAGE.treasure.z]} text="Treasure" color="#ffdf8f" />
+          <TreasureGem />
+        </>
+      )}
 
       {/* Spawn pad */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[VILLAGE.spawn.x, 0.02, VILLAGE.spawn.z]}>
