@@ -35,9 +35,12 @@ export const FEEL = {
   cameraHeight: 2.6, // (unused by the shoulder cam; kept for reference)
   cameraShoulder: 0.9, // over-the-shoulder side offset, so the player isn't on the crosshair
   cameraMinHeight: 0.8, // camera never dips below this, so you can't see under the world
-  cameraMinDistance: 0.55, // closest the camera pulls in on collision — near-first-person in tight interiors
-  bodyHideDistance: 1.0, // hide the player capsule when the camera is closer than this (it'd fill the screen)
-  cameraCollisionBuffer: 0.3, // gap kept in front of a wall the camera pulls up to
+  cameraMinDistance: 1.2, // closest the camera pulls in on collision (kept back so the character stays framed, not slammed against his back)
+  // Instead of hard-hiding the character when the camera is close (which read as
+  // "vanishing"), fade him out: fully visible past fadeStart, gone by fadeEnd.
+  cameraFadeStart: 1.5, // distance (m) below which the character starts fading
+  cameraFadeEnd: 0.6, // distance (m) at which he's fully transparent (true near-first-person indoors)
+  cameraCollisionBuffer: 0.35, // gap kept in front of a wall the camera pulls up to
 
   // --- Damage feedback (screen shake + stagger tilt) ---
   shakeDuration: 0.35, // seconds a hit-shake lasts

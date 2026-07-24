@@ -47,6 +47,7 @@ export function PlayerController() {
     dead: false,
     fireAt: -1,
     visible: true,
+    opacity: 1,
   });
   const camBase = useRef(new THREE.Vector3(0, 4, 8)); // smoothed camera pos (shake kept separate)
   const pos = useRef(VILLAGE.spawn.clone());
@@ -393,9 +394,16 @@ export function PlayerController() {
     camBase.current.lerp(desired, Math.min(1, FEEL.cameraLerp * dt));
     camera.position.copy(camBase.current);
 
-    // In tight interiors the camera pulls right up to the shoulder (near-first-
-    // person). Hide the body at that range so it doesn't fill the screen.
-    rs.visible = camBase.current.distanceTo(head) > FEEL.bodyHideDistance;
+    // Fade the character as the camera closes in (near a wall, or the near-
+    // first-person indoor pull-in) instead of hard-hiding him — smooth, so he
+    // never abruptly vanishes. Fully solid past fadeStart, gone by fadeEnd.
+    const camDist = camBase.current.distanceTo(head);
+    rs.opacity = THREE.MathUtils.clamp(
+      (camDist - FEEL.cameraFadeEnd) / (FEEL.cameraFadeStart - FEEL.cameraFadeEnd),
+      0,
+      1
+    );
+    rs.visible = rs.opacity > 0.02;
 
     // Damage shake + stagger tilt, decaying over shakeDuration.
     const shakeT = (performance.now() - runtime.damageAt) / (FEEL.shakeDuration * 1000);

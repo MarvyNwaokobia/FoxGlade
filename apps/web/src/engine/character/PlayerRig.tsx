@@ -30,7 +30,8 @@ export interface PlayerRigState {
   grounded: boolean;
   dead: boolean;
   fireAt: number; // performance.now of the last shot
-  visible: boolean; // false when the camera pulls to near-first-person indoors
+  visible: boolean; // false only when fully faded (camera extremely close)
+  opacity: number; // 0..1 — fades as the camera closes in, so he never hard-vanishes
 }
 
 export type CharacterModelId = "man" | "sentinel" | "phantom" | "berserker" | "operator";
@@ -99,14 +100,17 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
   const initTime = useRef(0);
   const lastFireAt = useRef(state.fireAt);
   const deathPlayed = useRef(false);
+  const deathDrop = useRef(0); // eased downward offset that settles the corpse
 
   const { scene, animations } = useGLTF(MODEL_PATHS[model]);
   const rifle = useGLTF(RIFLE_PATH);
 
   const animMachine = useMemo(() => new AnimationStateMachine(buildAnimMap()), []);
 
+  const materials = useRef<THREE.Material[]>([]);
   const clonedScene = useMemo(() => {
     const clone = SkeletonUtils.clone(scene);
+    const mats: THREE.Material[] = [];
     clone.traverse((child) => {
       if (child instanceof THREE.Mesh) {
         // No cast shadow: a skinned-mesh shadow pass is pricey and the blob
@@ -115,8 +119,15 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
         child.castShadow = false;
         child.receiveShadow = true;
         child.frustumCulled = false; // his bounds swing wide when animating
+        // Own the materials (clone) so the camera fade opacity doesn't leak to
+        // the source asset / other instances.
+        child.material = Array.isArray(child.material)
+          ? child.material.map((m) => m.clone())
+          : child.material.clone();
+        (Array.isArray(child.material) ? child.material : [child.material]).forEach((m) => mats.push(m));
       }
     });
+    materials.current = mats;
     return clone;
   }, [scene]);
 
@@ -191,6 +202,14 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
     }
     groupRef.current.visible = revealed.current && state.visible;
 
+    // Camera-proximity fade (set by the controller) so he never hard-vanishes.
+    const op = state.opacity;
+    for (const m of materials.current) {
+      m.transparent = op < 0.99;
+      m.opacity = op;
+      m.depthWrite = op >= 0.99;
+    }
+
     // ── Choose the animation state from gameplay flags ──
     if (state.dead) {
       if (!deathPlayed.current) {
@@ -215,9 +234,13 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
       }
     }
 
-    // Body faces state.rotation.
+    // Body faces state.rotation. On death the clip lays him horizontal but
+    // pivots at hip height (root motion is stripped), so ease the whole rig down
+    // to settle the body on the ground instead of floating.
+    const dropTarget = state.dead ? -0.78 : 0;
+    deathDrop.current += (dropTarget - deathDrop.current) * Math.min(1, 5 * dt);
     groupRef.current.position.copy(state.position);
-    groupRef.current.position.y = Math.max(0, state.position.y);
+    groupRef.current.position.y = Math.max(0, state.position.y) + deathDrop.current;
     const targetQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), state.rotation);
     const rotLerp = 1 - Math.exp(-12 * dt);
     groupRef.current.quaternion.slerp(targetQuat, rotLerp);

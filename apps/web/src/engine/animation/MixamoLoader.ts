@@ -106,6 +106,9 @@ function retargetClip(clip: THREE.AnimationClip, name: string): THREE.AnimationC
   // Measure baked root travel before discarding it (used to kill foot-skate).
   measureRootStride(clip, name);
 
+  // Strip the Hips position track — clips are cm-scale and the body is moved by
+  // code, so a raw position track would be 100× off. (The death clip's lack of a
+  // vertical drop is compensated by a code-driven settle in PlayerRig.)
   clip.tracks = clip.tracks.filter((track) => {
     if (track.name.includes("Hips") && track.name.includes("position")) {
       return false;

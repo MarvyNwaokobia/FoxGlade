@@ -11,7 +11,7 @@ function key(code: string, type: "keydown" | "keyup") {
 }
 
 const JOY_R = 56; // joystick base radius (px)
-const RUN_AT = 0.72; // stick magnitude past which we run
+const RUN_AT = 0.9; // stick magnitude past which we run (normal pushes walk)
 const LOOK_SENS = 0.0055; // rad per screen px
 
 /**
