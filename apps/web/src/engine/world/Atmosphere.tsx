@@ -67,11 +67,11 @@ function Lantern({ position }: { position: [number, number, number] }) {
         <meshStandardMaterial
           color={THEME.lantern}
           emissive={THEME.lantern}
-          emissiveIntensity={2.2}
+          emissiveIntensity={1.5}
           toneMapped={false}
         />
       </mesh>
-      <pointLight intensity={9} distance={12} decay={2} color={THEME.lantern} />
+      <pointLight intensity={6} distance={11} decay={2} color={THEME.lantern} />
     </group>
   );
 }
