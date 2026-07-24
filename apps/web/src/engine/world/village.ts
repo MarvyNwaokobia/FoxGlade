@@ -127,6 +127,25 @@ export function wallSegments(b: Building): Box3[] {
   return segs;
 }
 
+/**
+ * World-space centre + outward normal of an enterable building's door opening,
+ * for rendering doorway markers (frame, threshold, glow). Null if no door.
+ */
+export function doorOpening(b: Building): { cx: number; cz: number; nx: number; nz: number; width: number } | null {
+  if (!b.door) return null;
+  const width = b.door.width ?? DOOR_W;
+  switch (b.door.side) {
+    case "N":
+      return { cx: b.x, cz: b.z - b.d / 2 + WALL_T / 2, nx: 0, nz: -1, width };
+    case "S":
+      return { cx: b.x, cz: b.z + b.d / 2 - WALL_T / 2, nx: 0, nz: 1, width };
+    case "W":
+      return { cx: b.x - b.w / 2 + WALL_T / 2, cz: b.z, nx: -1, nz: 0, width };
+    case "E":
+      return { cx: b.x + b.w / 2 - WALL_T / 2, cz: b.z, nx: 1, nz: 0, width };
+  }
+}
+
 /** Roof slab of an enterable building — blocks sight/camera/bombs from above. */
 export function roofBox(b: Building): Box3 {
   return {

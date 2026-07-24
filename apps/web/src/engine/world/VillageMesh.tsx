@@ -4,7 +4,7 @@ import { useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Grid, Html } from "@react-three/drei";
 import * as THREE from "three";
-import { BUILDINGS, VILLAGE, wallSegments, type Building } from "./village";
+import { BUILDINGS, VILLAGE, wallSegments, doorOpening, WALL_T, type Building } from "./village";
 import { HINTS } from "./hints";
 import { useGame } from "@/engine/store";
 import { runtime } from "@/engine/runtime";
@@ -30,6 +30,8 @@ function BuildingBlock({ b, i }: { b: Building; i: number }) {
   const wall = i % 2 === 0 ? "#7c828b" : "#6e767f";
   const isCrate = b.h < 2;
   if (b.door) {
+    const op = doorOpening(b)!;
+    const doorYaw = Math.atan2(op.nx, op.nz); // group's local +Z points out the door
     return (
       <group>
         {wallSegments(b).map((s, j) => (
@@ -48,6 +50,30 @@ function BuildingBlock({ b, i }: { b: Building; i: number }) {
           <boxGeometry args={[b.w + 0.5, 0.4, b.d + 0.5]} />
           <meshStandardMaterial color="#3f464e" roughness={0.8} />
         </mesh>
+        {/* Doorway markers: warm frame posts, glowing threshold, light spilling
+            out — so the opening reads from down the street, not just up close. */}
+        <group position={[op.cx, 0, op.cz]} rotation={[0, doorYaw, 0]}>
+          <mesh position={[-(op.width / 2 + 0.12), b.h / 2, 0]} castShadow>
+            <boxGeometry args={[0.24, b.h, WALL_T + 0.16]} />
+            <meshStandardMaterial color="#c9974e" roughness={0.7} />
+          </mesh>
+          <mesh position={[op.width / 2 + 0.12, b.h / 2, 0]} castShadow>
+            <boxGeometry args={[0.24, b.h, WALL_T + 0.16]} />
+            <meshStandardMaterial color="#c9974e" roughness={0.7} />
+          </mesh>
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
+            <planeGeometry args={[op.width + 0.5, 2.6]} />
+            <meshStandardMaterial
+              color="#ffc96b"
+              emissive="#ffc96b"
+              emissiveIntensity={0.4}
+              transparent
+              opacity={0.4}
+              depthWrite={false}
+            />
+          </mesh>
+          <pointLight position={[0, 2.4, -1.8]} intensity={6} distance={10} color="#ffd9a0" />
+        </group>
       </group>
     );
   }
