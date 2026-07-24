@@ -4,6 +4,7 @@ import { Village } from "@/engine/world/VillageMesh";
 import { Blockers } from "@/engine/npc/Blockers";
 import { Distractors } from "@/engine/npc/Distractors";
 import { Thieves } from "@/engine/npc/ThiefWave";
+import { Environment } from "@react-three/drei";
 import { Projectiles } from "@/engine/combat/ProjectileLayer";
 import { Bombs } from "@/engine/combat/BombLayer";
 import { THEME } from "@/engine/world/theme";
@@ -18,15 +19,16 @@ export function VillageScene() {
   const roundNonce = useGame((s) => s.roundNonce);
   return (
     <>
-      {/* Dusk atmosphere: warm haze that fades the far buildings into the ridge */}
+      {/* Real dusk sky + image-based lighting from a CC0 HDRI (Poly Haven).
+          `background` shows the photographic sky; it also lights every surface. */}
+      <Environment files="/env/dusk_2k.hdr" background backgroundBlurriness={0} environmentIntensity={1.0} />
+      {/* Warm haze so far buildings melt into the horizon, matching the sky */}
       <fog attach="fog" args={[THEME.fog, THEME.fogNear, THEME.fogFar]} />
-      <ambientLight color={THEME.ambientColor} intensity={THEME.ambientIntensity} />
-      <hemisphereLight args={[THEME.hemiSky, THEME.hemiGround, THEME.hemiIntensity]} />
-      {/* Low, warm sun raking across the village (long dusk shadows) */}
+      {/* A low warm key light for the crisp shadows the HDRI alone can't cast */}
       <directionalLight
-        position={[38, 22, 14]}
+        position={[38, 20, 14]}
         color={THEME.sunColor}
-        intensity={THEME.sunIntensity}
+        intensity={2.1}
         castShadow
         shadow-mapSize={[2048, 2048]}
         shadow-camera-left={-50}

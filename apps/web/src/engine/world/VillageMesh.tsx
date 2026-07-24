@@ -2,7 +2,7 @@
 
 import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
-import { Html } from "@react-three/drei";
+import { Html, useTexture } from "@react-three/drei";
 import * as THREE from "three";
 import { BUILDINGS, VILLAGE, wallSegments, doorOpening, WALL_T, type Building } from "./village";
 import { HINTS } from "./hints";
@@ -13,9 +13,69 @@ import { runtime } from "@/engine/runtime";
 const HALF = VILLAGE.half;
 const WALL_H = 3;
 
-/** Deterministic per-building pick from a palette (stable across renders). */
-function pick<T>(arr: T[], seed: number): T {
-  return arr[Math.abs(Math.floor(seed)) % arr.length];
+/** A photographic (CC0 PBR) material shared across a surface type. */
+export interface VillageMaterials {
+  ground: THREE.MeshStandardMaterial;
+  wall: THREE.MeshStandardMaterial;
+  roof: THREE.MeshStandardMaterial;
+  timber: THREE.MeshStandardMaterial;
+}
+
+/**
+ * Load the CC0 Poly Haven texture sets (diffuse + normal + roughness) once and
+ * build the shared materials. Real photographic stone/thatch/cobble/timber —
+ * the realism the concept renders were aiming for, all free.
+ */
+export function useVillageMaterials(): VillageMaterials {
+  const tex = useTexture({
+    groundMap: "/textures/cobblestone_05_diff.jpg",
+    groundNor: "/textures/cobblestone_05_nor_gl.jpg",
+    groundRough: "/textures/cobblestone_05_rough.jpg",
+    wallMap: "/textures/medieval_wall_01_diff.jpg",
+    wallNor: "/textures/medieval_wall_01_nor_gl.jpg",
+    wallRough: "/textures/medieval_wall_01_rough.jpg",
+    roofMap: "/textures/thatch_roof_angled_diff.jpg",
+    roofNor: "/textures/thatch_roof_angled_nor_gl.jpg",
+    roofRough: "/textures/thatch_roof_angled_rough.jpg",
+    timberMap: "/textures/brown_planks_05_diff.jpg",
+    timberNor: "/textures/brown_planks_05_nor_gl.jpg",
+    timberRough: "/textures/brown_planks_05_rough.jpg",
+  });
+
+  return useMemo(() => {
+    const cfg = (t: THREE.Texture, rx: number, ry: number, srgb = false) => {
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.repeat.set(rx, ry);
+      t.anisotropy = 8;
+      if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+      return t;
+    };
+    const ground = new THREE.MeshStandardMaterial({
+      map: cfg(tex.groundMap, 55, 55, true),
+      normalMap: cfg(tex.groundNor, 55, 55),
+      roughnessMap: cfg(tex.groundRough, 55, 55),
+      roughness: 1,
+    });
+    const wall = new THREE.MeshStandardMaterial({
+      map: cfg(tex.wallMap, 3, 2, true),
+      normalMap: cfg(tex.wallNor, 3, 2),
+      roughnessMap: cfg(tex.wallRough, 3, 2),
+      roughness: 1,
+    });
+    const roof = new THREE.MeshStandardMaterial({
+      map: cfg(tex.roofMap, 4, 4, true),
+      normalMap: cfg(tex.roofNor, 4, 4),
+      roughnessMap: cfg(tex.roofRough, 4, 4),
+      roughness: 1,
+    });
+    const timber = new THREE.MeshStandardMaterial({
+      map: cfg(tex.timberMap, 1, 2, true),
+      normalMap: cfg(tex.timberNor, 1, 2),
+      roughnessMap: cfg(tex.timberRough, 1, 2),
+      roughness: 1,
+    });
+    return { ground, wall, roof, timber };
+  }, [tex]);
 }
 
 /**
@@ -23,7 +83,7 @@ function pick<T>(arr: T[], seed: number): T {
  * along the building's longer axis, with a small overhang. Reads as a house
  * rather than a capped box.
  */
-function GableRoof({ b, seed }: { b: Building; seed: number }) {
+function GableRoof({ b, mat }: { b: Building; mat: THREE.Material }) {
   const overhang = 0.5;
   const pitch = Math.min(2.2, 0.5 + Math.max(b.w, b.d) * 0.14);
   const ridgeAlongX = b.w >= b.d;
@@ -42,18 +102,13 @@ function GableRoof({ b, seed }: { b: Building; seed: number }) {
     return g;
   }, [spanBase, ridgeLen, pitch, ridgeAlongX]);
 
-  return (
-    <mesh geometry={geo} position={[b.x, b.h, b.z]} castShadow receiveShadow>
-      <meshStandardMaterial color={pick(THEME.roof, seed)} roughness={0.9} />
-    </mesh>
-  );
+  return <mesh geometry={geo} material={mat} position={[b.x, b.h, b.z]} castShadow receiveShadow />;
 }
 
-function Wall({ position, size }: { position: [number, number, number]; size: [number, number, number] }) {
+function Wall({ position, size, mat }: { position: [number, number, number]; size: [number, number, number]; mat: THREE.Material }) {
   return (
-    <mesh position={position} castShadow receiveShadow>
+    <mesh position={position} material={mat} castShadow receiveShadow>
       <boxGeometry args={size} />
-      <meshStandardMaterial color={THEME.rampart} roughness={0.95} />
     </mesh>
   );
 }
@@ -63,8 +118,7 @@ function Wall({ position, size }: { position: [number, number, number]; size: [n
  * enterable ones render their wall strips — the same boxes the collision and
  * LOS systems use — plus the roof, so you can walk in through the gap.
  */
-function BuildingBlock({ b, i }: { b: Building; i: number }) {
-  const wall = pick(THEME.wallStone, i * 7 + 3);
+function BuildingBlock({ b, mats }: { b: Building; mats: VillageMaterials }) {
   const isCrate = b.h < 2;
   if (b.door) {
     const op = doorOpening(b)!;
@@ -74,25 +128,23 @@ function BuildingBlock({ b, i }: { b: Building; i: number }) {
         {wallSegments(b).map((s, j) => (
           <mesh
             key={j}
+            material={mats.wall}
             position={[(s.minX + s.maxX) / 2, b.h / 2, (s.minZ + s.maxZ) / 2]}
             castShadow
             receiveShadow
           >
             <boxGeometry args={[s.maxX - s.minX, b.h, s.maxZ - s.minZ]} />
-            <meshStandardMaterial color={wall} roughness={0.9} />
           </mesh>
         ))}
-        <GableRoof b={b} seed={i * 7 + 3} />
-        {/* Doorway markers: warm frame posts, glowing threshold, light spilling
+        <GableRoof b={b} mat={mats.roof} />
+        {/* Doorway markers: timber frame posts, glowing threshold, light spilling
             out — so the opening reads from down the street, not just up close. */}
         <group position={[op.cx, 0, op.cz]} rotation={[0, doorYaw, 0]}>
-          <mesh position={[-(op.width / 2 + 0.12), b.h / 2, 0]} castShadow>
+          <mesh material={mats.timber} position={[-(op.width / 2 + 0.12), b.h / 2, 0]} castShadow>
             <boxGeometry args={[0.24, b.h, WALL_T + 0.16]} />
-            <meshStandardMaterial color={THEME.wallTimber} roughness={0.7} />
           </mesh>
-          <mesh position={[op.width / 2 + 0.12, b.h / 2, 0]} castShadow>
+          <mesh material={mats.timber} position={[op.width / 2 + 0.12, b.h / 2, 0]} castShadow>
             <boxGeometry args={[0.24, b.h, WALL_T + 0.16]} />
-            <meshStandardMaterial color={THEME.wallTimber} roughness={0.7} />
           </mesh>
           <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
             <planeGeometry args={[op.width + 0.5, 2.6]} />
@@ -107,7 +159,7 @@ function BuildingBlock({ b, i }: { b: Building; i: number }) {
           </mesh>
           <pointLight position={[0, 2.4, -1.8]} intensity={6} distance={10} color={THEME.lantern} />
         </group>
-        {/* A hung lantern beside the door, so lit windows read at night */}
+        {/* A hung lantern beside the door, so lit windows read at dusk */}
         <mesh position={[op.cx + op.nx * 0.3 - op.nz * (op.width / 2 + 0.4), 2.1, op.cz + op.nz * 0.3 + op.nx * (op.width / 2 + 0.4)]}>
           <boxGeometry args={[0.18, 0.26, 0.18]} />
           <meshStandardMaterial color={THEME.lantern} emissive={THEME.lantern} emissiveIntensity={0.8} />
@@ -117,11 +169,10 @@ function BuildingBlock({ b, i }: { b: Building; i: number }) {
   }
   return (
     <group>
-      <mesh position={[b.x, b.h / 2, b.z]} castShadow receiveShadow>
+      <mesh material={isCrate ? mats.timber : mats.wall} position={[b.x, b.h / 2, b.z]} castShadow receiveShadow>
         <boxGeometry args={[b.w, b.h, b.d]} />
-        <meshStandardMaterial color={isCrate ? THEME.wallTimber : wall} roughness={0.9} />
       </mesh>
-      {!isCrate && <GableRoof b={b} seed={i * 7 + 3} />}
+      {!isCrate && <GableRoof b={b} mat={mats.roof} />}
     </group>
   );
 }
@@ -274,95 +325,30 @@ function Stall({ position, color }: { position: [number, number, number]; color:
 }
 
 /**
- * Gradient sky dome (dusk) enclosing the play area. A big inside-out sphere with
- * a two-colour vertical gradient — cheap, no texture download.
- */
-function SkyDome() {
-  const mat = useMemo(() => {
-    return new THREE.ShaderMaterial({
-      side: THREE.BackSide,
-      depthWrite: false,
-      uniforms: {
-        top: { value: new THREE.Color(THEME.skyTop) },
-        horizon: { value: new THREE.Color(THEME.skyHorizon) },
-      },
-      vertexShader: `
-        varying vec3 vP;
-        void main() { vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
-      `,
-      fragmentShader: `
-        varying vec3 vP;
-        uniform vec3 top; uniform vec3 horizon;
-        void main() {
-          float h = clamp((normalize(vP).y + 0.1) / 0.7, 0.0, 1.0);
-          gl_FragColor = vec4(mix(horizon, top, h), 1.0);
-        }
-      `,
-    });
-  }, []);
-  return (
-    <mesh material={mat} scale={[300, 300, 300]}>
-      <sphereGeometry args={[1, 32, 16]} />
-    </mesh>
-  );
-}
-
-/** Procedural ground texture (dirt + road specks) baked to a canvas — free. */
-function useGroundTexture() {
-  return useMemo(() => {
-    const s = 512;
-    const cv = document.createElement("canvas");
-    cv.width = cv.height = s;
-    const ctx = cv.getContext("2d")!;
-    ctx.fillStyle = THEME.groundBase;
-    ctx.fillRect(0, 0, s, s);
-    // Mottle with dirt + darker specks for a worn-earth read.
-    for (let i = 0; i < 5000; i++) {
-      const x = Math.random() * s;
-      const y = Math.random() * s;
-      const r = Math.random() * 3 + 0.5;
-      ctx.fillStyle = Math.random() < 0.5 ? THEME.groundDirt : THEME.groundSpeck;
-      ctx.globalAlpha = 0.15 + Math.random() * 0.35;
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-    const tex = new THREE.CanvasTexture(cv);
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(40, 40);
-    tex.anisotropy = 4;
-    return tex;
-  }, []);
-}
-
-/**
- * Renders the walled village from the layout data: sky, ground, perimeter
- * walls, buildings, zone beacons + labels, market stalls, and the treasure gem.
- * Materials are procedural "dusk" theme dressing over the gray-box layout.
+ * Renders the walled village from the layout data: ground, perimeter walls,
+ * buildings, zone beacons + labels, market stalls, and the treasure gem. The sky
+ * + lighting come from a CC0 dusk HDRI (in VillageScene); surfaces wear real
+ * CC0 PBR textures (stone / thatch / cobble / timber).
  */
 export function Village() {
   const m = VILLAGE.market;
-  const ground = useGroundTexture();
+  const mats = useVillageMaterials();
   return (
     <>
-      <SkyDome />
-
       {/* Ground (extends well past the play area so its edge fades into fog) */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+      <mesh material={mats.ground} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[290, 290]} />
-        <meshStandardMaterial map={ground} color="#ffffff" roughness={1} />
       </mesh>
 
-      {/* Perimeter walls */}
-      <Wall position={[0, WALL_H / 2, -HALF]} size={[HALF * 2, WALL_H, 0.6]} />
-      <Wall position={[0, WALL_H / 2, HALF]} size={[HALF * 2, WALL_H, 0.6]} />
-      <Wall position={[-HALF, WALL_H / 2, 0]} size={[0.6, WALL_H, HALF * 2]} />
-      <Wall position={[HALF, WALL_H / 2, 0]} size={[0.6, WALL_H, HALF * 2]} />
+      {/* Perimeter ramparts (stone) */}
+      <Wall position={[0, WALL_H / 2, -HALF]} size={[HALF * 2, WALL_H, 0.6]} mat={mats.wall} />
+      <Wall position={[0, WALL_H / 2, HALF]} size={[HALF * 2, WALL_H, 0.6]} mat={mats.wall} />
+      <Wall position={[-HALF, WALL_H / 2, 0]} size={[0.6, WALL_H, HALF * 2]} mat={mats.wall} />
+      <Wall position={[HALF, WALL_H / 2, 0]} size={[0.6, WALL_H, HALF * 2]} mat={mats.wall} />
 
       {/* Buildings */}
       {BUILDINGS.map((b, i) => (
-        <BuildingBlock key={i} b={b} i={i} />
+        <BuildingBlock key={i} b={b} mats={mats} />
       ))}
 
       {/* Market district */}

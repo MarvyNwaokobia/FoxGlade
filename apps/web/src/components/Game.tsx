@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { Canvas } from "@react-three/fiber";
 import * as THREE from "three";
 import { PlayerController } from "@/engine/player/PlayerController";
@@ -16,14 +17,15 @@ export default function Game() {
     <>
       <Canvas
         shadows
-        gl={{ antialias: true }}
+        gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.0 }}
         camera={{ fov: 60, near: 0.1, far: 400, position: [0, 4, 8] }}
-        onCreated={({ scene, gl }) => {
-          gl.setClearColor("#39434f"); // dusk sky, so the world isn't in a void
-          scene.fog = new THREE.Fog("#39434f", 55, 150); // soft distance fade
+        onCreated={({ gl }) => {
+          gl.setClearColor("#c8895a"); // dusk fallback until the HDRI sky loads
         }}
       >
-        <VillageScene />
+        <Suspense fallback={null}>
+          <VillageScene />
+        </Suspense>
         <PlayerController />
         <FoxCompanion />
       </Canvas>
