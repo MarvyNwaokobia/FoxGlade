@@ -13,6 +13,7 @@ import { fireHitscan, enemies } from "@/engine/combat/enemies";
 import { spawnBomb, predictLanding } from "@/engine/combat/bombs";
 import { HINTS, HINT_RADIUS, SNIFF_COOLDOWN, SNIFF_REVEAL } from "@/engine/world/hints";
 import { SESSION_SECONDS, REST } from "@/engine/config/round";
+import { PlayerRig, type PlayerRigState } from "@/engine/character/PlayerRig";
 
 const FIRE_INTERVAL = 0.16; // seconds between shots when holding fire
 
@@ -32,8 +33,20 @@ export function PlayerController() {
   const keys = useKeyboard();
   const { camera, gl } = useThree();
 
-  const body = useRef<THREE.Group>(null);
   const shadow = useRef<THREE.Mesh>(null);
+  // Mutable state the animated rig reads every frame (kept out of React render).
+  const rigState = useRef<PlayerRigState>({
+    position: VILLAGE.spawn.clone(),
+    rotation: VILLAGE.spawnYaw,
+    velocity: new THREE.Vector3(),
+    moving: false,
+    running: false,
+    crouching: false,
+    grounded: true,
+    dead: false,
+    fireAt: -1,
+    visible: true,
+  });
   const camBase = useRef(new THREE.Vector3(0, 4, 8)); // smoothed camera pos (shake kept separate)
   const pos = useRef(VILLAGE.spawn.clone());
   const vel = useRef(new THREE.Vector3(0, 0, 0));
@@ -278,19 +291,21 @@ export function PlayerController() {
     pos.current.x = THREE.MathUtils.clamp(pos.current.x, -lim, lim);
     pos.current.z = THREE.MathUtils.clamp(pos.current.z, -lim, lim);
 
-    // Apply to the visible body (squashing the capsule while crouched/seated).
+    // Eye height eases between stand / crouch / seated (drives camera + aim origin).
     const eyeTarget = resting.current ? 0.75 : crouching.current ? FEEL.crouchEyeHeight : FEEL.lookAtHeight;
     eyeH.current += (eyeTarget - eyeH.current) * Math.min(1, FEEL.crouchLerp * dt);
-    if (body.current) {
-      body.current.position.copy(pos.current);
-      body.current.rotation.y = bodyRot.current;
-      let scaleTarget = crouching.current ? FEEL.crouchHeight / FEEL.playerHeight : 1;
-      if (resting.current) {
-        // Seated, with a slow visible breathing rise-and-fall.
-        scaleTarget = 0.52 + Math.sin(performance.now() / 480) * 0.015;
-      }
-      body.current.scale.y += (scaleTarget - body.current.scale.y) * Math.min(1, FEEL.crouchLerp * dt);
-    }
+    // Feed the animated rig: face travel while moving, aim while standing.
+    const rs = rigState.current;
+    rs.position.copy(pos.current);
+    const planarSpeed = Math.hypot(vel.current.x, vel.current.z);
+    rs.rotation = planarSpeed > 0.5 && !frozen ? bodyRot.current : yaw.current + Math.PI;
+    rs.velocity.set(vel.current.x, 0, vel.current.z);
+    rs.moving = planarSpeed > 0.5 && !frozen && !resting.current;
+    rs.running = runtime.running;
+    rs.crouching = crouching.current;
+    rs.grounded = grounded.current;
+    rs.dead = useGame.getState().isDead;
+    rs.fireAt = runtime.fireAt;
     // Contact shadow stays flat on the ground under the player (even mid-jump).
     if (shadow.current) {
       shadow.current.position.set(pos.current.x, 0.02, pos.current.z);
@@ -362,8 +377,8 @@ export function PlayerController() {
     camera.position.copy(camBase.current);
 
     // In tight interiors the camera pulls right up to the shoulder (near-first-
-    // person). Hide the capsule at that range so it doesn't fill the screen.
-    if (body.current) body.current.visible = camBase.current.distanceTo(head) > FEEL.bodyHideDistance;
+    // person). Hide the body at that range so it doesn't fill the screen.
+    rs.visible = camBase.current.distanceTo(head) > FEEL.bodyHideDistance;
 
     // Damage shake + stagger tilt, decaying over shakeDuration.
     const shakeT = (performance.now() - runtime.damageAt) / (FEEL.shakeDuration * 1000);
@@ -406,21 +421,10 @@ export function PlayerController() {
     }
   });
 
-  const h = FEEL.playerHeight;
   return (
     <>
-      <group ref={body}>
-        {/* Body capsule */}
-        <mesh position={[0, h / 2, 0]} castShadow>
-          <capsuleGeometry args={[FEEL.playerRadius, h - FEEL.playerRadius * 2, 6, 12]} />
-          <meshStandardMaterial color="#9aa7b2" roughness={0.7} metalness={0.05} />
-        </mesh>
-        {/* Facing indicator — a nose pointing +Z (the body's forward). */}
-        <mesh position={[0, h * 0.62, 0.45]} rotation={[Math.PI / 2, 0, 0]}>
-          <coneGeometry args={[0.16, 0.4, 12]} />
-          <meshStandardMaterial color="#ffb347" roughness={0.5} />
-        </mesh>
-      </group>
+      {/* Animated character rig, driven by rigState each frame. */}
+      <PlayerRig state={rigState.current} />
       {/* Soft contact shadow so the player reads as grounded, never floating. */}
       <mesh ref={shadow} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
         <circleGeometry args={[FEEL.playerRadius * 1.5, 24]} />

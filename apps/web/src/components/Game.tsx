@@ -2,7 +2,7 @@
 
 import { Suspense } from "react";
 import { Canvas } from "@react-three/fiber";
-import { Loader } from "@react-three/drei";
+import { Loader, Stats } from "@react-three/drei";
 import * as THREE from "three";
 import { PlayerController } from "@/engine/player/PlayerController";
 import { FoxCompanion } from "@/engine/fox/FoxCompanion";
@@ -32,6 +32,8 @@ export default function Game() {
           <PlayerController />
           <FoxCompanion />
         </Suspense>
+        {/* Perf readout (FPS/ms) — temporary, to gauge game vs hardware. */}
+        <Stats />
       </Canvas>
       <Hud />
       {/* DOM loading screen with a progress bar until assets are ready. */}
