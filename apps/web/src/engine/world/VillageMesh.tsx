@@ -1,33 +1,70 @@
 "use client";
 
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
-import { Grid, Html } from "@react-three/drei";
+import { Html } from "@react-three/drei";
 import * as THREE from "three";
 import { BUILDINGS, VILLAGE, wallSegments, doorOpening, WALL_T, type Building } from "./village";
 import { HINTS } from "./hints";
+import { THEME } from "./theme";
 import { useGame } from "@/engine/store";
 import { runtime } from "@/engine/runtime";
 
 const HALF = VILLAGE.half;
 const WALL_H = 3;
 
+/** Deterministic per-building pick from a palette (stable across renders). */
+function pick<T>(arr: T[], seed: number): T {
+  return arr[Math.abs(Math.floor(seed)) % arr.length];
+}
+
+/**
+ * A gabled roof over a building footprint: a triangular prism whose ridge runs
+ * along the building's longer axis, with a small overhang. Reads as a house
+ * rather than a capped box.
+ */
+function GableRoof({ b, seed }: { b: Building; seed: number }) {
+  const overhang = 0.5;
+  const pitch = Math.min(2.2, 0.5 + Math.max(b.w, b.d) * 0.14);
+  const ridgeAlongX = b.w >= b.d;
+  const spanBase = (ridgeAlongX ? b.d : b.w) + overhang; // triangle base
+  const ridgeLen = (ridgeAlongX ? b.w : b.d) + overhang; // extrude length
+
+  const geo = useMemo(() => {
+    const shape = new THREE.Shape();
+    shape.moveTo(-spanBase / 2, 0);
+    shape.lineTo(spanBase / 2, 0);
+    shape.lineTo(0, pitch);
+    shape.closePath();
+    const g = new THREE.ExtrudeGeometry(shape, { depth: ridgeLen, bevelEnabled: false });
+    g.translate(0, 0, -ridgeLen / 2); // centre the extrusion
+    g.rotateY(ridgeAlongX ? Math.PI / 2 : 0); // ridge along the long axis
+    return g;
+  }, [spanBase, ridgeLen, pitch, ridgeAlongX]);
+
+  return (
+    <mesh geometry={geo} position={[b.x, b.h, b.z]} castShadow receiveShadow>
+      <meshStandardMaterial color={pick(THEME.roof, seed)} roughness={0.9} />
+    </mesh>
+  );
+}
+
 function Wall({ position, size }: { position: [number, number, number]; size: [number, number, number] }) {
   return (
     <mesh position={position} castShadow receiveShadow>
       <boxGeometry args={size} />
-      <meshStandardMaterial color="#4a525b" roughness={0.95} />
+      <meshStandardMaterial color={THEME.rampart} roughness={0.95} />
     </mesh>
   );
 }
 
 /**
- * A building block. Solid ones render as one box with a roof cap; enterable
- * ones (with a door) render their wall strips — the same boxes the collision
- * and LOS systems use — plus the roof, so you can walk in through the gap.
+ * A building block. Solid ones render as a stone box with a gabled roof;
+ * enterable ones render their wall strips — the same boxes the collision and
+ * LOS systems use — plus the roof, so you can walk in through the gap.
  */
 function BuildingBlock({ b, i }: { b: Building; i: number }) {
-  const wall = i % 2 === 0 ? "#7c828b" : "#6e767f";
+  const wall = pick(THEME.wallStone, i * 7 + 3);
   const isCrate = b.h < 2;
   if (b.door) {
     const op = doorOpening(b)!;
@@ -42,53 +79,49 @@ function BuildingBlock({ b, i }: { b: Building; i: number }) {
             receiveShadow
           >
             <boxGeometry args={[s.maxX - s.minX, b.h, s.maxZ - s.minZ]} />
-            <meshStandardMaterial color={wall} roughness={0.85} />
+            <meshStandardMaterial color={wall} roughness={0.9} />
           </mesh>
         ))}
-        {/* Roof cap (slight overhang; the LOS roof slab matches the footprint) */}
-        <mesh position={[b.x, b.h + 0.2, b.z]} castShadow>
-          <boxGeometry args={[b.w + 0.5, 0.4, b.d + 0.5]} />
-          <meshStandardMaterial color="#3f464e" roughness={0.8} />
-        </mesh>
+        <GableRoof b={b} seed={i * 7 + 3} />
         {/* Doorway markers: warm frame posts, glowing threshold, light spilling
             out — so the opening reads from down the street, not just up close. */}
         <group position={[op.cx, 0, op.cz]} rotation={[0, doorYaw, 0]}>
           <mesh position={[-(op.width / 2 + 0.12), b.h / 2, 0]} castShadow>
             <boxGeometry args={[0.24, b.h, WALL_T + 0.16]} />
-            <meshStandardMaterial color="#c9974e" roughness={0.7} />
+            <meshStandardMaterial color={THEME.wallTimber} roughness={0.7} />
           </mesh>
           <mesh position={[op.width / 2 + 0.12, b.h / 2, 0]} castShadow>
             <boxGeometry args={[0.24, b.h, WALL_T + 0.16]} />
-            <meshStandardMaterial color="#c9974e" roughness={0.7} />
+            <meshStandardMaterial color={THEME.wallTimber} roughness={0.7} />
           </mesh>
           <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
             <planeGeometry args={[op.width + 0.5, 2.6]} />
             <meshStandardMaterial
-              color="#ffc96b"
-              emissive="#ffc96b"
+              color={THEME.lantern}
+              emissive={THEME.lantern}
               emissiveIntensity={0.4}
               transparent
               opacity={0.4}
               depthWrite={false}
             />
           </mesh>
-          <pointLight position={[0, 2.4, -1.8]} intensity={6} distance={10} color="#ffd9a0" />
+          <pointLight position={[0, 2.4, -1.8]} intensity={6} distance={10} color={THEME.lantern} />
         </group>
+        {/* A hung lantern beside the door, so lit windows read at night */}
+        <mesh position={[op.cx + op.nx * 0.3 - op.nz * (op.width / 2 + 0.4), 2.1, op.cz + op.nz * 0.3 + op.nx * (op.width / 2 + 0.4)]}>
+          <boxGeometry args={[0.18, 0.26, 0.18]} />
+          <meshStandardMaterial color={THEME.lantern} emissive={THEME.lantern} emissiveIntensity={0.8} />
+        </mesh>
       </group>
     );
   }
   return (
-    <group position={[b.x, 0, b.z]}>
-      <mesh position={[0, b.h / 2, 0]} castShadow receiveShadow>
+    <group>
+      <mesh position={[b.x, b.h / 2, b.z]} castShadow receiveShadow>
         <boxGeometry args={[b.w, b.h, b.d]} />
-        <meshStandardMaterial color={isCrate ? "#8a6a44" : wall} roughness={0.85} />
+        <meshStandardMaterial color={isCrate ? THEME.wallTimber : wall} roughness={0.9} />
       </mesh>
-      {!isCrate && (
-        <mesh position={[0, b.h + 0.25, 0]} castShadow>
-          <boxGeometry args={[b.w + 0.5, 0.5, b.d + 0.5]} />
-          <meshStandardMaterial color="#3f464e" roughness={0.8} />
-        </mesh>
-      )}
+      {!isCrate && <GableRoof b={b} seed={i * 7 + 3} />}
     </group>
   );
 }
@@ -241,33 +274,85 @@ function Stall({ position, color }: { position: [number, number, number]; color:
 }
 
 /**
- * Renders the walled village from the layout data: ground, grid, perimeter
+ * Gradient sky dome (dusk) enclosing the play area. A big inside-out sphere with
+ * a two-colour vertical gradient — cheap, no texture download.
+ */
+function SkyDome() {
+  const mat = useMemo(() => {
+    return new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      depthWrite: false,
+      uniforms: {
+        top: { value: new THREE.Color(THEME.skyTop) },
+        horizon: { value: new THREE.Color(THEME.skyHorizon) },
+      },
+      vertexShader: `
+        varying vec3 vP;
+        void main() { vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+      `,
+      fragmentShader: `
+        varying vec3 vP;
+        uniform vec3 top; uniform vec3 horizon;
+        void main() {
+          float h = clamp((normalize(vP).y + 0.1) / 0.7, 0.0, 1.0);
+          gl_FragColor = vec4(mix(horizon, top, h), 1.0);
+        }
+      `,
+    });
+  }, []);
+  return (
+    <mesh material={mat} scale={[300, 300, 300]}>
+      <sphereGeometry args={[1, 32, 16]} />
+    </mesh>
+  );
+}
+
+/** Procedural ground texture (dirt + road specks) baked to a canvas — free. */
+function useGroundTexture() {
+  return useMemo(() => {
+    const s = 512;
+    const cv = document.createElement("canvas");
+    cv.width = cv.height = s;
+    const ctx = cv.getContext("2d")!;
+    ctx.fillStyle = THEME.groundBase;
+    ctx.fillRect(0, 0, s, s);
+    // Mottle with dirt + darker specks for a worn-earth read.
+    for (let i = 0; i < 5000; i++) {
+      const x = Math.random() * s;
+      const y = Math.random() * s;
+      const r = Math.random() * 3 + 0.5;
+      ctx.fillStyle = Math.random() < 0.5 ? THEME.groundDirt : THEME.groundSpeck;
+      ctx.globalAlpha = 0.15 + Math.random() * 0.35;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    const tex = new THREE.CanvasTexture(cv);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(40, 40);
+    tex.anisotropy = 4;
+    return tex;
+  }, []);
+}
+
+/**
+ * Renders the walled village from the layout data: sky, ground, perimeter
  * walls, buildings, zone beacons + labels, market stalls, and the treasure gem.
- * Gray-box materials on purpose — this is the M1 space, not the final art.
+ * Materials are procedural "dusk" theme dressing over the gray-box layout.
  */
 export function Village() {
   const m = VILLAGE.market;
+  const ground = useGroundTexture();
   return (
     <>
-      {/* Ground */}
+      <SkyDome />
+
+      {/* Ground (extends well past the play area so its edge fades into fog) */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <planeGeometry args={[HALF * 2, HALF * 2]} />
-        <meshStandardMaterial color="#5b6068" roughness={0.95} />
+        <planeGeometry args={[290, 290]} />
+        <meshStandardMaterial map={ground} color="#ffffff" roughness={1} />
       </mesh>
-      <Grid
-        args={[HALF * 2, HALF * 2]}
-        cellSize={2}
-        cellThickness={0.6}
-        cellColor="#4a505a"
-        sectionSize={12}
-        sectionThickness={1.2}
-        sectionColor="#6b7580"
-        fadeDistance={110}
-        fadeStrength={1}
-        followCamera={false}
-        infiniteGrid={false}
-        position={[0, 0.01, 0]}
-      />
 
       {/* Perimeter walls */}
       <Wall position={[0, WALL_H / 2, -HALF]} size={[HALF * 2, WALL_H, 0.6]} />
