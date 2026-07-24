@@ -13,6 +13,10 @@ export const runtime = {
   running: false,
   /** True while the player is crouched (stealth: NPCs detect at reduced range). */
   crouching: false,
+  /** True while the player is inside an enterable house (NPCs lose them). */
+  sheltered: false,
+  /** True while sitting to rest indoors (health regenerating). */
+  resting: false,
   /** Index of the hint zone the player is standing in (-1 = none). */
   nearHintIndex: -1,
   /** Whether that hint is the real one. */

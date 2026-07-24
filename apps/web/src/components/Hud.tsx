@@ -24,6 +24,7 @@ export function Hud() {
   const timerEl = useRef<HTMLDivElement>(null);
   const runEl = useRef<HTMLDivElement>(null);
   const crouchEl = useRef<HTMLDivElement>(null);
+  const shelterEl = useRef<HTMLDivElement>(null);
   const crossEl = useRef<HTMLDivElement>(null);
   const dmgEl = useRef<HTMLDivElement>(null);
   const [locked, setLocked] = useState(false);
@@ -129,6 +130,19 @@ export function Hud() {
 
       if (runEl.current) runEl.current.style.opacity = runtime.running ? "1" : "0";
       if (crouchEl.current) crouchEl.current.style.opacity = runtime.crouching ? "1" : "0";
+
+      // Shelter / rest prompt while inside a house.
+      if (shelterEl.current) {
+        if (runtime.resting) {
+          shelterEl.current.innerHTML = "resting — health recovering · <b>X</b> to stand";
+          shelterEl.current.style.opacity = "1";
+        } else if (runtime.sheltered) {
+          shelterEl.current.innerHTML = "sheltered — press <b>X</b> to sit and rest";
+          shelterEl.current.style.opacity = "1";
+        } else {
+          shelterEl.current.style.opacity = "0";
+        }
+      }
       if (dmgEl.current) {
         const since = now - runtime.damageAt;
         dmgEl.current.style.opacity = since < 450 ? String(0.55 * (1 - since / 450)) : "0";
@@ -249,6 +263,9 @@ export function Hud() {
         crouched
       </div>
 
+      {/* Shelter / rest prompt (inside a house) — text set from the game loop */}
+      <div ref={shelterEl} style={styles.shelterPill} />
+
       {/* Proximity prompt (claim / false lead) — text set from the game loop */}
       <div ref={promptEl} style={styles.prompt} />
 
@@ -264,7 +281,7 @@ export function Hud() {
           <b>G</b> hold to aim bomb, release to throw
         </div>
         <div>
-          <b>Q</b> fox sniff &nbsp;·&nbsp; <b>E</b> claim &nbsp;·&nbsp; <b>Esc</b> release mouse
+          <b>Q</b> fox sniff &nbsp;·&nbsp; <b>E</b> claim &nbsp;·&nbsp; <b>X</b> rest (indoors) &nbsp;·&nbsp; <b>Esc</b> release mouse
         </div>
       </div>
 
@@ -482,6 +499,24 @@ const styles: Record<string, React.CSSProperties> = {
     textTransform: "uppercase",
     opacity: 0,
     transition: "opacity 0.12s ease",
+    pointerEvents: "none",
+    userSelect: "none",
+  },
+  shelterPill: {
+    position: "absolute",
+    left: "50%",
+    bottom: 84,
+    transform: "translateX(-50%)",
+    padding: "5px 14px",
+    borderRadius: 999,
+    background: "rgba(90,209,122,0.12)",
+    border: "1px solid rgba(90,209,122,0.5)",
+    color: "#8fe0a8",
+    fontSize: 13,
+    letterSpacing: 0.5,
+    whiteSpace: "nowrap",
+    opacity: 0,
+    transition: "opacity 0.15s ease",
     pointerEvents: "none",
     userSelect: "none",
   },

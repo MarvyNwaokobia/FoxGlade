@@ -38,6 +38,15 @@ export const BOMB = {
   fuse: 3, // seconds before it detonates mid-air anyway (safety net)
 } as const;
 
+/**
+ * Resting indoors (§14.2): inside an enterable house you're sheltered — NPCs
+ * lose you — and can sit (X) to recover health. The round timer and the
+ * thieves' race DO keep running: shelter is a breather you pay for in clock.
+ */
+export const REST = {
+  regenPerSec: 7, // health recovered per second while sitting
+} as const;
+
 /** Blockers: the armed NPCs contesting the route (DESIGN §2). */
 export const BLOCKER = {
   health: 3, // player hits to kill

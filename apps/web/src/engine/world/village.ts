@@ -160,6 +160,22 @@ export function roofBox(b: Building): Box3 {
 
 const ENTERABLE_WALLS: Box3[] = ENTERABLES.flatMap(wallSegments);
 
+/** Interior footprints of the enterable buildings (inside the walls). */
+export const INTERIORS: Rect[] = ENTERABLES.map((b) => ({
+  minX: b.x - b.w / 2 + WALL_T,
+  maxX: b.x + b.w / 2 - WALL_T,
+  minZ: b.z - b.d / 2 + WALL_T,
+  maxZ: b.z + b.d / 2 - WALL_T,
+}));
+
+/** Is this ground position inside any enterable building (sheltered)? */
+export function insideInterior(x: number, z: number): boolean {
+  for (const r of INTERIORS) {
+    if (x >= r.minX && x <= r.maxX && z >= r.minZ && z <= r.maxZ) return true;
+  }
+  return false;
+}
+
 /**
  * AABB colliders for movement (perimeter is handled by bounds clamp): solid
  * buildings as whole footprints, enterable ones as their wall strips so you can

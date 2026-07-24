@@ -6,13 +6,13 @@ import * as THREE from "three";
 import { FEEL } from "@/engine/config/feel";
 import { runtime } from "@/engine/runtime";
 import { useKeyboard } from "@/engine/input/useKeyboard";
-import { VILLAGE, COLLIDERS, BOXES3D } from "@/engine/world/village";
+import { VILLAGE, COLLIDERS, BOXES3D, insideInterior } from "@/engine/world/village";
 import { resolveColliders, raycastBoxes } from "@/engine/world/collision";
 import { useGame } from "@/engine/store";
 import { fireHitscan, enemies } from "@/engine/combat/enemies";
 import { spawnBomb, predictLanding } from "@/engine/combat/bombs";
 import { HINTS, HINT_RADIUS, SNIFF_COOLDOWN, SNIFF_REVEAL } from "@/engine/world/hints";
-import { SESSION_SECONDS } from "@/engine/config/round";
+import { SESSION_SECONDS, REST } from "@/engine/config/round";
 
 const FIRE_INTERVAL = 0.16; // seconds between shots when holding fire
 
@@ -45,7 +45,8 @@ export function PlayerController() {
   const fireCd = useRef(0);
   const bombAim = useRef(false); // holding G: telegraph shows, release throws
   const crouching = useRef(false); // C toggles; jump stands you back up
-  const eyeH = useRef(FEEL.lookAtHeight); // eased eye height (stand ↔ crouch)
+  const resting = useRef(false); // sitting indoors (X); any movement stands up
+  const eyeH = useRef(FEEL.lookAtHeight); // eased eye height (stand ↔ crouch ↔ sit)
 
   // Interaction keys: E claim (only at the real hint), R respawn, F fire,
   // Q fox-sniff (reveals the real hint on a cooldown).
@@ -67,6 +68,16 @@ export function PlayerController() {
       }
       if (e.code === "KeyF") fireHeld.current = true; // keyboard fire (hold to auto-fire)
       if (e.code === "KeyC" && !e.repeat) crouching.current = !crouching.current;
+      if (e.code === "KeyX" && !e.repeat) {
+        // Sit to rest — only indoors, and standing back up is always allowed.
+        if (resting.current) resting.current = false;
+        else if (runtime.sheltered && useGame.getState().roundState === "playing" && !useGame.getState().isDead) {
+          resting.current = true;
+          crouching.current = false;
+          fireHeld.current = false;
+          bombAim.current = false;
+        }
+      }
       if (e.code === "KeyG" && !e.repeat) {
         // Start aiming a bomb throw (needs the mouse captured, a bomb, live play).
         const st = useGame.getState();
@@ -120,6 +131,7 @@ export function PlayerController() {
     pos.current.copy(VILLAGE.spawn);
     vel.current.set(0, 0, 0);
     crouching.current = false;
+    resting.current = false;
   }, [respawnNonce]);
 
   // Mouse look via pointer lock; left-click fires once the mouse is captured.
@@ -181,6 +193,17 @@ export function PlayerController() {
     if (k.right) wish.add(right);
     if (k.left) wish.sub(right);
 
+    // Shelter + rest bookkeeping. Moving (or leaving the house) stands you up.
+    runtime.sheltered = insideInterior(pos.current.x, pos.current.z);
+    if (resting.current && (wish.lengthSq() > 0 || k.jump || frozen || !runtime.sheltered)) {
+      resting.current = false;
+    }
+    runtime.resting = resting.current;
+    if (resting.current) {
+      wish.set(0, 0, 0); // seated: no locomotion until you stand
+      useGame.getState().healPlayer(REST.regenPerSec * dt);
+    }
+
     const moving = wish.lengthSq() > 0 && !frozen;
     runtime.running = moving && k.run && !crouching.current;
     runtime.crouching = crouching.current;
@@ -238,13 +261,17 @@ export function PlayerController() {
     pos.current.x = THREE.MathUtils.clamp(pos.current.x, -lim, lim);
     pos.current.z = THREE.MathUtils.clamp(pos.current.z, -lim, lim);
 
-    // Apply to the visible body (squashing the capsule while crouched).
-    const eyeTarget = crouching.current ? FEEL.crouchEyeHeight : FEEL.lookAtHeight;
+    // Apply to the visible body (squashing the capsule while crouched/seated).
+    const eyeTarget = resting.current ? 0.75 : crouching.current ? FEEL.crouchEyeHeight : FEEL.lookAtHeight;
     eyeH.current += (eyeTarget - eyeH.current) * Math.min(1, FEEL.crouchLerp * dt);
     if (body.current) {
       body.current.position.copy(pos.current);
       body.current.rotation.y = bodyRot.current;
-      const scaleTarget = crouching.current ? FEEL.crouchHeight / FEEL.playerHeight : 1;
+      let scaleTarget = crouching.current ? FEEL.crouchHeight / FEEL.playerHeight : 1;
+      if (resting.current) {
+        // Seated, with a slow visible breathing rise-and-fall.
+        scaleTarget = 0.52 + Math.sin(performance.now() / 480) * 0.015;
+      }
       body.current.scale.y += (scaleTarget - body.current.scale.y) * Math.min(1, FEEL.crouchLerp * dt);
     }
     // Contact shadow stays flat on the ground under the player (even mid-jump).
@@ -312,6 +339,10 @@ export function PlayerController() {
     camBase.current.lerp(desired, Math.min(1, FEEL.cameraLerp * dt));
     camera.position.copy(camBase.current);
 
+    // In tight interiors the camera pulls right up to the shoulder (near-first-
+    // person). Hide the capsule at that range so it doesn't fill the screen.
+    if (body.current) body.current.visible = camBase.current.distanceTo(head) > FEEL.bodyHideDistance;
+
     // Damage shake + stagger tilt, decaying over shakeDuration.
     const shakeT = (performance.now() - runtime.damageAt) / (FEEL.shakeDuration * 1000);
     let roll = 0;
@@ -335,8 +366,9 @@ export function PlayerController() {
     cam.updateProjectionMatrix();
 
     // Fire (hold left-click or F) — uses the just-updated camera aim.
+    // Not while seated: resting is calm, stand (X / move) to fight again.
     fireCd.current -= dt;
-    if (fireHeld.current && document.pointerLockElement && !frozen && fireCd.current <= 0) {
+    if (fireHeld.current && document.pointerLockElement && !frozen && !resting.current && fireCd.current <= 0) {
       fireCd.current = FIRE_INTERVAL;
       const hit = fireHitscan(camera);
       runtime.fireAt = performance.now();

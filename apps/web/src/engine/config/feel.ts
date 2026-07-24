@@ -35,7 +35,8 @@ export const FEEL = {
   cameraHeight: 2.6, // (unused by the shoulder cam; kept for reference)
   cameraShoulder: 0.9, // over-the-shoulder side offset, so the player isn't on the crosshair
   cameraMinHeight: 0.8, // camera never dips below this, so you can't see under the world
-  cameraMinDistance: 2.4, // closest the camera pulls to the player on collision (avoids face-cam)
+  cameraMinDistance: 0.55, // closest the camera pulls in on collision — near-first-person in tight interiors
+  bodyHideDistance: 1.0, // hide the player capsule when the camera is closer than this (it'd fill the screen)
   cameraCollisionBuffer: 0.3, // gap kept in front of a wall the camera pulls up to
 
   // --- Damage feedback (screen shake + stagger tilt) ---

@@ -28,6 +28,7 @@ interface GameState {
   /** Bumped on respawn so the controller can reset the player's position. */
   respawnNonce: number;
   damagePlayer: (amount: number) => void;
+  healPlayer: (amount: number) => void;
   respawn: () => void;
 
   /** Round lifecycle. `timeLeft` lives in `runtime` (per-frame); this is the state. */
@@ -64,6 +65,11 @@ export const useGame = create<GameState>((set, get) => ({
       if (s.isDead || s.roundState !== "playing") return s;
       const next = Math.max(0, s.playerHealth - amount);
       return { playerHealth: next, isDead: next <= 0 };
+    }),
+  healPlayer: (amount) =>
+    set((s) => {
+      if (s.isDead || s.roundState !== "playing") return s;
+      return { playerHealth: Math.min(s.maxPlayerHealth, s.playerHealth + amount) };
     }),
   respawn: () => set((s) => ({ playerHealth: MAX_PLAYER_HEALTH, isDead: false, respawnNonce: s.respawnNonce + 1 })),
 
