@@ -11,6 +11,8 @@ import { resolveColliders, raycastBoxes } from "@/engine/world/collision";
 import { useGame } from "@/engine/store";
 import { fireHitscan, enemies } from "@/engine/combat/enemies";
 
+const FIRE_INTERVAL = 0.16; // seconds between shots when holding fire
+
 function lerpAngle(a: number, b: number, t: number) {
   let diff = b - a;
   while (diff > Math.PI) diff -= Math.PI * 2;
@@ -35,6 +37,8 @@ export function PlayerController() {
   const pitch = useRef(0.35);
   const bodyRot = useRef(VILLAGE.spawnYaw);
   const grounded = useRef(true);
+  const fireHeld = useRef(false);
+  const fireCd = useRef(0);
 
   // Point the HUD compass at the real treasure zone once on mount, and wire the
   // placeholder "claim" key (the real on-chain mint arrives at M3).
@@ -47,9 +51,17 @@ export function PlayerController() {
       if (e.code === "KeyR" && useGame.getState().isDead) {
         useGame.getState().respawn();
       }
+      if (e.code === "KeyF") fireHeld.current = true; // keyboard fire (hold to auto-fire)
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code === "KeyF") fireHeld.current = false;
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKeyUp);
+    };
   }, []);
 
   // On respawn, return the player to the spawn point.
@@ -67,11 +79,10 @@ export function PlayerController() {
         canvas.requestPointerLock();
         return;
       }
-      if (e.button === 0 && !useGame.getState().isDead) {
-        const hit = fireHitscan(camera);
-        runtime.fireAt = performance.now();
-        if (hit) runtime.hitAt = performance.now();
-      }
+      if (e.button === 0) fireHeld.current = true; // hold to auto-fire
+    };
+    const onUp = (e: MouseEvent) => {
+      if (e.button === 0) fireHeld.current = false;
     };
     const onMove = (e: MouseEvent) => {
       if (document.pointerLockElement !== canvas) return;
@@ -82,11 +93,18 @@ export function PlayerController() {
         FEEL.pitchMax
       );
     };
+    const onLockChange = () => {
+      if (document.pointerLockElement !== canvas) fireHeld.current = false; // stop firing when unfocused
+    };
     canvas.addEventListener("mousedown", onDown);
+    window.addEventListener("mouseup", onUp);
     window.addEventListener("mousemove", onMove);
+    document.addEventListener("pointerlockchange", onLockChange);
     return () => {
       canvas.removeEventListener("mousedown", onDown);
+      window.removeEventListener("mouseup", onUp);
       window.removeEventListener("mousemove", onMove);
+      document.removeEventListener("pointerlockchange", onLockChange);
     };
   }, [gl, camera]);
 
@@ -214,6 +232,15 @@ export function PlayerController() {
     const targetFov = FEEL.baseFov + (runtime.running ? FEEL.runFovKick : 0);
     cam.fov += (targetFov - cam.fov) * Math.min(1, FEEL.fovLerp * dt);
     cam.updateProjectionMatrix();
+
+    // Fire (hold left-click or F) — uses the just-updated camera aim.
+    fireCd.current -= dt;
+    if (fireHeld.current && document.pointerLockElement && !useGame.getState().isDead && fireCd.current <= 0) {
+      fireCd.current = FIRE_INTERVAL;
+      const hit = fireHitscan(camera);
+      runtime.fireAt = performance.now();
+      if (hit) runtime.hitAt = performance.now();
+    }
   });
 
   const h = FEEL.playerHeight;

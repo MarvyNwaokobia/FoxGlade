@@ -60,9 +60,11 @@ export function Hud() {
         const now = performance.now();
         const firing = now - runtime.fireAt < 90;
         const hitting = now - runtime.hitAt < 160;
-        crossEl.current.style.transform = `translate(-50%, -50%) scale(${firing ? 1.4 : 1})`;
-        crossEl.current.style.background = hitting ? "#ff5a5a" : "#e8eef2";
-        crossEl.current.style.boxShadow = hitting ? "0 0 0 3px rgba(255,90,90,0.35)" : "none";
+        crossEl.current.style.transform = `translate(-50%, -50%) scale(${firing ? 1.5 : 1})`;
+        crossEl.current.style.background = hitting ? "#ff5a5a" : "#ffffff";
+        crossEl.current.style.boxShadow = hitting
+          ? "0 0 0 2px rgba(0,0,0,0.6), 0 0 0 5px rgba(255,90,90,0.5)"
+          : "0 0 0 2px rgba(0,0,0,0.6)";
       }
       if (treasureEl.current) {
         if (runtime.nearTreasure && !useGame.getState().treasureClaimed) {
@@ -146,7 +148,7 @@ export function Hud() {
           <b>Shift</b> run &nbsp;·&nbsp; <b>Space</b> jump
         </div>
         <div style={styles.row}>
-          <b>Mouse</b> look &nbsp;·&nbsp; <b>Left-click</b> shoot
+          <b>Mouse</b> look &nbsp;·&nbsp; <b>Left-click</b> / <b>F</b> shoot
         </div>
         <div style={styles.row}>
           <b>Esc</b> release mouse
@@ -242,10 +244,11 @@ const styles: Record<string, React.CSSProperties> = {
     left: "50%",
     top: "50%",
     transform: "translate(-50%, -50%)",
-    width: 7,
-    height: 7,
+    width: 6,
+    height: 6,
     borderRadius: "50%",
-    background: "#e8eef2",
+    background: "#ffffff",
+    boxShadow: "0 0 0 2px rgba(0,0,0,0.6)",
     transition: "transform 0.06s ease, background 0.06s ease",
     pointerEvents: "none",
   },
