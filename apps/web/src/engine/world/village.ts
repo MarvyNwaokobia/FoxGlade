@@ -181,12 +181,18 @@ export const INTERIORS: Rect[] = ENTERABLES.map((b) => ({
   maxZ: b.z + b.d / 2 - WALL_T,
 }));
 
+/** Index (into ENTERABLES/INTERIORS) of the enterable building at this position, or -1. */
+export function interiorIndexAt(x: number, z: number): number {
+  for (let i = 0; i < INTERIORS.length; i++) {
+    const r = INTERIORS[i];
+    if (x >= r.minX && x <= r.maxX && z >= r.minZ && z <= r.maxZ) return i;
+  }
+  return -1;
+}
+
 /** Is this ground position inside any enterable building (sheltered)? */
 export function insideInterior(x: number, z: number): boolean {
-  for (const r of INTERIORS) {
-    if (x >= r.minX && x <= r.maxX && z >= r.minZ && z <= r.maxZ) return true;
-  }
-  return false;
+  return interiorIndexAt(x, z) >= 0;
 }
 
 /**

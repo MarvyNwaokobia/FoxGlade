@@ -15,6 +15,9 @@ export const runtime = {
   crouching: false,
   /** True while the player is inside an enterable house (NPCs lose them). */
   sheltered: false,
+  /** Index (into ENTERABLES) of the house the player is inside, or -1. Drives
+   *  the realistic-exterior ↔ interior swap. */
+  shelterIndex: -1,
   /** True while sitting to rest indoors (health regenerating). */
   resting: false,
   /** True while standing at the bank's vault pad (E deposits carried loot). */

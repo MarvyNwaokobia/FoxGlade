@@ -4,10 +4,10 @@ import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Html, useTexture } from "@react-three/drei";
 import * as THREE from "three";
-import { BUILDINGS, VILLAGE, wallSegments, doorOpening, WALL_T, type Building } from "./village";
+import { BUILDINGS, ENTERABLES, VILLAGE, wallSegments, doorOpening, WALL_T, type Building } from "./village";
 import { HINTS } from "./hints";
 import { THEME } from "./theme";
-import { Buildings3D } from "./Buildings3D";
+import { Buildings3D, BuildingModel, chooseModel } from "./Buildings3D";
 import { useGame } from "@/engine/store";
 import { runtime } from "@/engine/runtime";
 
@@ -174,6 +174,63 @@ function BuildingBlock({ b, mats }: { b: Building; mats: VillageMaterials }) {
         <boxGeometry args={[b.w, b.h, b.d]} />
       </mesh>
       {!isCrate && <GableRoof b={b} mat={mats.roof} />}
+    </group>
+  );
+}
+
+/**
+ * An enterable house (§14.2), realistic exterior + swap-on-enter (Marvy's call):
+ * outside you see a realistic CC-BY building model; when you cross the doorway
+ * (shelterIndex === this house) the exterior hides and the furnished stone
+ * interior shows, keeping the seamless walk-in + world-pause. Collision comes
+ * from the wall strips in COLLIDERS, so entry works regardless of the model.
+ */
+function EnterableHouse({ b, eIndex, mats }: { b: Building; eIndex: number; mats: VillageMaterials }) {
+  const op = doorOpening(b)!;
+  const doorYaw = Math.atan2(op.nx, op.nz);
+  const interior = useRef<THREE.Group>(null);
+  useFrame(() => {
+    if (interior.current) interior.current.visible = runtime.shelterIndex === eIndex;
+  });
+
+  // The bank house uses the grand stone hall; others pick by size.
+  const bank =
+    VILLAGE.bank.x >= b.x - b.w / 2 &&
+    VILLAGE.bank.x <= b.x + b.w / 2 &&
+    VILLAGE.bank.z >= b.z - b.d / 2 &&
+    VILLAGE.bank.z <= b.z + b.d / 2;
+  const model = bank ? "hall" : chooseModel(b, eIndex);
+
+  return (
+    <group>
+      {/* Realistic exterior (hidden while you're inside) */}
+      <BuildingModel b={b} model={model} seed={eIndex + 3} hideForShelterIndex={eIndex} />
+
+      {/* Furnished stone interior walls + roof (shown only while inside) */}
+      <group ref={interior} visible={false}>
+        {wallSegments(b).map((s, j) => (
+          <mesh
+            key={j}
+            material={mats.wall}
+            position={[(s.minX + s.maxX) / 2, b.h / 2, (s.minZ + s.maxZ) / 2]}
+            castShadow
+            receiveShadow
+          >
+            <boxGeometry args={[s.maxX - s.minX, b.h, s.maxZ - s.minZ]} />
+          </mesh>
+        ))}
+        <GableRoof b={b} mat={mats.roof} />
+      </group>
+
+      {/* Door cue (always): a glowing threshold pad so the entrance reads from
+          outside even though the exterior model is solid. */}
+      <group position={[op.cx, 0, op.cz]} rotation={[0, doorYaw, 0]}>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, -0.6]}>
+          <planeGeometry args={[op.width + 0.4, 1.8]} />
+          <meshBasicMaterial color={THEME.lantern} transparent opacity={0.35} depthWrite={false} />
+        </mesh>
+        <pointLight position={[0, 2.2, -1.2]} intensity={5} distance={9} color={THEME.lantern} />
+      </group>
     </group>
   );
 }
@@ -347,14 +404,16 @@ export function Village() {
       <Wall position={[-HALF, WALL_H / 2, 0]} size={[0.6, WALL_H, HALF * 2]} mat={mats.wall} />
       <Wall position={[HALF, WALL_H / 2, 0]} size={[0.6, WALL_H, HALF * 2]} mat={mats.wall} />
 
-      {/* Solid buildings → realistic CC-BY models; enterable houses + crates
-          stay on the box system (doorways, interiors, bank still work). */}
+      {/* Solid buildings → realistic CC-BY models */}
       <Buildings3D
         buildings={BUILDINGS.map((b, i) => ({ b, i })).filter(({ b }) => !b.door && b.h >= 2)}
       />
-      {BUILDINGS.map((b, i) =>
-        b.door || b.h < 2 ? <BuildingBlock key={i} b={b} mats={mats} /> : null
-      )}
+      {/* Enterable houses → realistic exterior with swap-on-enter interior */}
+      {ENTERABLES.map((b, e) => (
+        <EnterableHouse key={`e${e}`} b={b} eIndex={e} mats={mats} />
+      ))}
+      {/* Crates → small timber boxes */}
+      {BUILDINGS.map((b, i) => (!b.door && b.h < 2 ? <BuildingBlock key={`c${i}`} b={b} mats={mats} /> : null))}
 
       {/* Market district */}
       <Zone position={[m.x, 0, m.z]} color="#4e93f2" radius={4} />

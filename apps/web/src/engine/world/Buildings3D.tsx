@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { useGLTF } from "@react-three/drei";
+import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { type Building } from "./village";
+import { runtime } from "@/engine/runtime";
 
 /**
  * Realistic building models (CC-BY) placed on the village layout. Each solid
@@ -18,7 +20,7 @@ const MODELS = {
 } as const;
 Object.values(MODELS).forEach((u) => useGLTF.preload(u));
 
-type ModelKey = keyof typeof MODELS;
+export type ModelKey = keyof typeof MODELS;
 
 /** Pick a model for a solid building by its size, varied by index. */
 export function chooseModel(b: Building, i: number): ModelKey {
@@ -28,8 +30,24 @@ export function chooseModel(b: Building, i: number): ModelKey {
   return i % 3 === 0 ? "tavern" : "house";
 }
 
-function BuildingModel({ b, model, seed }: { b: Building; model: ModelKey; seed: number }) {
+/**
+ * A realistic building model fitted to a building footprint and grounded.
+ * `hideForShelterIndex` (optional): when the player is inside that enterable
+ * house, this exterior hides so the furnished interior shows (swap-on-enter).
+ */
+export function BuildingModel({
+  b,
+  model,
+  seed,
+  hideForShelterIndex,
+}: {
+  b: Building;
+  model: ModelKey;
+  seed: number;
+  hideForShelterIndex?: number;
+}) {
   const { scene } = useGLTF(MODELS[model]);
+  const grp = useRef<THREE.Group>(null);
 
   const { obj, rotY, scale } = useMemo(() => {
     const o = scene.clone(true);
@@ -56,8 +74,14 @@ function BuildingModel({ b, model, seed }: { b: Building; model: ModelKey; seed:
     return { obj: o, rotY: ry, scale: s };
   }, [scene, b.w, b.d, seed]);
 
+  // Swap-on-enter: hide this exterior while the player is inside this house.
+  useFrame(() => {
+    if (hideForShelterIndex === undefined || !grp.current) return;
+    grp.current.visible = runtime.shelterIndex !== hideForShelterIndex;
+  });
+
   return (
-    <group position={[b.x, 0, b.z]} rotation={[0, rotY, 0]} scale={scale}>
+    <group ref={grp} position={[b.x, 0, b.z]} rotation={[0, rotY, 0]} scale={scale}>
       <primitive object={obj} />
     </group>
   );

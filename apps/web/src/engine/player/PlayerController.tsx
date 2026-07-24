@@ -6,7 +6,7 @@ import * as THREE from "three";
 import { FEEL } from "@/engine/config/feel";
 import { runtime } from "@/engine/runtime";
 import { useKeyboard } from "@/engine/input/useKeyboard";
-import { VILLAGE, COLLIDERS, BOXES3D, insideInterior } from "@/engine/world/village";
+import { VILLAGE, COLLIDERS, BOXES3D, interiorIndexAt } from "@/engine/world/village";
 import { resolveColliders, raycastBoxes } from "@/engine/world/collision";
 import { useGame } from "@/engine/store";
 import { fireHitscan, enemies } from "@/engine/combat/enemies";
@@ -210,7 +210,8 @@ export function PlayerController() {
     if (k.left) wish.sub(right);
 
     // Shelter + rest bookkeeping. Moving (or leaving the house) stands you up.
-    runtime.sheltered = insideInterior(pos.current.x, pos.current.z);
+    runtime.shelterIndex = interiorIndexAt(pos.current.x, pos.current.z);
+    runtime.sheltered = runtime.shelterIndex >= 0;
     if (resting.current && (wish.lengthSq() > 0 || k.jump || frozen || !runtime.sheltered)) {
       resting.current = false;
     }
