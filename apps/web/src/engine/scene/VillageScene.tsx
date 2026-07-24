@@ -18,7 +18,13 @@ import { useGame } from "@/engine/store";
  * Lighting rig + the village. Kept separate from the world geometry so the
  * lights/atmosphere can be tuned without touching the layout.
  */
-export function VillageScene({ mobile = false }: { mobile?: boolean }) {
+export function VillageScene({
+  bloom = true,
+  shadowSize = 2048,
+}: {
+  bloom?: boolean;
+  shadowSize?: number;
+}) {
   // Remount all NPCs on restart (revives blockers, distractors, thief).
   const roundNonce = useGame((s) => s.roundNonce);
   return (
@@ -34,7 +40,7 @@ export function VillageScene({ mobile = false }: { mobile?: boolean }) {
         color={THEME.sunColor}
         intensity={2.1}
         castShadow
-        shadow-mapSize={mobile ? [1024, 1024] : [2048, 2048]}
+        shadow-mapSize={[shadowSize, shadowSize]}
         shadow-camera-left={-50}
         shadow-camera-right={50}
         shadow-camera-top={50}
@@ -54,9 +60,9 @@ export function VillageScene({ mobile = false }: { mobile?: boolean }) {
       </group>
       <Projectiles />
       <Bombs />
-      {/* Post-processing (bloom + vignette) is a heavy full-screen pass — skip it
-          on mobile where the framerate can't afford it. */}
-      {!mobile && <PostFX />}
+      {/* Post-processing (bloom + vignette) is a heavy full-screen pass — gated
+          by the quality setting (off on Low/Med, on for High). */}
+      {bloom && <PostFX />}
     </>
   );
 }
