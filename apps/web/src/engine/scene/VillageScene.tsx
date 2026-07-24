@@ -8,6 +8,7 @@ import { Environment } from "@react-three/drei";
 import { Projectiles } from "@/engine/combat/ProjectileLayer";
 import { Bombs } from "@/engine/combat/BombLayer";
 import { Interiors } from "@/engine/world/Interiors";
+import { Props } from "@/engine/world/Props";
 import { THEME } from "@/engine/world/theme";
 import { useGame } from "@/engine/store";
 
@@ -42,6 +43,7 @@ export function VillageScene() {
       />
       <Village />
       <Interiors />
+      <Props />
       <group key={roundNonce}>
         <Blockers />
         <Distractors />
