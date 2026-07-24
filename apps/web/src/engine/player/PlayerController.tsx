@@ -198,6 +198,7 @@ export function PlayerController() {
     runtime.nearHintIsReal = false;
     for (let i = 0; i < HINTS.length; i++) {
       const h = HINTS[i];
+      if (!h.real && runtime.hintSilenced[i]) continue; // silenced decoy is gone
       if (Math.hypot(h.pos.x - pos.current.x, h.pos.z - pos.current.z) < HINT_RADIUS) {
         runtime.nearHintIndex = i;
         runtime.nearHintIsReal = h.real;

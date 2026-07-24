@@ -2,6 +2,7 @@
 
 import { Village } from "@/engine/world/VillageMesh";
 import { Blockers } from "@/engine/npc/Blockers";
+import { Distractors } from "@/engine/npc/Distractors";
 import { Projectiles } from "@/engine/combat/ProjectileLayer";
 
 /**
@@ -28,6 +29,7 @@ export function VillageScene() {
       />
       <Village />
       <Blockers />
+      <Distractors />
       <Projectiles />
     </>
   );

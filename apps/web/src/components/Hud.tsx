@@ -55,7 +55,7 @@ export function Hud() {
         const el = arrows.current[i];
         if (!el) continue;
         const h = HINTS[i];
-        if (h.real && isClaimed) {
+        if ((h.real && isClaimed) || (!h.real && runtime.hintSilenced[i])) {
           el.style.opacity = "0";
           continue;
         }

@@ -107,12 +107,15 @@ const HINT_FAKE = "#7a4a4a"; // dim — revealed decoy
  */
 function HintBeacon({ index }: { index: number }) {
   const hint = HINTS[index];
+  const grp = useRef<THREE.Group>(null);
   const pad = useRef<THREE.MeshStandardMaterial>(null);
   const pillar = useRef<THREE.MeshStandardMaterial>(null);
   const gem = useRef<THREE.Group>(null);
   const claimed = useGame((s) => s.treasureClaimed);
 
   useFrame((_, dt) => {
+    // A decoy vanishes once its distractor is silenced.
+    if (grp.current) grp.current.visible = !(!hint.real && runtime.hintSilenced[index]);
     const revealed = performance.now() < runtime.revealRealUntil;
     const c = revealed ? (hint.real ? HINT_REAL : HINT_FAKE) : HINT_DEFAULT;
     if (pad.current) {
@@ -134,7 +137,7 @@ function HintBeacon({ index }: { index: number }) {
   if (hint.real && claimed) return null; // the real treasure is gone once claimed
 
   return (
-    <group position={[hint.pos.x, 0, hint.pos.z]}>
+    <group ref={grp} position={[hint.pos.x, 0, hint.pos.z]}>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
         <circleGeometry args={[3, 40]} />
         <meshStandardMaterial ref={pad} color={HINT_DEFAULT} emissive={HINT_DEFAULT} emissiveIntensity={0.6} transparent opacity={0.5} />

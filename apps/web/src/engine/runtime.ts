@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { HINTS } from "./world/hints";
 
 /**
  * A tiny mutable singleton the game loop writes every frame and the DOM HUD
@@ -18,6 +19,8 @@ export const runtime = {
   revealRealUntil: -1,
   /** performance.now when the fox can sniff again (cooldown gate). */
   sniffReadyAt: 0,
+  /** Per-hint: true once its distractor is silenced (decoy removed). */
+  hintSilenced: HINTS.map(() => false),
   /** Timestamps (performance.now) for crosshair feedback. */
   fireAt: -1,
   hitAt: -1,
