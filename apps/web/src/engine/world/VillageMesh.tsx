@@ -358,29 +358,14 @@ export function Village() {
       <Stall position={[m.x + 3, 0, m.z + 1]} color="#3b7cc0" />
       <Stall position={[m.x, 0, m.z + 3]} color="#c0a13b" />
 
-      {/* Bank — the enterable house on the plaza; vault pad + chest inside.
-          Walk in (world pauses), stand on the pad, E deposits carried loot. */}
+      {/* Bank — the enterable house on the plaza. The real vault chest + shelves
+          are furnished in <Interiors>; here we keep the glowing deposit pad and
+          the label. Walk in (world pauses), stand on the pad, E deposits loot. */}
       <ZoneLabel position={[-26, 7.5, -3]} text="Bank" color="#ffd873" />
-      <group position={[VILLAGE.bank.x, 0, VILLAGE.bank.z]}>
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
-          <circleGeometry args={[1.5, 32]} />
-          <meshStandardMaterial
-            color="#ffd873"
-            emissive="#ffd873"
-            emissiveIntensity={0.45}
-            transparent
-            opacity={0.5}
-          />
-        </mesh>
-        <mesh position={[0, 0.55, -0.9]} castShadow>
-          <boxGeometry args={[1.4, 1.1, 0.9]} />
-          <meshStandardMaterial color="#3a4048" roughness={0.4} metalness={0.5} />
-        </mesh>
-        <mesh position={[0, 0.55, -0.44]}>
-          <boxGeometry args={[0.5, 0.5, 0.03]} />
-          <meshStandardMaterial color="#ffd873" emissive="#ffd873" emissiveIntensity={0.4} metalness={0.6} />
-        </mesh>
-      </group>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[VILLAGE.bank.x, 0.04, VILLAGE.bank.z]}>
+        <ringGeometry args={[1.1, 1.5, 32]} />
+        <meshStandardMaterial color="#ffd873" emissive="#ffd873" emissiveIntensity={0.5} transparent opacity={0.6} />
+      </mesh>
 
       {/* Treasure hints — several candidate pings, only one real (no label: the
           whole point is you don't know which). The fox's sniff reveals it. */}
