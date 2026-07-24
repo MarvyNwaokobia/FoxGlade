@@ -7,7 +7,7 @@ import { Blocker } from "./Blocker";
  * every route to a treasure is contested. Tuned against the village layout.
  */
 const BLOCKER_SPAWNS: [number, number, number][] = [
-  [1.8, 0, 17], // mouth of the gate corridor
+  [3, 0, 10], // past the gate corridor (deep enough not to camp the spawn)
   [0, 0, -2], // central crossroads
   [-20, 0, 3], // market plaza lurker
   [17.5, 0, -12], // shallow-treasure courtyard approach

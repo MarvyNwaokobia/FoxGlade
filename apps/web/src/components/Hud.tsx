@@ -37,6 +37,8 @@ export function Hud() {
   const bombsLeft = useGame((s) => s.bombsLeft);
   const treasureCracked = useGame((s) => s.treasureCracked);
   const claimedRarity = useGame((s) => s.claimedRarity);
+  const villeCarrying = useGame((s) => s.villeCarrying);
+  const villeBanked = useGame((s) => s.villeBanked);
 
   useEffect(() => {
     const onLockChange = () => setLocked(!!document.pointerLockElement);
@@ -154,17 +156,26 @@ export function Hud() {
         }
       }
 
-      // Shelter / rest prompt while inside a house.
+      // Shelter / rest prompt while inside a house (the world is paused here).
       if (shelterEl.current) {
-        if (runtime.resting) {
-          shelterEl.current.innerHTML = "resting — health recovering · <b>X</b> to stand";
+        const canBank = runtime.nearBank && useGame.getState().villeCarrying > 0;
+        if (canBank) {
+          shelterEl.current.innerHTML = "at the vault — press <b>E</b> to deposit your loot";
+          shelterEl.current.style.opacity = "1";
+        } else if (runtime.resting) {
+          shelterEl.current.innerHTML = "resting — world paused · health recovering · <b>X</b> to stand";
           shelterEl.current.style.opacity = "1";
         } else if (runtime.sheltered) {
-          shelterEl.current.innerHTML = "sheltered — press <b>X</b> to sit and rest";
+          shelterEl.current.innerHTML = "indoors — world paused · <b>X</b> to sit and rest";
           shelterEl.current.style.opacity = "1";
         } else {
           shelterEl.current.style.opacity = "0";
         }
+      }
+
+      // Dim the countdown while indoors to signal it's frozen.
+      if (timerEl.current) {
+        timerEl.current.style.opacity = runtime.sheltered ? "0.4" : "1";
       }
       if (dmgEl.current) {
         const since = now - runtime.damageAt;
@@ -208,6 +219,12 @@ export function Hud() {
       {/* Bomb count, beside the health bar */}
       <div style={{ ...styles.bombPill, opacity: bombsLeft > 0 ? 1 : 0.35 }}>💣 ×{bombsLeft}</div>
 
+      {/* Loot wallet, top-left: banked total + what you're carrying (unbanked) */}
+      <div style={styles.wallet}>
+        <div style={styles.walletBanked}>🏦 {villeBanked} VILLE</div>
+        {villeCarrying > 0 && <div style={styles.walletCarry}>◆ carrying {villeCarrying} — bank it</div>}
+      </div>
+
       {/* Countdown timer, top-right */}
       <div style={styles.timer}>
         <div ref={timerEl} style={styles.timerNum}>
@@ -241,6 +258,11 @@ export function Hud() {
                 ? "Thieves took every treasure"
                 : "Time's up"}
           </div>
+          {villeCarrying > 0 && (
+            <div style={styles.roundLoot}>
+              carrying {villeCarrying} VILLE — bank it at the vault next run · {villeBanked} safe
+            </div>
+          )}
           <div style={styles.roundHint}>
             press <b>Enter</b> to play again
           </div>
@@ -406,6 +428,7 @@ const styles: Record<string, React.CSSProperties> = {
     userSelect: "none",
   },
   roundTitle: { fontSize: 44, fontWeight: 800, letterSpacing: 1, textAlign: "center" },
+  roundLoot: { fontSize: 15, color: "#aef2cb", letterSpacing: 0.3 },
   roundHint: { fontSize: 17, color: "rgba(232,238,242,0.85)" },
   sniffPill: {
     marginTop: 8,
@@ -440,6 +463,26 @@ const styles: Record<string, React.CSSProperties> = {
     userSelect: "none",
   },
   healthFill: { position: "absolute", left: 0, top: 0, bottom: 0, transition: "width 0.15s ease, background 0.2s ease" },
+  wallet: {
+    position: "absolute",
+    top: 16,
+    left: 20,
+    pointerEvents: "none",
+    userSelect: "none",
+  },
+  walletBanked: {
+    fontSize: 16,
+    fontWeight: 700,
+    color: "#ffd873",
+    letterSpacing: 0.5,
+    fontVariantNumeric: "tabular-nums",
+  },
+  walletCarry: {
+    marginTop: 3,
+    fontSize: 12,
+    color: "#aef2cb",
+    letterSpacing: 0.3,
+  },
   bombPill: {
     position: "absolute",
     left: "calc(50% + 132px)",

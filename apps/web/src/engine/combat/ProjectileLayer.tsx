@@ -15,11 +15,14 @@ export function Projectiles() {
 
   useFrame((_, rawDt) => {
     const dt = Math.min(rawDt, 1 / 30);
-    stepProjectiles(dt, () => {
-      if (useGame.getState().isDead) return;
-      useGame.getState().damagePlayer(BLOCKER.shotDamage);
-      runtime.damageAt = performance.now();
-    });
+    if (!runtime.sheltered) {
+      // (Player indoors = world paused; shots hang mid-air until they step out.)
+      stepProjectiles(dt, () => {
+        if (useGame.getState().isDead) return;
+        useGame.getState().damagePlayer(BLOCKER.shotDamage);
+        runtime.damageAt = performance.now();
+      });
+    }
 
     const mesh = ref.current;
     if (!mesh) return;

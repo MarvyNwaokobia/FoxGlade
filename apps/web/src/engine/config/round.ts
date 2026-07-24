@@ -39,12 +39,19 @@ export const BOMB = {
 } as const;
 
 /**
- * Resting indoors (§14.2): inside an enterable house you're sheltered — NPCs
- * lose you — and can sit (X) to recover health. The round timer and the
- * thieves' race DO keep running: shelter is a breather you pay for in clock.
+ * Resting indoors (§14.2, revised by Marvy): stepping inside an enterable
+ * house PAUSES the world — timer, thieves, blockers, projectiles all freeze.
+ * Sit (X) to recover health, walk out to resume the hunt exactly where it was.
  */
 export const REST = {
   regenPerSec: 7, // health recovered per second while sitting
+} as const;
+
+/** Placeholder loot values until VilleToken is live (per treasure rarity). */
+export const LOOT = {
+  rare: 300,
+  common: 100,
+  scrap: 25, // a cracked common
 } as const;
 
 /** Blockers: the armed NPCs contesting the route (DESIGN §2). */

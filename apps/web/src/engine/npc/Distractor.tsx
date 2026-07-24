@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { Html } from "@react-three/drei";
 import { enemies, type Enemy } from "@/engine/combat/enemies";
@@ -9,6 +10,7 @@ import { runtime } from "@/engine/runtime";
 const MAX_HEALTH = 2;
 const BODY_H = 1.8;
 const BODY_R = 0.42;
+const BUBBLE_RANGE = 22; // fake-dialogue bubble only shows within earshot
 
 const LINES = [
   "The treasure's this way, friend!",
@@ -33,6 +35,20 @@ export function Distractor({
   const [flash, setFlash] = useState(false);
   const dead = health <= 0;
   const line = useRef(LINES[hintIndex % LINES.length]);
+
+  // The lie is spoken, not broadcast: only render the bubble within earshot
+  // (drei's `occlude` proved unreliable at long range through walls).
+  const [nearby, setNearby] = useState(false);
+  const nearbyRef = useRef(false);
+  useFrame(() => {
+    const dx = position[0] - runtime.playerPos.x;
+    const dz = position[2] - runtime.playerPos.z;
+    const near = dx * dx + dz * dz < BUBBLE_RANGE * BUBBLE_RANGE;
+    if (near !== nearbyRef.current) {
+      nearbyRef.current = near;
+      setNearby(near);
+    }
+  });
 
   useEffect(() => {
     const pos = new THREE.Vector3(position[0], position[1], position[2]);
@@ -78,10 +94,12 @@ export function Distractor({
         <boxGeometry args={[0.22, 0.28, 0.22]} />
         <meshStandardMaterial color="#f2c14e" emissive="#f2c14e" emissiveIntensity={0.6} />
       </mesh>
-      {/* Fake dialogue */}
-      <Html position={[0, BODY_H + 0.55, 0]} center distanceFactor={18} occlude style={{ pointerEvents: "none" }}>
-        <div style={bubble}>{line.current}</div>
-      </Html>
+      {/* Fake dialogue — only within earshot */}
+      {nearby && (
+        <Html position={[0, BODY_H + 0.55, 0]} center distanceFactor={18} occlude style={{ pointerEvents: "none" }}>
+          <div style={bubble}>{line.current}</div>
+        </Html>
+      )}
       {/* Contact shadow */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
         <circleGeometry args={[BODY_R * 1.4, 20]} />

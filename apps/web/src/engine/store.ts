@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { runtime } from "@/engine/runtime";
-import { BOMB } from "@/engine/config/round";
+import { BOMB, LOOT } from "@/engine/config/round";
 import { HINTS, type Rarity } from "@/engine/world/hints";
 
 /**
@@ -22,6 +22,12 @@ interface GameState {
 
   bombsLeft: number;
   throwBomb: () => void;
+
+  /** Loot on you (from claims, not yet banked) and safely in the vault.
+      Placeholder for VilleToken until the chain is wired. Survives restarts. */
+  villeCarrying: number;
+  villeBanked: number;
+  depositLoot: () => void;
 
   playerHealth: number;
   maxPlayerHealth: number;
@@ -49,17 +55,26 @@ export const useGame = create<GameState>((set, get) => ({
     if (get().roundState !== "playing") return;
     const hint = HINTS[hintIndex];
     if (!hint?.real || runtime.hintStolen[hintIndex]) return;
-    set({
+    const rarity = hint.rarity ?? "common";
+    const cracked = runtime.hintCracked[hintIndex];
+    // A cracked treasure pays one tier down (§13.5).
+    const value = cracked ? (rarity === "rare" ? LOOT.common : LOOT.scrap) : LOOT[rarity];
+    set((s) => ({
       treasureClaimed: true,
-      claimedRarity: hint.rarity ?? "common",
-      treasureCracked: runtime.hintCracked[hintIndex],
+      claimedRarity: rarity,
+      treasureCracked: cracked,
+      villeCarrying: s.villeCarrying + value,
       roundState: "won",
       roundReason: "claimed",
-    });
+    }));
   },
 
   bombsLeft: BOMB.perRound,
   throwBomb: () => set((s) => ({ bombsLeft: Math.max(0, s.bombsLeft - 1) })),
+
+  villeCarrying: 0,
+  villeBanked: 0,
+  depositLoot: () => set((s) => ({ villeBanked: s.villeBanked + s.villeCarrying, villeCarrying: 0 })),
 
   playerHealth: MAX_PLAYER_HEALTH,
   maxPlayerHealth: MAX_PLAYER_HEALTH,

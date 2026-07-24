@@ -17,6 +17,8 @@ export const runtime = {
   sheltered: false,
   /** True while sitting to rest indoors (health regenerating). */
   resting: false,
+  /** True while standing at the bank's vault pad (E deposits carried loot). */
+  nearBank: false,
   /** Index of the hint zone the player is standing in (-1 = none). */
   nearHintIndex: -1,
   /** Whether that hint is the real one. */

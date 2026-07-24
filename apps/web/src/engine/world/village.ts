@@ -45,6 +45,8 @@ export const VILLAGE = {
   spawn: new THREE.Vector3(0, 0, 30),
   spawnYaw: 0 as number, // 0 = facing north (-Z), into the village
   market: new THREE.Vector3(-22, 0, 5),
+  /** Vault pad inside the bank building (the enterable house on the plaza). */
+  bank: new THREE.Vector3(-26, 0, -4.5),
 } as const;
 
 /**

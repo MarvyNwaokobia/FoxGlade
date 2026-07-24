@@ -29,7 +29,7 @@ export function Bombs() {
 
   useFrame((_, rawDt) => {
     const dt = Math.min(rawDt, 1 / 30);
-    if (useGame.getState().roundState === "playing") {
+    if (useGame.getState().roundState === "playing" && !runtime.sheltered) {
       stepBombs(dt, (center) => {
         // Caught in your own blast (chest height, same sphere as enemies).
         const dx = center.x - runtime.playerPos.x;

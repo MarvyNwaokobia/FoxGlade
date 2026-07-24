@@ -61,6 +61,7 @@ export function Blocker({ position }: { position: [number, number, number] }) {
   // Engage: pursue toward a fighting range, strafe, and fire when LOS is clear.
   useFrame((_, rawDt) => {
     if (dead || useGame.getState().roundState !== "playing") return;
+    if (runtime.sheltered) return; // player indoors: the world is paused
     const dt = Math.min(rawDt, 1 / 30);
     cooldown.current -= dt;
     strafeTimer.current -= dt;
@@ -72,13 +73,11 @@ export function Blocker({ position }: { position: [number, number, number] }) {
     const dx = runtime.playerPos.x - pos.current.x;
     const dz = runtime.playerPos.z - pos.current.z;
     const dist = Math.hypot(dx, dz);
-    // A crouched player is noticed later (stealth, §14.2); one inside a house
-    // is lost entirely — blockers hold position instead of camping the door.
+    // A crouched player is noticed later (stealth, §14.2).
     const stealth = runtime.crouching ? BLOCKER.crouchDetectionMult : 1;
-    const playerHidden = runtime.sheltered;
 
     // Movement toward the player (pursues even without LOS, to come around cover).
-    if (!playerHidden && dist < BLOCKER.aggroRange * stealth && dist > 0.01) {
+    if (dist < BLOCKER.aggroRange * stealth && dist > 0.01) {
       const nx = dx / dist;
       const nz = dz / dist;
       let mx: number;
@@ -107,7 +106,7 @@ export function Blocker({ position }: { position: [number, number, number] }) {
     }
 
     // Fire when in range with a clear line of sight.
-    if (!playerHidden && dist <= BLOCKER.engageRange * stealth && cooldown.current <= 0) {
+    if (dist <= BLOCKER.engageRange * stealth && cooldown.current <= 0) {
       const from = new THREE.Vector3(pos.current.x, 1.0, pos.current.z);
       // Aim at the chest — lower when crouched, so low cover genuinely hides you.
       const chestY = runtime.crouching ? 0.6 : 1.0;

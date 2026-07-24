@@ -86,6 +86,7 @@ export function Thief({
 
   useFrame((_, rawDt) => {
     if (dead || escaped || useGame.getState().roundState !== "playing") return;
+    if (runtime.sheltered) return; // player indoors: the world is paused
     const dt = Math.min(rawDt, 1 / 30);
     if (!started) {
       delay.current -= dt; // not yet in the world (staggered starts)

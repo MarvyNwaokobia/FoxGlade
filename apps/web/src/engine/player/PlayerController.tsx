@@ -57,8 +57,12 @@ export function PlayerController() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code === "KeyE" && runtime.nearHintIsReal && !useGame.getState().treasureClaimed) {
-        useGame.getState().claimTreasure(runtime.nearHintIndex);
+      if (e.code === "KeyE") {
+        if (runtime.nearHintIsReal && !useGame.getState().treasureClaimed) {
+          useGame.getState().claimTreasure(runtime.nearHintIndex);
+        } else if (runtime.nearBank && useGame.getState().villeCarrying > 0) {
+          useGame.getState().depositLoot();
+        }
       }
       if (e.code === "KeyR" && useGame.getState().isDead) {
         useGame.getState().respawn();
@@ -79,9 +83,16 @@ export function PlayerController() {
         }
       }
       if (e.code === "KeyG" && !e.repeat) {
-        // Start aiming a bomb throw (needs the mouse captured, a bomb, live play).
+        // Start aiming a bomb throw (needs the mouse captured, a bomb, live
+        // play, and being outside — the world is paused indoors).
         const st = useGame.getState();
-        if (document.pointerLockElement && st.bombsLeft > 0 && !st.isDead && st.roundState === "playing") {
+        if (
+          document.pointerLockElement &&
+          st.bombsLeft > 0 &&
+          !st.isDead &&
+          st.roundState === "playing" &&
+          !runtime.sheltered
+        ) {
           bombAim.current = true;
         }
       }
@@ -175,6 +186,11 @@ export function PlayerController() {
     const dt = Math.min(rawDt, 1 / 30); // clamp big frame gaps so physics stays sane
     const k = keys.current;
 
+    // Indoors the WORLD pauses (Marvy's call): hold the clock by pushing the
+    // round start forward — thieves/blockers/projectiles freeze on this flag too.
+    if (useGame.getState().roundState === "playing" && runtime.sheltered) {
+      runtime.roundStartAt += dt * 1000;
+    }
     // Round timer: end the round when it runs out; freeze play when it's over.
     if (
       useGame.getState().roundState === "playing" &&
@@ -293,6 +309,10 @@ export function PlayerController() {
       }
     }
 
+    // Bank vault proximity (deposit with E).
+    runtime.nearBank =
+      Math.hypot(VILLAGE.bank.x - pos.current.x, VILLAGE.bank.z - pos.current.z) < 2.2;
+
     // Publish for fox + HUD.
     runtime.playerPos.copy(pos.current);
     runtime.yaw = yaw.current;
@@ -367,9 +387,17 @@ export function PlayerController() {
     cam.updateProjectionMatrix();
 
     // Fire (hold left-click or F) — uses the just-updated camera aim.
-    // Not while seated: resting is calm, stand (X / move) to fight again.
+    // Not while seated or sheltered: indoors the world is paused (no shooting
+    // frozen enemies through the doorway), stand and step out to fight.
     fireCd.current -= dt;
-    if (fireHeld.current && document.pointerLockElement && !frozen && !resting.current && fireCd.current <= 0) {
+    if (
+      fireHeld.current &&
+      document.pointerLockElement &&
+      !frozen &&
+      !resting.current &&
+      !runtime.sheltered &&
+      fireCd.current <= 0
+    ) {
       fireCd.current = FIRE_INTERVAL;
       const hit = fireHitscan(camera);
       runtime.fireAt = performance.now();
