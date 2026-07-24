@@ -6,6 +6,7 @@ import { useGame } from "@/engine/store";
 import { HINTS } from "@/engine/world/hints";
 import { SESSION_SECONDS } from "@/engine/config/round";
 import { thieves, MAX_THIEVES } from "@/engine/npc/thieves";
+import { isTouchDevice } from "@/engine/input/touch";
 
 const HINT_DEFAULT = "#8fd0e0"; // pale cyan ping
 const HINT_REAL = "#f2c14e"; // gold
@@ -335,8 +336,9 @@ export function Hud() {
         </div>
       </div>
 
-      {/* Click-to-play prompt when the mouse isn't captured */}
-      {!locked && (
+      {/* Click-to-play prompt when the mouse isn't captured (desktop only —
+          touch devices use on-screen controls, no pointer lock). */}
+      {!locked && !isTouchDevice() && (
         <div style={styles.lockPrompt}>
           <div style={styles.promptCard}>click to look around</div>
         </div>

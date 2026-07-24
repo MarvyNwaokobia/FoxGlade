@@ -14,6 +14,7 @@ import { spawnBomb, predictLanding } from "@/engine/combat/bombs";
 import { HINTS, HINT_RADIUS, SNIFF_COOLDOWN, SNIFF_REVEAL } from "@/engine/world/hints";
 import { SESSION_SECONDS, REST } from "@/engine/config/round";
 import { PlayerRig, type PlayerRigState } from "@/engine/character/PlayerRig";
+import { touch } from "@/engine/input/touch";
 
 const FIRE_INTERVAL = 0.16; // seconds between shots when holding fire
 
@@ -100,7 +101,7 @@ export function PlayerController() {
         // play, and being outside — the world is paused indoors).
         const st = useGame.getState();
         if (
-          document.pointerLockElement &&
+          (document.pointerLockElement || touch.enabled) &&
           st.bombsLeft > 0 &&
           !st.isDead &&
           st.roundState === "playing" &&
@@ -213,6 +214,15 @@ export function PlayerController() {
     }
     const frozen = useGame.getState().isDead || useGame.getState().roundState !== "playing";
 
+    // Mobile look: apply the accumulated touch-drag to yaw/pitch (already in
+    // radians), then consume it. No pointer lock on touch, so this replaces it.
+    if (touch.enabled && (touch.lookDX !== 0 || touch.lookDY !== 0)) {
+      yaw.current -= touch.lookDX;
+      pitch.current = THREE.MathUtils.clamp(pitch.current - touch.lookDY, FEEL.pitchMin, FEEL.pitchMax);
+      touch.lookDX = 0;
+      touch.lookDY = 0;
+    }
+
     // Movement basis from camera yaw.
     const forward = new THREE.Vector3(-Math.sin(yaw.current), 0, -Math.cos(yaw.current));
     const right = new THREE.Vector3(Math.cos(yaw.current), 0, -Math.sin(yaw.current));
@@ -221,11 +231,16 @@ export function PlayerController() {
     if (k.back) wish.sub(forward);
     if (k.right) wish.add(right);
     if (k.left) wish.sub(right);
+    // Left analog stick (mobile) — relative to camera facing, same as WASD.
+    if (touch.enabled) {
+      if (touch.moveY !== 0) wish.addScaledVector(forward, touch.moveY);
+      if (touch.moveX !== 0) wish.addScaledVector(right, touch.moveX);
+    }
 
     // Shelter + rest bookkeeping. Moving (or leaving the house) stands you up.
     runtime.shelterIndex = interiorIndexAt(pos.current.x, pos.current.z);
     runtime.sheltered = runtime.shelterIndex >= 0;
-    if (resting.current && (wish.lengthSq() > 0 || k.jump || frozen || !runtime.sheltered)) {
+    if (resting.current && (wish.lengthSq() > 0 || k.jump || touch.jump || frozen || !runtime.sheltered)) {
       resting.current = false;
     }
     runtime.resting = resting.current;
@@ -234,13 +249,15 @@ export function PlayerController() {
       useGame.getState().healPlayer(REST.regenPerSec * dt);
     }
 
+    const run = k.run || touch.run;
+    const jump = k.jump || touch.jump;
     const moving = wish.lengthSq() > 0 && !frozen;
-    runtime.running = moving && k.run && !crouching.current;
+    runtime.running = moving && run && !crouching.current;
     runtime.crouching = crouching.current;
 
     if (moving) {
       wish.normalize();
-      const speed = crouching.current ? FEEL.crouchSpeed : k.run ? FEEL.runSpeed : FEEL.walkSpeed;
+      const speed = crouching.current ? FEEL.crouchSpeed : run ? FEEL.runSpeed : FEEL.walkSpeed;
       const t = Math.min(1, FEEL.accel * dt);
       vel.current.x += (wish.x * speed - vel.current.x) * t;
       vel.current.z += (wish.z * speed - vel.current.z) * t;
@@ -257,7 +274,7 @@ export function PlayerController() {
     pos.current.z += vel.current.z * dt;
 
     // Jump + gravity (jumping stands you back up).
-    if (grounded.current && k.jump && !frozen) {
+    if (grounded.current && jump && !frozen) {
       crouching.current = false;
       vel.current.y = FEEL.jumpForce;
       grounded.current = false;
@@ -407,8 +424,8 @@ export function PlayerController() {
     // frozen enemies through the doorway), stand and step out to fight.
     fireCd.current -= dt;
     if (
-      fireHeld.current &&
-      document.pointerLockElement &&
+      (fireHeld.current || touch.fire) &&
+      (document.pointerLockElement || touch.enabled) &&
       !frozen &&
       !resting.current &&
       !runtime.sheltered &&
