@@ -47,10 +47,10 @@ export function Thief({
       hitRadius: 0.85,
       hitHeight: 0.9,
       bodyRadius: 0.4,
-      takeHit: () => {
+      takeHit: (damage) => {
         setFlash(true);
         setHealth((h) => {
-          const next = Math.max(0, h - 1);
+          const next = Math.max(0, h - damage);
           if (next === 0) {
             enemies.delete(enemy);
             thieves.delete(ref);

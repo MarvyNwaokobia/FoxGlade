@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { runtime } from "@/engine/runtime";
-import { SESSION_SECONDS } from "@/engine/config/round";
+import { BOMB } from "@/engine/config/round";
 
 /**
  * Reactive game state (as opposed to per-frame `runtime` data). Kept small — only
@@ -14,6 +14,13 @@ export type RoundReason = "claimed" | "timeout" | "thief" | null;
 interface GameState {
   treasureClaimed: boolean;
   claimTreasure: () => void;
+
+  /** A bomb blast reached the treasure: it still claims, at reduced rarity (§13.5). */
+  treasureCracked: boolean;
+  crackTreasure: () => void;
+
+  bombsLeft: number;
+  throwBomb: () => void;
 
   playerHealth: number;
   maxPlayerHealth: number;
@@ -38,6 +45,15 @@ export const useGame = create<GameState>((set, get) => ({
     if (get().roundState !== "playing") return;
     set({ treasureClaimed: true, roundState: "won", roundReason: "claimed" });
   },
+
+  treasureCracked: false,
+  crackTreasure: () => {
+    if (get().roundState !== "playing" || get().treasureClaimed) return;
+    set({ treasureCracked: true });
+  },
+
+  bombsLeft: BOMB.perRound,
+  throwBomb: () => set((s) => ({ bombsLeft: Math.max(0, s.bombsLeft - 1) })),
 
   playerHealth: MAX_PLAYER_HEALTH,
   maxPlayerHealth: MAX_PLAYER_HEALTH,
@@ -67,6 +83,8 @@ export const useGame = create<GameState>((set, get) => ({
     runtime.sniffReadyAt = 0;
     set((s) => ({
       treasureClaimed: false,
+      treasureCracked: false,
+      bombsLeft: BOMB.perRound,
       playerHealth: MAX_PLAYER_HEALTH,
       isDead: false,
       roundState: "playing",

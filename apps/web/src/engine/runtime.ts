@@ -23,6 +23,10 @@ export const runtime = {
   hintSilenced: HINTS.map(() => false),
   /** performance.now the current round started (drives the countdown). */
   roundStartAt: performance.now(),
+  /** True while the player is holding G to aim a bomb throw. */
+  bombAiming: false,
+  /** Predicted bomb landing point (valid while bombAiming). */
+  bombAimPoint: new THREE.Vector3(0, 0, 0),
   /** Timestamps (performance.now) for crosshair feedback. */
   fireAt: -1,
   hitAt: -1,

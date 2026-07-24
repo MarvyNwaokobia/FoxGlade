@@ -22,6 +22,22 @@ export const THIEF = {
   starts: [5, 10, 15],
 } as const;
 
+/**
+ * Bombs (DESIGN §2.4): hold G to aim — a ground ring telegraphs exactly where
+ * the blast lands — release to lob. Clears everything inside the radius, hurts
+ * the player standing in it, and CRACKS the treasure (reduced rarity, §13.5)
+ * rather than destroying the run.
+ */
+export const BOMB = {
+  perRound: 2, // bombs carried per round (marketplace will sell more later, M4)
+  throwSpeed: 16, // m/s launch speed (aim higher to lob farther, ~11m level)
+  upBias: 0.45, // extra upward pitch mixed into the throw, so it arcs
+  radius: 6, // blast radius (metres) — matches the telegraph ring
+  enemyDamage: 3, // kills a full-health blocker or thief outright
+  selfDamage: 35, // player health lost if caught inside the blast
+  fuse: 3, // seconds before it detonates mid-air anyway (safety net)
+} as const;
+
 /** Blockers: the armed NPCs contesting the route (DESIGN §2). */
 export const BLOCKER = {
   health: 3, // player hits to kill

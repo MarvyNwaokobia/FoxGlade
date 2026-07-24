@@ -36,10 +36,10 @@ export function Blocker({ position }: { position: [number, number, number] }) {
       hitRadius: 0.85,
       hitHeight: 1.0,
       bodyRadius: 0.5,
-      takeHit: () => {
+      takeHit: (damage) => {
         setFlash(true);
         setHealth((h) => {
-          const next = Math.max(0, h - 1);
+          const next = Math.max(0, h - damage);
           if (next === 0) enemies.delete(enemy);
           return next;
         });

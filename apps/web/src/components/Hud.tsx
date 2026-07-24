@@ -31,6 +31,8 @@ export function Hud() {
   const isDead = useGame((s) => s.isDead);
   const roundState = useGame((s) => s.roundState);
   const roundReason = useGame((s) => s.roundReason);
+  const bombsLeft = useGame((s) => s.bombsLeft);
+  const treasureCracked = useGame((s) => s.treasureCracked);
 
   useEffect(() => {
     const onLockChange = () => setLocked(!!document.pointerLockElement);
@@ -164,6 +166,9 @@ export function Hud() {
         <div style={styles.healthLabel}>{Math.max(0, Math.round(health))}</div>
       </div>
 
+      {/* Bomb count, beside the health bar */}
+      <div style={{ ...styles.bombPill, opacity: bombsLeft > 0 ? 1 : 0.35 }}>💣 ×{bombsLeft}</div>
+
       {/* Countdown timer, top-right */}
       <div style={styles.timer}>
         <div ref={timerEl} style={styles.timerNum}>
@@ -188,7 +193,9 @@ export function Hud() {
         <div style={styles.roundOverlay}>
           <div style={{ ...styles.roundTitle, color: roundState === "won" ? "#ffd873" : "#e8563f" }}>
             {roundState === "won"
-              ? "Treasure claimed!"
+              ? treasureCracked
+                ? "Treasure claimed — cracked by your bomb (reduced rarity)"
+                : "Treasure claimed!"
               : roundReason === "thief"
                 ? "A thief took the treasure"
                 : "Time's up"}
@@ -245,6 +252,9 @@ export function Hud() {
         </div>
         <div>
           <b>Mouse</b> look &nbsp;·&nbsp; <b>Left-click</b> / <b>F</b> shoot
+        </div>
+        <div>
+          <b>G</b> hold to aim bomb, release to throw
         </div>
         <div>
           <b>Q</b> fox sniff &nbsp;·&nbsp; <b>E</b> claim &nbsp;·&nbsp; <b>Esc</b> release mouse
@@ -378,6 +388,22 @@ const styles: Record<string, React.CSSProperties> = {
     userSelect: "none",
   },
   healthFill: { position: "absolute", left: 0, top: 0, bottom: 0, transition: "width 0.15s ease, background 0.2s ease" },
+  bombPill: {
+    position: "absolute",
+    left: "calc(50% + 132px)",
+    bottom: 50,
+    padding: "3px 10px",
+    borderRadius: 999,
+    background: "rgba(11,13,16,0.6)",
+    border: "1px solid rgba(232,238,242,0.25)",
+    color: "#e8eef2",
+    fontSize: 13,
+    letterSpacing: 0.5,
+    whiteSpace: "nowrap",
+    transition: "opacity 0.2s ease",
+    pointerEvents: "none",
+    userSelect: "none",
+  },
   healthLabel: {
     position: "absolute",
     inset: 0,

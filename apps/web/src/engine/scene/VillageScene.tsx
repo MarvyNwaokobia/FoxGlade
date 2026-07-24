@@ -5,6 +5,7 @@ import { Blockers } from "@/engine/npc/Blockers";
 import { Distractors } from "@/engine/npc/Distractors";
 import { Thieves } from "@/engine/npc/ThiefWave";
 import { Projectiles } from "@/engine/combat/ProjectileLayer";
+import { Bombs } from "@/engine/combat/BombLayer";
 import { useGame } from "@/engine/store";
 
 /**
@@ -38,6 +39,7 @@ export function VillageScene() {
         <Thieves />
       </group>
       <Projectiles />
+      <Bombs />
     </>
   );
 }

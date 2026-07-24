@@ -10,6 +10,7 @@ import { VILLAGE, COLLIDERS, BOXES3D } from "@/engine/world/village";
 import { resolveColliders, raycastBoxes } from "@/engine/world/collision";
 import { useGame } from "@/engine/store";
 import { fireHitscan, enemies } from "@/engine/combat/enemies";
+import { spawnBomb, predictLanding } from "@/engine/combat/bombs";
 import { HINTS, HINT_RADIUS, SNIFF_COOLDOWN, SNIFF_REVEAL } from "@/engine/world/hints";
 import { SESSION_SECONDS } from "@/engine/config/round";
 
@@ -42,6 +43,7 @@ export function PlayerController() {
   const grounded = useRef(true);
   const fireHeld = useRef(false);
   const fireCd = useRef(0);
+  const bombAim = useRef(false); // holding G: telegraph shows, release throws
 
   // Interaction keys: E claim (only at the real hint), R respawn, F fire,
   // Q fox-sniff (reveals the real hint on a cooldown).
@@ -62,6 +64,13 @@ export function PlayerController() {
         useGame.getState().restart();
       }
       if (e.code === "KeyF") fireHeld.current = true; // keyboard fire (hold to auto-fire)
+      if (e.code === "KeyG" && !e.repeat) {
+        // Start aiming a bomb throw (needs the mouse captured, a bomb, live play).
+        const st = useGame.getState();
+        if (document.pointerLockElement && st.bombsLeft > 0 && !st.isDead && st.roundState === "playing") {
+          bombAim.current = true;
+        }
+      }
       if (e.code === "KeyQ") {
         const now = performance.now();
         if (now >= runtime.sniffReadyAt) {
@@ -72,6 +81,27 @@ export function PlayerController() {
     };
     const onKeyUp = (e: KeyboardEvent) => {
       if (e.code === "KeyF") fireHeld.current = false;
+      if (e.code === "KeyG" && bombAim.current) {
+        // Release G → throw along the current aim line (matches the telegraph).
+        bombAim.current = false;
+        runtime.bombAiming = false;
+        const st = useGame.getState();
+        if (st.bombsLeft > 0 && !st.isDead && st.roundState === "playing") {
+          st.throwBomb();
+          const cp = Math.cos(pitch.current);
+          const aim = new THREE.Vector3(
+            -Math.sin(yaw.current) * cp,
+            Math.sin(pitch.current),
+            -Math.cos(yaw.current) * cp
+          );
+          const head = new THREE.Vector3(
+            pos.current.x,
+            pos.current.y + FEEL.lookAtHeight,
+            pos.current.z
+          );
+          spawnBomb(head, aim);
+        }
+      }
     };
     window.addEventListener("keydown", onKey);
     window.addEventListener("keyup", onKeyUp);
@@ -238,6 +268,12 @@ export function PlayerController() {
     const aim = new THREE.Vector3(-Math.sin(yaw.current) * cp, sp, -Math.cos(yaw.current) * cp);
     const head = new THREE.Vector3(pos.current.x, pos.current.y + FEEL.lookAtHeight, pos.current.z);
     const rightV = new THREE.Vector3(Math.cos(yaw.current), 0, -Math.sin(yaw.current));
+
+    // Bomb aim telegraph: predict the landing point along the current aim line
+    // (same origin + arc as the actual throw, so the ring never lies).
+    if (bombAim.current && frozen) bombAim.current = false;
+    runtime.bombAiming = bombAim.current;
+    if (bombAim.current) predictLanding(head, aim, runtime.bombAimPoint);
 
     // Over-the-shoulder desired target (behind the aim line, offset to the side).
     const desired = head

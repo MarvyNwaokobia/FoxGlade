@@ -41,10 +41,10 @@ export function Distractor({
       hitRadius: 0.8,
       hitHeight: 1.0,
       bodyRadius: 0.45,
-      takeHit: () => {
+      takeHit: (damage) => {
         setFlash(true);
         setHealth((h) => {
-          const next = Math.max(0, h - 1);
+          const next = Math.max(0, h - damage);
           if (next === 0) {
             enemies.delete(enemy);
             runtime.hintSilenced[hintIndex] = true; // its decoy vanishes
