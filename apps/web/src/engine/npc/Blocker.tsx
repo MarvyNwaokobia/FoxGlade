@@ -9,6 +9,7 @@ import { spawnProjectile } from "@/engine/combat/projectiles";
 import { raycastBoxes } from "@/engine/world/collision";
 import { BOXES3D } from "@/engine/world/village";
 import { runtime } from "@/engine/runtime";
+import { useGame } from "@/engine/store";
 
 const MAX_HEALTH = 3;
 const BODY_H = 1.8;
@@ -61,7 +62,7 @@ export function Blocker({ position }: { position: [number, number, number] }) {
 
   // Engage: face the player and fire on a cooldown when in range with clear LOS.
   useFrame((_, rawDt) => {
-    if (dead) return;
+    if (dead || useGame.getState().roundState !== "playing") return;
     const dt = Math.min(rawDt, 1 / 30);
     cooldown.current -= dt;
 

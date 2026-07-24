@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { runtime } from "@/engine/runtime";
 import { useGame } from "@/engine/store";
 import { HINTS } from "@/engine/world/hints";
+import { SESSION_SECONDS } from "@/engine/config/round";
 
 const HINT_DEFAULT = "#8fd0e0"; // pale cyan ping
 const HINT_REAL = "#f2c14e"; // gold
@@ -16,25 +17,19 @@ const HINT_FAKE = "#7a4a4a"; // dim decoy
  */
 export function Hud() {
   const arrows = useRef<(HTMLDivElement | null)[]>([]);
+  const thiefBlip = useRef<HTMLDivElement>(null);
   const sniffEl = useRef<HTMLDivElement>(null);
   const promptEl = useRef<HTMLDivElement>(null);
+  const timerEl = useRef<HTMLDivElement>(null);
   const runEl = useRef<HTMLDivElement>(null);
   const crossEl = useRef<HTMLDivElement>(null);
   const dmgEl = useRef<HTMLDivElement>(null);
   const [locked, setLocked] = useState(false);
-  const claimed = useGame((s) => s.treasureClaimed);
   const health = useGame((s) => s.playerHealth);
   const maxHealth = useGame((s) => s.maxPlayerHealth);
   const isDead = useGame((s) => s.isDead);
-  const [showClaimed, setShowClaimed] = useState(false);
-
-  // Brief confirmation toast when the treasure is claimed, then fade.
-  useEffect(() => {
-    if (!claimed) return;
-    setShowClaimed(true);
-    const id = setTimeout(() => setShowClaimed(false), 3500);
-    return () => clearTimeout(id);
-  }, [claimed]);
+  const roundState = useGame((s) => s.roundState);
+  const roundReason = useGame((s) => s.roundReason);
 
   useEffect(() => {
     const onLockChange = () => setLocked(!!document.pointerLockElement);
@@ -66,6 +61,29 @@ export function Hud() {
         el.style.top = `${C - Math.cos(rel) * R}px`;
         el.style.background = revealed ? (h.real ? HINT_REAL : HINT_FAKE) : HINT_DEFAULT;
         el.style.opacity = "1";
+      }
+
+      // Thief blip (red) on the compass ring while it races.
+      if (thiefBlip.current) {
+        if (runtime.thiefAlive && !isClaimed) {
+          const dx = runtime.thiefPos.x - runtime.playerPos.x;
+          const dz = runtime.thiefPos.z - runtime.playerPos.z;
+          const rel = Math.atan2(dx, dz) - runtime.yaw;
+          thiefBlip.current.style.left = `${C + Math.sin(rel) * R}px`;
+          thiefBlip.current.style.top = `${C - Math.cos(rel) * R}px`;
+          thiefBlip.current.style.opacity = "1";
+        } else {
+          thiefBlip.current.style.opacity = "0";
+        }
+      }
+
+      // Countdown timer (freezes when the round ends).
+      if (timerEl.current && useGame.getState().roundState === "playing") {
+        const left = Math.max(0, SESSION_SECONDS - (now - runtime.roundStartAt) / 1000);
+        const mm = Math.floor(left / 60);
+        const ss = Math.floor(left % 60);
+        timerEl.current.textContent = `${mm}:${ss < 10 ? "0" : ""}${ss}`;
+        timerEl.current.style.color = left <= 30 ? "#ff6b5a" : "#e8eef2";
       }
 
       // Fox sniff indicator.
@@ -143,8 +161,17 @@ export function Hud() {
         <div style={styles.healthLabel}>{Math.max(0, Math.round(health))}</div>
       </div>
 
-      {/* Downed overlay */}
-      {isDead && (
+      {/* Countdown timer, top-right */}
+      <div style={styles.timer}>
+        <div ref={timerEl} style={styles.timerNum}>
+          {Math.floor(SESSION_SECONDS / 60)}:{SESSION_SECONDS % 60 < 10 ? "0" : ""}
+          {SESSION_SECONDS % 60}
+        </div>
+        <div style={styles.timerLabel}>time left</div>
+      </div>
+
+      {/* Downed overlay (mid-round setback, not round end) */}
+      {isDead && roundState === "playing" && (
         <div style={styles.deathOverlay}>
           <div style={styles.deathTitle}>You were downed</div>
           <div style={styles.deathHint}>
@@ -153,7 +180,23 @@ export function Hud() {
         </div>
       )}
 
-      {/* Compass, top-center — one radar blip per candidate hint */}
+      {/* Round-over overlay (win / lose) */}
+      {roundState !== "playing" && (
+        <div style={styles.roundOverlay}>
+          <div style={{ ...styles.roundTitle, color: roundState === "won" ? "#ffd873" : "#e8563f" }}>
+            {roundState === "won"
+              ? "Treasure claimed!"
+              : roundReason === "thief"
+                ? "A thief took the treasure"
+                : "Time's up"}
+          </div>
+          <div style={styles.roundHint}>
+            press <b>Enter</b> to play again
+          </div>
+        </div>
+      )}
+
+      {/* Compass, top-center — one radar blip per candidate hint + the thief */}
       <div style={styles.compassWrap}>
         <div style={styles.compass}>
           <div style={styles.compassCenter} />
@@ -166,6 +209,7 @@ export function Hud() {
               style={styles.hintDot}
             />
           ))}
+          <div ref={thiefBlip} style={styles.thiefDot} />
         </div>
         <div ref={sniffEl} style={styles.sniffPill}>
           🦊 sniff — Q
@@ -182,11 +226,6 @@ export function Hud() {
 
       {/* Proximity prompt (claim / false lead) — text set from the game loop */}
       <div ref={promptEl} style={styles.prompt} />
-
-      {/* Claim confirmation toast */}
-      {showClaimed && (
-        <div style={styles.claimedToast}>Treasure claimed&nbsp;·&nbsp;on-chain mint arrives next</div>
-      )}
 
       {/* Controls, bottom-left */}
       <div style={styles.controls}>
@@ -252,6 +291,49 @@ const styles: Record<string, React.CSSProperties> = {
     transform: "translate(-50%, -50%)",
     background: "rgba(232,238,242,0.5)",
   },
+  thiefDot: {
+    position: "absolute",
+    left: "50%",
+    top: "50%",
+    width: 9,
+    height: 9,
+    borderRadius: "50%",
+    transform: "translate(-50%, -50%)",
+    background: "#e8563f",
+    boxShadow: "0 0 0 1px rgba(0,0,0,0.55), 0 0 6px rgba(232,86,63,0.8)",
+    opacity: 0,
+  },
+  timer: {
+    position: "absolute",
+    top: 16,
+    right: 20,
+    textAlign: "right",
+    pointerEvents: "none",
+    userSelect: "none",
+  },
+  timerNum: {
+    fontSize: 30,
+    fontWeight: 700,
+    color: "#e8eef2",
+    fontVariantNumeric: "tabular-nums",
+    letterSpacing: 1,
+    lineHeight: 1,
+  },
+  timerLabel: { fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", color: "rgba(232,238,242,0.5)", marginTop: 2 },
+  roundOverlay: {
+    position: "absolute",
+    inset: 0,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+    background: "rgba(11,13,16,0.7)",
+    pointerEvents: "none",
+    userSelect: "none",
+  },
+  roundTitle: { fontSize: 44, fontWeight: 800, letterSpacing: 1, textAlign: "center" },
+  roundHint: { fontSize: 17, color: "rgba(232,238,242,0.85)" },
   sniffPill: {
     marginTop: 8,
     display: "inline-block",

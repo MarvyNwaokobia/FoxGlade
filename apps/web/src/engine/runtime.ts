@@ -21,6 +21,11 @@ export const runtime = {
   sniffReadyAt: 0,
   /** Per-hint: true once its distractor is silenced (decoy removed). */
   hintSilenced: HINTS.map(() => false),
+  /** performance.now the current round started (drives the countdown). */
+  roundStartAt: performance.now(),
+  /** The thief's live position + whether it's still racing (for the HUD blip). */
+  thiefPos: new THREE.Vector3(0, 0, 0),
+  thiefAlive: true,
   /** Timestamps (performance.now) for crosshair feedback. */
   fireAt: -1,
   hitAt: -1,

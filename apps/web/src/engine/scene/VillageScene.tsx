@@ -3,13 +3,17 @@
 import { Village } from "@/engine/world/VillageMesh";
 import { Blockers } from "@/engine/npc/Blockers";
 import { Distractors } from "@/engine/npc/Distractors";
+import { Thief } from "@/engine/npc/Thief";
 import { Projectiles } from "@/engine/combat/ProjectileLayer";
+import { useGame } from "@/engine/store";
 
 /**
  * Lighting rig + the village. Kept separate from the world geometry so the
  * lights/atmosphere can be tuned without touching the layout.
  */
 export function VillageScene() {
+  // Remount all NPCs on restart (revives blockers, distractors, thief).
+  const roundNonce = useGame((s) => s.roundNonce);
   return (
     <>
       <ambientLight intensity={0.85} />
@@ -28,8 +32,11 @@ export function VillageScene() {
         shadow-bias={-0.0004}
       />
       <Village />
-      <Blockers />
-      <Distractors />
+      <group key={roundNonce}>
+        <Blockers />
+        <Distractors />
+        <Thief />
+      </group>
       <Projectiles />
     </>
   );

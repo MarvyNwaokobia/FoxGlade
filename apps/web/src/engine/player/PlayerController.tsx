@@ -11,6 +11,7 @@ import { resolveColliders, raycastBoxes } from "@/engine/world/collision";
 import { useGame } from "@/engine/store";
 import { fireHitscan, enemies } from "@/engine/combat/enemies";
 import { HINTS, HINT_RADIUS, SNIFF_COOLDOWN, SNIFF_REVEAL } from "@/engine/world/hints";
+import { SESSION_SECONDS } from "@/engine/config/round";
 
 const FIRE_INTERVAL = 0.16; // seconds between shots when holding fire
 
@@ -44,6 +45,11 @@ export function PlayerController() {
 
   // Interaction keys: E claim (only at the real hint), R respawn, F fire,
   // Q fox-sniff (reveals the real hint on a cooldown).
+  // Start the round timer when play begins.
+  useEffect(() => {
+    runtime.roundStartAt = performance.now();
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code === "KeyE" && runtime.nearHintIsReal && !useGame.getState().treasureClaimed) {
@@ -51,6 +57,9 @@ export function PlayerController() {
       }
       if (e.code === "KeyR" && useGame.getState().isDead) {
         useGame.getState().respawn();
+      }
+      if (e.code === "Enter" && useGame.getState().roundState !== "playing") {
+        useGame.getState().restart();
       }
       if (e.code === "KeyF") fireHeld.current = true; // keyboard fire (hold to auto-fire)
       if (e.code === "KeyQ") {
@@ -120,6 +129,15 @@ export function PlayerController() {
     const dt = Math.min(rawDt, 1 / 30); // clamp big frame gaps so physics stays sane
     const k = keys.current;
 
+    // Round timer: end the round when it runs out; freeze play when it's over.
+    if (
+      useGame.getState().roundState === "playing" &&
+      SESSION_SECONDS - (performance.now() - runtime.roundStartAt) / 1000 <= 0
+    ) {
+      useGame.getState().endRound("timeout");
+    }
+    const frozen = useGame.getState().isDead || useGame.getState().roundState !== "playing";
+
     // Movement basis from camera yaw.
     const forward = new THREE.Vector3(-Math.sin(yaw.current), 0, -Math.cos(yaw.current));
     const right = new THREE.Vector3(Math.cos(yaw.current), 0, -Math.sin(yaw.current));
@@ -129,7 +147,7 @@ export function PlayerController() {
     if (k.right) wish.add(right);
     if (k.left) wish.sub(right);
 
-    const moving = wish.lengthSq() > 0 && !useGame.getState().isDead;
+    const moving = wish.lengthSq() > 0 && !frozen;
     runtime.running = moving && k.run;
 
     if (moving) {
@@ -272,7 +290,7 @@ export function PlayerController() {
 
     // Fire (hold left-click or F) — uses the just-updated camera aim.
     fireCd.current -= dt;
-    if (fireHeld.current && document.pointerLockElement && !useGame.getState().isDead && fireCd.current <= 0) {
+    if (fireHeld.current && document.pointerLockElement && !frozen && fireCd.current <= 0) {
       fireCd.current = FIRE_INTERVAL;
       const hit = fireHitscan(camera);
       runtime.fireAt = performance.now();
