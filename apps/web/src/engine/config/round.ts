@@ -11,15 +11,15 @@ export const SESSION_SECONDS = 150;
 /**
  * Thieves race the real treasure along fixed paths (~59–63 m each). A thief
  * spawns the moment its start time hits, so arrivals land at roughly
- * start + pathLength / speed. With starts of 5/60/95 at 2.2 m/s the three
- * arrivals fall around 32s / 89s / 122s — pressure is on-screen almost
- * immediately but still escalates instead of swarming.
+ * start + pathLength / speed. With starts of 5/10/15 at 2.2 m/s the three
+ * arrivals fall around 32s / 39s / 42s — the race is on from the opening
+ * seconds and every thief must be dealt with.
  */
 export const THIEF = {
   health: 3, // player hits to kill — fast and fragile
   speed: 2.2, // m/s along its path
   /** Seconds after round start when each thief spawns and sets off. */
-  starts: [5, 60, 95],
+  starts: [5, 10, 15],
 } as const;
 
 /** Blockers: the armed NPCs contesting the route (DESIGN §2). */
