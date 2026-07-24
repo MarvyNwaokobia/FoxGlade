@@ -11,13 +11,14 @@ import * as THREE from "three";
  * the gitignored /preview-local (symlinks into design/), so nothing here ships.
  */
 const MODELS: { label: string; url: string; note?: string }[] = [
-  { label: "Castle Village (CC-BY ✓)", url: "/models/village/castle_village.glb", note: "free to use" },
-  { label: "village.glb (134MB)", url: "/preview-local/village.glb", note: "heavy; check license" },
-  { label: "Kakariko (Zelda)", url: "/preview-local/kakariko_village_ocarina_of_time.glb", note: "Nintendo IP" },
-  { label: "Naruto village", url: "/preview-local/naruto_hiddenly_village.glb", note: "copyrighted IP" },
-  { label: "Chicken Gun village", url: "/preview-local/chicken_gun_fruzer_village.glb", note: "ripped game asset" },
-  { label: "Chicken Gun encampment", url: "/preview-local/chicken_gun_fruzer_-_encampment.glb", note: "ripped game asset" },
-  { label: "After the Rain (154MB)", url: "/preview-local/after_the_rain..._-_vr__sound.glb", note: "very heavy; check license" },
+  // Legal, free (CC-BY) — shippable
+  { label: "Castle Village", url: "/models/village/castle_village.glb", note: "CC-BY ✓ free" },
+  { label: "Low Poly Mini Village", url: "/models/village/mini_village.glb", note: "CC-BY ✓ free" },
+  { label: "Castle + Village", url: "/models/village/castle_with_village.glb", note: "CC-BY ✓ free" },
+  // Local-only reference (NOT shippable — IP / heavy); gitignored, never committed
+  { label: "village.glb (134MB)", url: "/preview-local/village.glb", note: "ref only · check license" },
+  { label: "Chicken Gun village", url: "/preview-local/chicken_gun_fruzer_village.glb", note: "ref only · ripped IP" },
+  { label: "Chicken Gun encampment", url: "/preview-local/chicken_gun_fruzer_-_encampment.glb", note: "ref only · ripped IP" },
 ];
 
 function VillageModel({ url }: { url: string }) {

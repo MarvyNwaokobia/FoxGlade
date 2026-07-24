@@ -2,10 +2,14 @@
 
 Free assets used in FoxGlade, with attribution as required by their licenses.
 
-## 3D environment (candidate — in preview)
-- **"Castle village scene"** by **BlackSpire** (https://sketchfab.com/blackspire) —
-  Sketchfab, licensed **CC-BY 4.0** (attribution required).
+## 3D environments (candidates — in /preview)
+All **CC-BY 4.0** (attribution required), via Sketchfab:
+- **"Castle village scene"** by **BlackSpire** — https://sketchfab.com/blackspire
   https://sketchfab.com/3d-models/castle-village-scene-675b3afce21a4acaa1140645a5206db3
+- **"Low Poly Mini Village"** by **ion_omat**
+  https://sketchfab.com/3d-models/low-poly-mini-village-8a512d2ca3d546319bbc7aaa696faa45
+- **"Medieval castle with village"** by **Iso Game Lab**
+  https://sketchfab.com/3d-models/medieval-castle-with-village-5109b5e46e064790badecedf8f6d2ef6
 
 ## Textures & HDRI (CC0 — no attribution required, credited anyway)
 - Poly Haven (https://polyhaven.com), all **CC0**:
