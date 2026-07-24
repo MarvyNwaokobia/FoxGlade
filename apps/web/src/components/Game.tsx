@@ -17,7 +17,7 @@ export default function Game() {
     <>
       <Canvas
         shadows
-        gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.0 }}
+        gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 0.82 }}
         camera={{ fov: 60, near: 0.1, far: 400, position: [0, 4, 8] }}
         onCreated={({ gl }) => {
           gl.setClearColor("#c8895a"); // dusk fallback until the HDRI sky loads

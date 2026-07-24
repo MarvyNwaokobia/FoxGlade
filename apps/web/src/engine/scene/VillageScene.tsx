@@ -9,6 +9,8 @@ import { Projectiles } from "@/engine/combat/ProjectileLayer";
 import { Bombs } from "@/engine/combat/BombLayer";
 import { Interiors } from "@/engine/world/Interiors";
 import { Props } from "@/engine/world/Props";
+import { Atmosphere } from "@/engine/world/Atmosphere";
+import { PostFX } from "@/engine/scene/PostFX";
 import { THEME } from "@/engine/world/theme";
 import { useGame } from "@/engine/store";
 
@@ -44,6 +46,7 @@ export function VillageScene() {
       <Village />
       <Interiors />
       <Props />
+      <Atmosphere />
       <group key={roundNonce}>
         <Blockers />
         <Distractors />
@@ -51,6 +54,7 @@ export function VillageScene() {
       </group>
       <Projectiles />
       <Bombs />
+      <PostFX />
     </>
   );
 }
