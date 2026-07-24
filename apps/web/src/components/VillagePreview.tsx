@@ -11,14 +11,14 @@ import * as THREE from "three";
  * the gitignored /preview-local (symlinks into design/), so nothing here ships.
  */
 const MODELS: { label: string; url: string; note?: string }[] = [
-  // Legal, free (CC-BY) — shippable
-  { label: "Castle Village", url: "/models/village/castle_village.glb", note: "CC-BY ✓ free" },
-  { label: "Low Poly Mini Village", url: "/models/village/mini_village.glb", note: "CC-BY ✓ free" },
-  { label: "Castle + Village", url: "/models/village/castle_with_village.glb", note: "CC-BY ✓ free" },
-  // Local-only reference (NOT shippable — IP / heavy); gitignored, never committed
-  { label: "village.glb (134MB)", url: "/preview-local/village.glb", note: "ref only · check license" },
-  { label: "Chicken Gun village", url: "/preview-local/chicken_gun_fruzer_village.glb", note: "ref only · ripped IP" },
-  { label: "Chicken Gun encampment", url: "/preview-local/chicken_gun_fruzer_-_encampment.glb", note: "ref only · ripped IP" },
+  // REALISTIC building models (CC-BY) — the assembled-village direction
+  { label: "◆ Realistic house", url: "/models/buildings/house_timber.glb", note: "CC-BY ✓ realistic" },
+  { label: "◆ Realistic tavern", url: "/models/buildings/tavern.glb", note: "CC-BY ✓ realistic" },
+  { label: "◆ Realistic stone hall", url: "/models/buildings/stone_hall.glb", note: "CC-BY ✓ realistic" },
+  { label: "◆ Realistic stilt house", url: "/models/buildings/stilt_house.glb", note: "CC-BY ✓ has interior" },
+  // Complete villages (CC-BY, but stylized/cartoonish)
+  { label: "Castle Village (cartoon)", url: "/models/village/castle_village.glb", note: "stylized" },
+  { label: "Mini Village (cartoon)", url: "/models/village/mini_village.glb", note: "stylized" },
 ];
 
 function VillageModel({ url }: { url: string }) {

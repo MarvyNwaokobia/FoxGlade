@@ -11,6 +11,12 @@ All **CC-BY 4.0** (attribution required), via Sketchfab:
 - **"Medieval castle with village"** by **Iso Game Lab**
   https://sketchfab.com/3d-models/medieval-castle-with-village-5109b5e46e064790badecedf8f6d2ef6
 
+## Realistic building models (CC-BY, via Sketchfab — the assembled-village direction)
+- **"Medieval house"** by **DoniTodorov** — https://sketchfab.com/3d-models/medieval-house-a8ad9d2723444b1b8ac054c232e61f12
+- **"Tavern (House 5)"** by **Helley** — https://sketchfab.com/3d-models/tavern-house-5-be4eb5894cb94dff97011f792c6e322b
+- **"Modular Medieval Building"** by **R-LAB** — https://sketchfab.com/3d-models/modular-medieval-building-7dea85ee8d624f5a9ad5d70bdb748b29
+- **"Medieval Lake Village - House 4"** by **Andrei CG** — https://sketchfab.com/3d-models/medieval-lake-village-house-4-e628862beddc4bb294d31e2515f1bf31
+
 ## Textures & HDRI (CC0 — no attribution required, credited anyway)
 - Poly Haven (https://polyhaven.com), all **CC0**:
   - HDRI: `belfast_sunset_puresky`
