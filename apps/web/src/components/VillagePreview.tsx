@@ -5,6 +5,8 @@ import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Environment, useGLTF, Html, Bounds } from "@react-three/drei";
 import * as THREE from "three";
 
+const GL = { toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 0.9 };
+
 /**
  * Isolated look-at-it preview of candidate whole-village models (no gameplay).
  * Orbit to inspect; switch models with the buttons. Local models are served from
@@ -45,7 +47,7 @@ export default function VillagePreview() {
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "#1a1712" }}>
-      <Canvas shadows camera={{ position: [40, 30, 40], fov: 45, near: 0.1, far: 5000 }}>
+      <Canvas shadows gl={GL} camera={{ position: [40, 30, 40], fov: 45, near: 0.1, far: 5000 }}>
         <Suspense
           fallback={
             <Html center style={{ color: "#e8eef2", fontFamily: "system-ui" }}>

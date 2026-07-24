@@ -7,6 +7,7 @@ import * as THREE from "three";
 import { BUILDINGS, VILLAGE, wallSegments, doorOpening, WALL_T, type Building } from "./village";
 import { HINTS } from "./hints";
 import { THEME } from "./theme";
+import { Buildings3D } from "./Buildings3D";
 import { useGame } from "@/engine/store";
 import { runtime } from "@/engine/runtime";
 
@@ -346,10 +347,14 @@ export function Village() {
       <Wall position={[-HALF, WALL_H / 2, 0]} size={[0.6, WALL_H, HALF * 2]} mat={mats.wall} />
       <Wall position={[HALF, WALL_H / 2, 0]} size={[0.6, WALL_H, HALF * 2]} mat={mats.wall} />
 
-      {/* Buildings */}
-      {BUILDINGS.map((b, i) => (
-        <BuildingBlock key={i} b={b} mats={mats} />
-      ))}
+      {/* Solid buildings → realistic CC-BY models; enterable houses + crates
+          stay on the box system (doorways, interiors, bank still work). */}
+      <Buildings3D
+        buildings={BUILDINGS.map((b, i) => ({ b, i })).filter(({ b }) => !b.door && b.h >= 2)}
+      />
+      {BUILDINGS.map((b, i) =>
+        b.door || b.h < 2 ? <BuildingBlock key={i} b={b} mats={mats} /> : null
+      )}
 
       {/* Market district */}
       <Zone position={[m.x, 0, m.z]} color="#4e93f2" radius={4} />
