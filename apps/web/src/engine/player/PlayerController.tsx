@@ -32,6 +32,7 @@ export function PlayerController() {
 
   const body = useRef<THREE.Group>(null);
   const shadow = useRef<THREE.Mesh>(null);
+  const camBase = useRef(new THREE.Vector3(0, 4, 8)); // smoothed camera pos (shake kept separate)
   const pos = useRef(VILLAGE.spawn.clone());
   const vel = useRef(new THREE.Vector3(0, 0, 0));
   const yaw = useRef(VILLAGE.spawnYaw); // camera/heading yaw
@@ -220,28 +221,48 @@ export function PlayerController() {
     const head = new THREE.Vector3(pos.current.x, pos.current.y + FEEL.lookAtHeight, pos.current.z);
     const rightV = new THREE.Vector3(Math.cos(yaw.current), 0, -Math.sin(yaw.current));
 
-    // Over-the-shoulder: sit behind the aim line and offset to the side.
-    const camTarget = head
+    // Over-the-shoulder desired target (behind the aim line, offset to the side).
+    const desired = head
       .clone()
       .addScaledVector(aim, -FEEL.cameraDistance)
       .addScaledVector(rightV, FEEL.cameraShoulder);
-    camTarget.y = Math.max(camTarget.y, FEEL.cameraMinHeight);
-    camera.position.lerp(camTarget, Math.min(1, FEEL.cameraLerp * dt));
+    desired.y = Math.max(desired.y, FEEL.cameraMinHeight);
 
-    // Camera collision: pull in if a building is between the camera and the head,
-    // so the view is never blocked and the wall stays solid.
-    const toCam = camera.position.clone().sub(head);
-    const dist = toCam.length();
+    // Camera collision: raycast head → the DESIRED target (a stable point, not the
+    // current camera position) and pull the target in to just before any wall.
+    // Correcting the target once and then smoothing to it avoids the per-frame
+    // lerp-out / snap-in oscillation that made the camera shake against buildings.
+    const toDesired = desired.clone().sub(head);
+    const dist = toDesired.length();
     if (dist > 0.001) {
-      const t = raycastBoxes(head, camera.position, BOXES3D);
+      const t = raycastBoxes(head, desired, BOXES3D);
       if (t < 1) {
-        const pulled = Math.max(dist * t - FEEL.cameraCollisionBuffer, FEEL.cameraMinDistance);
-        camera.position.copy(head).addScaledVector(toCam.multiplyScalar(1 / dist), pulled);
+        const d = Math.max(FEEL.cameraMinDistance, Math.min(dist, dist * t - FEEL.cameraCollisionBuffer));
+        desired.copy(head).addScaledVector(toDesired.multiplyScalar(1 / dist), d);
+        desired.y = Math.max(desired.y, FEEL.cameraMinHeight);
       }
+    }
+
+    // Smooth the follow on a base position; keep shake separate so it never
+    // contaminates the follow (and the collision solve stays stable).
+    camBase.current.lerp(desired, Math.min(1, FEEL.cameraLerp * dt));
+    camera.position.copy(camBase.current);
+
+    // Damage shake + stagger tilt, decaying over shakeDuration.
+    const shakeT = (performance.now() - runtime.damageAt) / (FEEL.shakeDuration * 1000);
+    let roll = 0;
+    if (shakeT >= 0 && shakeT < 1) {
+      const k = (1 - shakeT) * (1 - shakeT); // ease-out
+      const amp = FEEL.shakePosAmp * k;
+      camera.position.x += (Math.random() - 0.5) * 2 * amp;
+      camera.position.y += (Math.random() - 0.5) * 2 * amp;
+      camera.position.z += (Math.random() - 0.5) * 2 * amp;
+      roll = (Math.random() - 0.5) * 2 * FEEL.shakeRollAmp * k;
     }
 
     // Look along the aim direction so crosshair (screen center) == shot line.
     camera.lookAt(camera.position.x + aim.x, camera.position.y + aim.y, camera.position.z + aim.z);
+    if (roll !== 0) camera.rotateZ(roll); // stagger tilt, applied after lookAt
 
     // Widen the lens slightly while running so speed is felt, not just numeric.
     const cam = camera as THREE.PerspectiveCamera;

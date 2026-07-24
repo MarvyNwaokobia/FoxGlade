@@ -36,6 +36,11 @@ export const FEEL = {
   cameraMinHeight: 0.8, // camera never dips below this, so you can't see under the world
   cameraMinDistance: 2.4, // closest the camera pulls to the player on collision (avoids face-cam)
   cameraCollisionBuffer: 0.3, // gap kept in front of a wall the camera pulls up to
+
+  // --- Damage feedback (screen shake + stagger tilt) ---
+  shakeDuration: 0.35, // seconds a hit-shake lasts
+  shakePosAmp: 0.16, // positional jitter (metres) at full strength
+  shakeRollAmp: 0.05, // camera roll (radians) at full strength — the "stagger"
   /** Camera position smoothing (higher = tighter follow, lower = floatier). */
   cameraLerp: 12,
   /** Height on the player the camera aims at. */
