@@ -5,6 +5,7 @@ import { useFrame } from "@react-three/fiber";
 import { Grid, Html } from "@react-three/drei";
 import * as THREE from "three";
 import { BUILDINGS, VILLAGE, type Building } from "./village";
+import { HINTS } from "./hints";
 import { useGame } from "@/engine/store";
 import { runtime } from "@/engine/runtime";
 
@@ -95,21 +96,72 @@ function Zone({ position, color, radius = 3 }: { position: [number, number, numb
   );
 }
 
-/** The treasure itself — a spinning gem that hovers over the pad until claimed. */
-function TreasureGem() {
+const HINT_DEFAULT = "#8fd0e0"; // pale cyan — an unresolved "ping"
+const HINT_REAL = "#f2c14e"; // gold — revealed real
+const HINT_FAKE = "#7a4a4a"; // dim — revealed decoy
+
+/**
+ * One hint beacon. All hints look identical (cyan pings) until the fox's sniff
+ * reveals them — then the real one glows gold and decoys dim. The treasure gem
+ * lives only under the real hint and appears when you reach it or it's revealed.
+ */
+function HintBeacon({ index }: { index: number }) {
+  const hint = HINTS[index];
+  const pad = useRef<THREE.MeshStandardMaterial>(null);
+  const pillar = useRef<THREE.MeshStandardMaterial>(null);
   const gem = useRef<THREE.Group>(null);
+  const claimed = useGame((s) => s.treasureClaimed);
+
   useFrame((_, dt) => {
-    if (!gem.current) return;
-    gem.current.rotation.y += dt * 1.2;
-    gem.current.position.y = 1.6 + Math.sin(performance.now() / 600) * 0.15;
+    const revealed = performance.now() < runtime.revealRealUntil;
+    const c = revealed ? (hint.real ? HINT_REAL : HINT_FAKE) : HINT_DEFAULT;
+    if (pad.current) {
+      pad.current.color.set(c);
+      pad.current.emissive.set(c);
+    }
+    if (pillar.current) {
+      pillar.current.color.set(c);
+      pillar.current.emissive.set(c);
+    }
+    if (gem.current) {
+      const atThisReal = runtime.nearHintIsReal && runtime.nearHintIndex === index;
+      gem.current.visible = hint.real && !claimed && (atThisReal || revealed);
+      gem.current.rotation.y += dt * 1.2;
+      gem.current.position.y = 1.6 + Math.sin(performance.now() / 600) * 0.15;
+    }
   });
+
+  if (hint.real && claimed) return null; // the real treasure is gone once claimed
+
   return (
-    <group ref={gem} position={[VILLAGE.treasure.x, 1.6, VILLAGE.treasure.z]}>
-      <mesh castShadow>
-        <octahedronGeometry args={[0.7, 0]} />
-        <meshStandardMaterial color="#ffd873" emissive="#f2b01e" emissiveIntensity={0.7} metalness={0.4} roughness={0.25} />
+    <group position={[hint.pos.x, 0, hint.pos.z]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+        <circleGeometry args={[3, 40]} />
+        <meshStandardMaterial ref={pad} color={HINT_DEFAULT} emissive={HINT_DEFAULT} emissiveIntensity={0.6} transparent opacity={0.5} />
       </mesh>
+      <mesh position={[0, 12, 0]}>
+        <cylinderGeometry args={[0.25, 0.25, 24, 12]} />
+        <meshStandardMaterial ref={pillar} color={HINT_DEFAULT} emissive={HINT_DEFAULT} emissiveIntensity={0.9} transparent opacity={0.4} />
+      </mesh>
+      {hint.real && (
+        <group ref={gem} position={[0, 1.6, 0]}>
+          <mesh castShadow>
+            <octahedronGeometry args={[0.7, 0]} />
+            <meshStandardMaterial color="#ffd873" emissive="#f2b01e" emissiveIntensity={0.7} metalness={0.4} roughness={0.25} />
+          </mesh>
+        </group>
+      )}
     </group>
+  );
+}
+
+function Hints() {
+  return (
+    <>
+      {HINTS.map((_, i) => (
+        <HintBeacon key={i} index={i} />
+      ))}
+    </>
   );
 }
 
@@ -136,7 +188,6 @@ function Stall({ position, color }: { position: [number, number, number]; color:
  */
 export function Village() {
   const m = VILLAGE.market;
-  const claimed = useGame((s) => s.treasureClaimed);
   return (
     <>
       {/* Ground */}
@@ -177,14 +228,9 @@ export function Village() {
       <Stall position={[m.x + 3, 0, m.z + 1]} color="#3b7cc0" />
       <Stall position={[m.x, 0, m.z + 3]} color="#c0a13b" />
 
-      {/* Treasure — disappears once claimed (placeholder for the M3 pickup/mint) */}
-      {!claimed && (
-        <>
-          <Zone position={[VILLAGE.treasure.x, 0, VILLAGE.treasure.z]} color="#f2c14e" radius={3.5} />
-          <ZoneLabel position={[VILLAGE.treasure.x, 5.5, VILLAGE.treasure.z]} text="Treasure" color="#ffdf8f" />
-          <TreasureGem />
-        </>
-      )}
+      {/* Treasure hints — several candidate pings, only one real (no label: the
+          whole point is you don't know which). The fox's sniff reveals it. */}
+      <Hints />
 
       {/* Spawn pad */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[VILLAGE.spawn.x, 0.02, VILLAGE.spawn.z]}>

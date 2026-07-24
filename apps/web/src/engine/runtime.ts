@@ -10,10 +10,14 @@ export const runtime = {
   /** Body yaw in radians (0 = facing -Z). */
   yaw: 0,
   running: false,
-  /** Fixed landmark the HUD compass points at (the treasure marker). */
-  treasurePos: new THREE.Vector3(18, 0, -26),
-  /** True while the player stands in the treasure zone. */
-  nearTreasure: false,
+  /** Index of the hint zone the player is standing in (-1 = none). */
+  nearHintIndex: -1,
+  /** Whether that hint is the real one. */
+  nearHintIsReal: false,
+  /** performance.now until which the fox's sniff keeps the real hint revealed. */
+  revealRealUntil: -1,
+  /** performance.now when the fox can sniff again (cooldown gate). */
+  sniffReadyAt: 0,
   /** Timestamps (performance.now) for crosshair feedback. */
   fireAt: -1,
   hitAt: -1,

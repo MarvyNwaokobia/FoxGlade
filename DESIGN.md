@@ -234,3 +234,63 @@ These are the load-bearing risks flagged during design review. They are not bloc
 7. **Streak vs. tournament cadence.** A daily-streak retention lever ("play every day") competes with a monthly-weekend prize cadence ("the real prize is one weekend a month"). Pick the primary retention driver so the two don't dilute each other.
 8. **Cosmetics as ERC-1155 is awkward.** Fungible skin tokens model "quantity of an interchangeable skin," which is odd for cosmetics. Either accept that framing for v1 simplicity or split cosmetics into their own contract later.
 9. **Cut the Elder fox form from v1.** It implies more art and threshold-balancing than a parenthetical is worth; ship four stages and add Elder as a post-grant flourish.
+
+---
+
+## 14. Direction changes (playtest-driven, Marvy)
+
+Decisions made while playing the gray-box build. These evolve the core loop — captured here with their implications rather than silently rewriting §2/§12.
+
+**14.1 — Multiple treasures, scattered organically.** Not one treasure. Each village hides **several treasure spots tucked in different corners**, at varying depths/rarities. The layout should feel like a real place, not a grid — a road exists, but **houses are scattered at irregular angles and distances**, with alleys, nooks, and dead-ends, not neat rows.
+- *Open question:* does reaching **one** treasure end the stage, or do you **collect several** before advancing? (Affects run length + transaction count — see 14.4.)
+
+**14.2 — Enterable houses, hide, crouch.** Buildings aren't solid blocks — key ones are **enterable interiors** you can duck into to break line of sight, wait out a blocker, or find a hidden treasure. Adds a **crouch** and a light **stealth** layer (blockers already fire on line-of-sight, so cover + interiors slot in naturally). Treasures in interiors reward exploration over the main street.
+
+**14.3 — Village-per-level progression.** Claiming a village's treasure **advances you to the next village** — a new, different environment for the next level. Villages change per level (layout, mood, difficulty), giving a sense of a journey rather than one repeated arena.
+
+**14.4 — Scope flag: this reintroduces the short-session tension (§12).** Multiple treasures + multiple villages pushes toward a longer, roguelike-style progression, which pulls against the *locked* "2–3 min single-session, many quick runs" decision that the grant's transaction-density story leans on. **Recommended reconciliation:** keep **each village a self-contained ~2–3 min stage** (one village = one "level"/session), and make "next village" the **next level you load into**, not a marathon chained in one sitting. That preserves short, dense, replayable runs (and the many-small-transactions argument) while delivering the journey/level-progression feel. Treasure count per village stays low (1–3) so a stage still resolves quickly. Revisit if the grant rubric shifts.
+
+**14.5 — Art direction: toward semi-realistic.** The visual target is moving from stylized low-poly toward **semi-realistic (human-realistic, not hyper-real)** characters, foxes, and environments. This raises the art cost and argues even harder for **bought/commissioned assets over hand-built**, and for **realistic-capable generators** for concept + hero assets. The low-poly concept set is kept as a reference alternative, not discarded.
+
+**14.6 — A roster of playable characters + outfit/weapon customization.** Onboarding offers **multiple characters**, not one: men, women, and youths (young man / young woman), across ages, looks, and outfits (the rugged male scavenger is just one option). Characters are **cosmetic-only in v1** (no stat differences), and modeled **modularly** so the player can **customize the full outfit** — armor, clothing, weapon skins — bought with `VilleToken` or rank-gated (extends §6 and the `ArmoryItems` cosmetics in §7). **Weapons are their own asset line** (multiple guns), also skinnable. This multiplies the modular-art need, reinforcing the buy/commission-a-pack call in 14.5.
+
+**14.7 — Fox breeds, chosen via the egg.** Not one fox — **multiple breeds** (red, arctic, fennec, silver, …). At onboarding the player picks an **egg whose color/type determines the breed** it hatches into; you **carry the egg from the start**, it hatches and grows through the same four stages (Egg → Baby → Juvenile → Adult) within its breed. Breed is **cosmetic identity** (v1, no stat differences), riding on the existing growth/decay/rank system — so it adds art, not new systems. Ties the emotional companion choice to the on-chain `PetNFT` mint at onboarding (§7, §11).
+
+---
+
+## 15. Animation & movement plan
+
+How the characters and the fox actually *move* once the concept art becomes rigged 3D models. Nothing here blocks proving the game is fun — the gray-box capsules already move, shoot, and dodge in code. Animation is a **defined later pass** applied when real models swap in. The build reuses Valor's existing animation plumbing (`AnimationStateMachine`, `MixamoLoader`, `verbAnimations`).
+
+**15.1 — Core principle: rig once, reuse everywhere.** Every human (player, all NPC types, every outfit) shares **one skeleton**, so we build **one animation library** and it drives all of them. We animate a rig, not 8 characters.
+
+**15.2 — Humanoids: the Mixamo pipeline (free, standard, low-risk).** Upload a T-posed humanoid → Mixamo auto-rigs it and provides hundreds of free clips (walk, run, sprint, jump, crouch, crouch-walk, shoot, throw, dodge/roll, climb, sit, grab, idle, turn, hit-reaction, death). In-engine, Three.js `AnimationMixer` (drei `useAnimations`) plays/blends them; a **state machine** picks the clip from game state (moving → walk/run, jump → jump, firing → shoot). Almost every move the player needs is an off-the-shelf clip wired to the state machine.
+
+**15.3 — Layered animation, so combos don't explode.** No separate run+shoot / crouch+shoot / walk+throw clips. **Lower body** plays locomotion; **upper body** plays an override (aim/shoot/throw) via bone masking / additive animation. One "shoot" upper-body clip works over any leg movement.
+
+**15.4 — The fox is the cost center (flagged).** Mixamo is humanoid-only; it cannot rig the **quadruped** fox, and quadruped animation is genuinely harder. Plan: **buy a rigged+animated quadruped** (fox/wolf/dog packs exist) and re-skin to our breeds, or **commission** a rig + small clip set. The fox's needs are small — roughly **idle, walk, run, sit, sleep/curl (decay), happy-trill (evolve)**, ~6 clips, not 30. This is where the animation budget goes; humans are effectively free.
+
+**15.5 — Animation (art) vs. behavior (code) — two different things.** Some listed moves are **clips**; some are **logic** with a simple clip on top:
+- *Clips (art):* walk, run, jump, shoot, throw, dodge, crouch, sit, grab, climb, curl-up.
+- *Logic (code we write):* **when** to play each; **hiding** = break line-of-sight (LOS already built for blockers, §M2) + crouch clip; **entering a house** = trigger + door + load interior (little animation); **climbing** = detect climbable surface + traverse it while the climb clip plays.
+
+**15.6 — Concept art → animatable model caveat.** The realistic images we generated are **art direction / reference**, not automatically riggable. A rig needs clean topology in a T-pose. Animatable humans therefore come from a **clean modular base model** (Synty/commissioned to match the concept art) that Mixamo rigs — not directly from AI image→3D. AI image→3D is best for the **fox's look and static hero props**, not animated humanoids.
+
+**15.7 — v1 vs v2 move scope.**
+
+| Move | v1 | Notes |
+|---|---|---|
+| Walk / run / turn / idle | **Yes** | Core locomotion, Mixamo. |
+| Jump | **Yes** | Mixamo. |
+| Shoot / aim (layered) | **Yes** | Upper-body override (15.3). |
+| Dodge / roll | **Yes** | Mixamo; pairs with combat feel. |
+| Crouch + crouch-walk | **Yes** | Enables hiding/cover. |
+| Hide (break line-of-sight) | **Yes** | Logic + crouch clip; LOS already built. |
+| Enter house / interior | **Yes** | Trigger + door + interior load. |
+| Throw (bomb) | **Yes** | Mixamo throw clip; matches the bomb mechanic (§2). |
+| Sit / idle-with-fox flavor | **Stretch** | Nice-to-have companion polish. |
+| Climb | **v2** | Needs climb clip **and** traversal logic; cut for v1 scope. |
+| Grab specific objects | **v2** | Most custom (per-object logic); defer. |
+| Fox: idle/walk/run/sit/sleep/trill | **Yes** | The ~6-clip quadruped set (15.4). |
+
+**15.8 — Sequencing.** Fox rig + animations land around **M6** (fox growth models); the character rig + Mixamo set + state machine is a dedicated model/animation pass paired with **M5** onboarding or the **M9** art pass. Until then, gray-box code movement stands in — mechanics are proven without any animation dependency.

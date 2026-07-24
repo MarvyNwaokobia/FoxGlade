@@ -3,17 +3,22 @@
 import { useEffect, useRef, useState } from "react";
 import { runtime } from "@/engine/runtime";
 import { useGame } from "@/engine/store";
+import { HINTS } from "@/engine/world/hints";
+
+const HINT_DEFAULT = "#8fd0e0"; // pale cyan ping
+const HINT_REAL = "#f2c14e"; // gold
+const HINT_FAKE = "#7a4a4a"; // dim decoy
 
 /**
- * DOM overlay: control hints + a rough treasure-zone compass. The compass reads
- * `runtime` on its own rAF (never re-rendering from the game loop) and shows a
- * bearing, not a pin — matching the design's "rough zone" hint (DESIGN §2).
+ * DOM overlay. Reads `runtime` on its own rAF (never re-rendering from the game
+ * loop). The compass shows one arrow PER candidate hint — all identical until the
+ * fox's sniff (Q) reveals which is real (DESIGN §2/§3).
  */
 export function Hud() {
-  const arrow = useRef<HTMLDivElement>(null);
-  const distEl = useRef<HTMLSpanElement>(null);
+  const arrows = useRef<(HTMLDivElement | null)[]>([]);
+  const sniffEl = useRef<HTMLDivElement>(null);
+  const promptEl = useRef<HTMLDivElement>(null);
   const runEl = useRef<HTMLDivElement>(null);
-  const treasureEl = useRef<HTMLDivElement>(null);
   const crossEl = useRef<HTMLDivElement>(null);
   const dmgEl = useRef<HTMLDivElement>(null);
   const [locked, setLocked] = useState(false);
@@ -23,7 +28,7 @@ export function Hud() {
   const isDead = useGame((s) => s.isDead);
   const [showClaimed, setShowClaimed] = useState(false);
 
-  // Show a brief confirmation toast when the treasure is claimed, then fade it.
+  // Brief confirmation toast when the treasure is claimed, then fade.
   useEffect(() => {
     if (!claimed) return;
     setShowClaimed(true);
@@ -37,27 +42,68 @@ export function Hud() {
 
     let raf = 0;
     const tick = () => {
-      const dx = runtime.treasurePos.x - runtime.playerPos.x;
-      const dz = runtime.treasurePos.z - runtime.playerPos.z;
-      // Bearing to treasure in world space, minus camera yaw = screen-relative angle.
-      // Quantized to 45° and shown as a coarse near/mid/far band so it reads as a
-      // ROUGH hint, not a GPS pin. Placeholder until the M3 hint system replaces
-      // it with real + decoy hints the fox can help disambiguate (DESIGN §2/§3).
-      const worldAngle = Math.atan2(dx, dz);
-      const step = Math.PI / 4;
-      const rel = Math.round((worldAngle - runtime.yaw) / step) * step;
-      if (arrow.current) arrow.current.style.transform = `rotate(${-rel}rad)`;
-      if (distEl.current) {
-        const d = Math.hypot(dx, dz);
-        distEl.current.textContent = d < 12 ? "near" : d < 30 ? "mid" : "far";
+      const now = performance.now();
+      const revealed = now < runtime.revealRealUntil;
+      const isClaimed = useGame.getState().treasureClaimed;
+
+      // One compass arrow per hint, rotated to its (screen-relative) bearing.
+      for (let i = 0; i < HINTS.length; i++) {
+        const el = arrows.current[i];
+        if (!el) continue;
+        const h = HINTS[i];
+        if (h.real && isClaimed) {
+          el.style.opacity = "0";
+          continue;
+        }
+        const dx = h.pos.x - runtime.playerPos.x;
+        const dz = h.pos.z - runtime.playerPos.z;
+        const rel = Math.atan2(dx, dz) - runtime.yaw;
+        el.style.transform = `translate(-50%, -50%) rotate(${-rel}rad)`;
+        el.style.color = revealed ? (h.real ? HINT_REAL : HINT_FAKE) : HINT_DEFAULT;
+        el.style.opacity = "1";
       }
+
+      // Fox sniff indicator.
+      if (sniffEl.current) {
+        const cd = runtime.sniffReadyAt - now;
+        if (revealed) {
+          sniffEl.current.textContent = "🦊 on the scent!";
+          sniffEl.current.style.color = HINT_REAL;
+          sniffEl.current.style.borderColor = HINT_REAL;
+        } else if (cd > 0) {
+          sniffEl.current.textContent = `🦊 sniff ${Math.ceil(cd / 1000)}s`;
+          sniffEl.current.style.color = "rgba(232,238,242,0.5)";
+          sniffEl.current.style.borderColor = "rgba(232,238,242,0.25)";
+        } else {
+          sniffEl.current.textContent = "🦊 sniff — Q";
+          sniffEl.current.style.color = HINT_DEFAULT;
+          sniffEl.current.style.borderColor = HINT_DEFAULT;
+        }
+      }
+
+      // Proximity prompt: real → claim, fake → dud.
+      if (promptEl.current) {
+        if (!isClaimed && runtime.nearHintIsReal) {
+          promptEl.current.innerHTML = "Treasure — press <b>E</b> to claim";
+          promptEl.current.style.color = "#ffdf8f";
+          promptEl.current.style.borderColor = "rgba(242,193,78,0.6)";
+          promptEl.current.style.opacity = "1";
+        } else if (runtime.nearHintIndex >= 0) {
+          promptEl.current.innerHTML = "False lead — nothing here";
+          promptEl.current.style.color = "rgba(232,238,242,0.7)";
+          promptEl.current.style.borderColor = "rgba(232,238,242,0.3)";
+          promptEl.current.style.opacity = "1";
+        } else {
+          promptEl.current.style.opacity = "0";
+        }
+      }
+
       if (runEl.current) runEl.current.style.opacity = runtime.running ? "1" : "0";
       if (dmgEl.current) {
-        const since = performance.now() - runtime.damageAt;
+        const since = now - runtime.damageAt;
         dmgEl.current.style.opacity = since < 450 ? String(0.55 * (1 - since / 450)) : "0";
       }
       if (crossEl.current) {
-        const now = performance.now();
         const firing = now - runtime.fireAt < 90;
         const hitting = now - runtime.hitAt < 160;
         crossEl.current.style.transform = `translate(-50%, -50%) scale(${firing ? 1.5 : 1})`;
@@ -65,13 +111,6 @@ export function Hud() {
         crossEl.current.style.boxShadow = hitting
           ? "0 0 0 2px rgba(0,0,0,0.6), 0 0 0 5px rgba(255,90,90,0.5)"
           : "0 0 0 2px rgba(0,0,0,0.6)";
-      }
-      if (treasureEl.current) {
-        if (runtime.nearTreasure && !useGame.getState().treasureClaimed) {
-          treasureEl.current.style.opacity = "1";
-        } else {
-          treasureEl.current.style.opacity = "0";
-        }
       }
       raf = requestAnimationFrame(tick);
     };
@@ -109,55 +148,58 @@ export function Hud() {
         </div>
       )}
 
-      {/* Compass, top-center */}
+      {/* Compass, top-center — one arrow per candidate hint */}
       <div style={styles.compassWrap}>
         <div style={styles.compass}>
-          <div ref={arrow} style={styles.arrow}>
-            ▲
-          </div>
+          {HINTS.map((_, i) => (
+            <div
+              key={i}
+              ref={(el) => {
+                arrows.current[i] = el;
+              }}
+              style={styles.hintArrow}
+            >
+              ▲
+            </div>
+          ))}
         </div>
-        <div style={styles.compassLabel}>
-          hint&nbsp;·&nbsp;<span ref={distEl}>—</span>
+        <div ref={sniffEl} style={styles.sniffPill}>
+          🦊 sniff — Q
         </div>
       </div>
 
       {/* Crosshair — only while the mouse is captured (aiming) */}
       {locked && <div ref={crossEl} style={styles.crosshair} />}
 
-      {/* Run indicator — fades in while Shift-running so the state is visible */}
+      {/* Run indicator */}
       <div ref={runEl} style={styles.runPill}>
         running
       </div>
 
-      {/* Treasure prompt — proximity claim (placeholder for the M3 mint) */}
-      <div ref={treasureEl} style={styles.treasurePrompt}>
-        Treasure — press <b>E</b> to claim
-      </div>
+      {/* Proximity prompt (claim / false lead) — text set from the game loop */}
+      <div ref={promptEl} style={styles.prompt} />
 
-      {/* Brief confirmation toast after claiming */}
+      {/* Claim confirmation toast */}
       {showClaimed && (
-        <div style={styles.claimedToast}>Treasure claimed&nbsp;·&nbsp;on-chain mint arrives at M3</div>
+        <div style={styles.claimedToast}>Treasure claimed&nbsp;·&nbsp;on-chain mint arrives next</div>
       )}
 
       {/* Controls, bottom-left */}
       <div style={styles.controls}>
-        <div style={styles.row}>
-          <b>WASD</b> move
+        <div>
+          <b>WASD</b> move &nbsp;·&nbsp; <b>Shift</b> run &nbsp;·&nbsp; <b>Space</b> jump
         </div>
-        <div style={styles.row}>
-          <b>Shift</b> run &nbsp;·&nbsp; <b>Space</b> jump
-        </div>
-        <div style={styles.row}>
+        <div>
           <b>Mouse</b> look &nbsp;·&nbsp; <b>Left-click</b> / <b>F</b> shoot
         </div>
-        <div style={styles.row}>
-          <b>Esc</b> release mouse
+        <div>
+          <b>Q</b> fox sniff &nbsp;·&nbsp; <b>E</b> claim &nbsp;·&nbsp; <b>Esc</b> release mouse
         </div>
       </div>
 
       {/* Click-to-play prompt when the mouse isn't captured */}
       {!locked && (
-        <div style={styles.prompt}>
+        <div style={styles.lockPrompt}>
           <div style={styles.promptCard}>click to look around</div>
         </div>
       )}
@@ -176,15 +218,35 @@ const styles: Record<string, React.CSSProperties> = {
     userSelect: "none",
   },
   compass: {
-    width: 54,
-    height: 54,
+    position: "relative",
+    width: 58,
+    height: 58,
     borderRadius: "50%",
     border: "2px solid rgba(232,238,242,0.35)",
     background: "rgba(11,13,16,0.5)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
     margin: "0 auto",
+  },
+  hintArrow: {
+    position: "absolute",
+    left: "50%",
+    top: "50%",
+    transform: "translate(-50%, -50%)",
+    transformOrigin: "50% 50%",
+    fontSize: 20,
+    lineHeight: 1,
+    color: HINT_DEFAULT,
+    transition: "color 0.2s ease",
+  },
+  sniffPill: {
+    marginTop: 8,
+    display: "inline-block",
+    padding: "3px 10px",
+    borderRadius: 999,
+    border: `1px solid ${HINT_DEFAULT}`,
+    color: HINT_DEFAULT,
+    fontSize: 12,
+    letterSpacing: 0.5,
+    background: "rgba(11,13,16,0.5)",
   },
   damageFlash: {
     position: "absolute",
@@ -207,13 +269,7 @@ const styles: Record<string, React.CSSProperties> = {
     pointerEvents: "none",
     userSelect: "none",
   },
-  healthFill: {
-    position: "absolute",
-    left: 0,
-    top: 0,
-    bottom: 0,
-    transition: "width 0.15s ease, background 0.2s ease",
-  },
+  healthFill: { position: "absolute", left: 0, top: 0, bottom: 0, transition: "width 0.15s ease, background 0.2s ease" },
   healthLabel: {
     position: "absolute",
     inset: 0,
@@ -252,8 +308,6 @@ const styles: Record<string, React.CSSProperties> = {
     transition: "transform 0.06s ease, background 0.06s ease",
     pointerEvents: "none",
   },
-  arrow: { color: "#f2c14e", fontSize: 22, lineHeight: 1, transformOrigin: "50% 50%" },
-  compassLabel: { marginTop: 6, fontSize: 12, color: "rgba(232,238,242,0.7)", letterSpacing: 0.3 },
   runPill: {
     position: "absolute",
     left: "50%",
@@ -272,15 +326,15 @@ const styles: Record<string, React.CSSProperties> = {
     pointerEvents: "none",
     userSelect: "none",
   },
-  treasurePrompt: {
+  prompt: {
     position: "absolute",
     left: "50%",
     top: "40%",
     transform: "translateX(-50%)",
     padding: "10px 20px",
     borderRadius: 10,
-    background: "rgba(242,193,78,0.14)",
-    border: "1px solid rgba(242,193,78,0.6)",
+    background: "rgba(11,13,16,0.55)",
+    border: "1px solid rgba(232,238,242,0.3)",
     color: "#ffdf8f",
     fontSize: 16,
     letterSpacing: 0.5,
@@ -316,15 +370,7 @@ const styles: Record<string, React.CSSProperties> = {
     pointerEvents: "none",
     userSelect: "none",
   },
-  row: {},
-  prompt: {
-    position: "absolute",
-    inset: 0,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    pointerEvents: "none",
-  },
+  lockPrompt: { position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" },
   promptCard: {
     padding: "10px 18px",
     borderRadius: 10,

@@ -22,6 +22,10 @@ apps/web/next-env.d.ts
 .turbo/
 *.tsbuildinfo
 
+# Design art + vision board — kept LOCAL only, never on GitHub (per Marvy).
+# (The written spec DESIGN.md lives at the repo root and is not affected.)
+design/
+
 # OS / editor / tooling
 .claude/
 .DS_Store

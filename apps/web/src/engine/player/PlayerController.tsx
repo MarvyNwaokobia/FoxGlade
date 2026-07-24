@@ -10,6 +10,7 @@ import { VILLAGE, COLLIDERS, BOXES3D } from "@/engine/world/village";
 import { resolveColliders, raycastBoxes } from "@/engine/world/collision";
 import { useGame } from "@/engine/store";
 import { fireHitscan, enemies } from "@/engine/combat/enemies";
+import { HINTS, HINT_RADIUS, SNIFF_COOLDOWN, SNIFF_REVEAL } from "@/engine/world/hints";
 
 const FIRE_INTERVAL = 0.16; // seconds between shots when holding fire
 
@@ -40,18 +41,24 @@ export function PlayerController() {
   const fireHeld = useRef(false);
   const fireCd = useRef(0);
 
-  // Point the HUD compass at the real treasure zone once on mount, and wire the
-  // placeholder "claim" key (the real on-chain mint arrives at M3).
+  // Interaction keys: E claim (only at the real hint), R respawn, F fire,
+  // Q fox-sniff (reveals the real hint on a cooldown).
   useEffect(() => {
-    runtime.treasurePos.copy(VILLAGE.treasure);
     const onKey = (e: KeyboardEvent) => {
-      if (e.code === "KeyE" && runtime.nearTreasure && !useGame.getState().treasureClaimed) {
+      if (e.code === "KeyE" && runtime.nearHintIsReal && !useGame.getState().treasureClaimed) {
         useGame.getState().claimTreasure();
       }
       if (e.code === "KeyR" && useGame.getState().isDead) {
         useGame.getState().respawn();
       }
       if (e.code === "KeyF") fireHeld.current = true; // keyboard fire (hold to auto-fire)
+      if (e.code === "KeyQ") {
+        const now = performance.now();
+        if (now >= runtime.sniffReadyAt) {
+          runtime.revealRealUntil = now + SNIFF_REVEAL * 1000;
+          runtime.sniffReadyAt = now + SNIFF_COOLDOWN * 1000;
+        }
+      }
     };
     const onKeyUp = (e: KeyboardEvent) => {
       if (e.code === "KeyF") fireHeld.current = false;
@@ -186,9 +193,17 @@ export function PlayerController() {
       shadow.current.position.set(pos.current.x, 0.02, pos.current.z);
     }
 
-    // Treasure proximity (placeholder pickup — full mint is M3).
-    const td = Math.hypot(runtime.treasurePos.x - pos.current.x, runtime.treasurePos.z - pos.current.z);
-    runtime.nearTreasure = td < 3.5;
+    // Hint proximity: which hint zone (if any) the player is standing in.
+    runtime.nearHintIndex = -1;
+    runtime.nearHintIsReal = false;
+    for (let i = 0; i < HINTS.length; i++) {
+      const h = HINTS[i];
+      if (Math.hypot(h.pos.x - pos.current.x, h.pos.z - pos.current.z) < HINT_RADIUS) {
+        runtime.nearHintIndex = i;
+        runtime.nearHintIsReal = h.real;
+        break;
+      }
+    }
 
     // Publish for fox + HUD.
     runtime.playerPos.copy(pos.current);
