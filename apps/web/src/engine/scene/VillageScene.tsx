@@ -3,7 +3,7 @@
 import { Village } from "@/engine/world/VillageMesh";
 import { Blockers } from "@/engine/npc/Blockers";
 import { Distractors } from "@/engine/npc/Distractors";
-import { Thief } from "@/engine/npc/Thief";
+import { Thieves } from "@/engine/npc/ThiefWave";
 import { Projectiles } from "@/engine/combat/ProjectileLayer";
 import { useGame } from "@/engine/store";
 
@@ -35,7 +35,7 @@ export function VillageScene() {
       <group key={roundNonce}>
         <Blockers />
         <Distractors />
-        <Thief />
+        <Thieves />
       </group>
       <Projectiles />
     </>

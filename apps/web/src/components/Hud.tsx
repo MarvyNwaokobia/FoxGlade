@@ -5,6 +5,7 @@ import { runtime } from "@/engine/runtime";
 import { useGame } from "@/engine/store";
 import { HINTS } from "@/engine/world/hints";
 import { SESSION_SECONDS } from "@/engine/config/round";
+import { thieves, MAX_THIEVES } from "@/engine/npc/thieves";
 
 const HINT_DEFAULT = "#8fd0e0"; // pale cyan ping
 const HINT_REAL = "#f2c14e"; // gold
@@ -17,7 +18,7 @@ const HINT_FAKE = "#7a4a4a"; // dim decoy
  */
 export function Hud() {
   const arrows = useRef<(HTMLDivElement | null)[]>([]);
-  const thiefBlip = useRef<HTMLDivElement>(null);
+  const thiefBlips = useRef<(HTMLDivElement | null)[]>([]);
   const sniffEl = useRef<HTMLDivElement>(null);
   const promptEl = useRef<HTMLDivElement>(null);
   const timerEl = useRef<HTMLDivElement>(null);
@@ -63,17 +64,19 @@ export function Hud() {
         el.style.opacity = "1";
       }
 
-      // Thief blip (red) on the compass ring while it races.
-      if (thiefBlip.current) {
-        if (runtime.thiefAlive && !isClaimed) {
-          const dx = runtime.thiefPos.x - runtime.playerPos.x;
-          const dz = runtime.thiefPos.z - runtime.playerPos.z;
-          const rel = Math.atan2(dx, dz) - runtime.yaw;
-          thiefBlip.current.style.left = `${C + Math.sin(rel) * R}px`;
-          thiefBlip.current.style.top = `${C - Math.cos(rel) * R}px`;
-          thiefBlip.current.style.opacity = "1";
+      // A red blip per live thief on the compass ring.
+      const live = isClaimed ? [] : Array.from(thieves);
+      for (let i = 0; i < MAX_THIEVES; i++) {
+        const el = thiefBlips.current[i];
+        if (!el) continue;
+        if (i < live.length) {
+          const p = live[i].getPos();
+          const rel = Math.atan2(p.x - runtime.playerPos.x, p.z - runtime.playerPos.z) - runtime.yaw;
+          el.style.left = `${C + Math.sin(rel) * R}px`;
+          el.style.top = `${C - Math.cos(rel) * R}px`;
+          el.style.opacity = "1";
         } else {
-          thiefBlip.current.style.opacity = "0";
+          el.style.opacity = "0";
         }
       }
 
@@ -209,7 +212,15 @@ export function Hud() {
               style={styles.hintDot}
             />
           ))}
-          <div ref={thiefBlip} style={styles.thiefDot} />
+          {Array.from({ length: MAX_THIEVES }).map((_, i) => (
+            <div
+              key={i}
+              ref={(el) => {
+                thiefBlips.current[i] = el;
+              }}
+              style={styles.thiefDot}
+            />
+          ))}
         </div>
         <div ref={sniffEl} style={styles.sniffPill}>
           🦊 sniff — Q

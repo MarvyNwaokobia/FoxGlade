@@ -6,8 +6,8 @@ import * as THREE from "three";
 import { Billboard } from "@react-three/drei";
 import { enemies, type Enemy } from "@/engine/combat/enemies";
 import { spawnProjectile } from "@/engine/combat/projectiles";
-import { raycastBoxes } from "@/engine/world/collision";
-import { BOXES3D } from "@/engine/world/village";
+import { raycastBoxes, resolveColliders } from "@/engine/world/collision";
+import { BOXES3D, COLLIDERS, VILLAGE } from "@/engine/world/village";
 import { runtime } from "@/engine/runtime";
 import { useGame } from "@/engine/store";
 
@@ -17,12 +17,15 @@ const BODY_R = 0.45;
 const ENGAGE_RANGE = 24; // starts shooting within this distance
 const FIRE_COOLDOWN = 1.6; // seconds between shots
 const PROJECTILE_SPEED = 20; // m/s — slow enough to dodge / break LOS
+const MOVE_SPEED = 2.6; // m/s when advancing/strafing
+const AGGRO_RANGE = 32; // starts pursuing within this distance
+const RANGE_MAX = 15; // farther than this → advance
+const RANGE_MIN = 7; // closer than this → back off (otherwise strafe)
 
 /**
- * A blocker NPC (M2 slice 1): stands in a chokepoint and must be shot to pass.
- * Registers as an Enemy so the player's hitscan can find it; shows a health bar,
- * flashes on hit, and despawns when killed. It does NOT fight back yet — enemy
- * fire is the next slice.
+ * A blocker NPC: an armed enemy that engages. It pursues the player toward a
+ * preferred fighting range, strafes, and fires when it has line of sight. Shows a
+ * health bar, flashes on hit, despawns when killed.
  */
 export function Blocker({ position }: { position: [number, number, number] }) {
   const [health, setHealth] = useState(MAX_HEALTH);
@@ -30,11 +33,13 @@ export function Blocker({ position }: { position: [number, number, number] }) {
   const dead = health <= 0;
   const group = useRef<THREE.Group>(null);
   const cooldown = useRef(Math.random() * FIRE_COOLDOWN); // stagger initial volleys
+  const pos = useRef(new THREE.Vector3(position[0], position[1], position[2]));
+  const strafeDir = useRef(Math.random() < 0.5 ? 1 : -1);
+  const strafeTimer = useRef(2 + Math.random() * 2);
 
   useEffect(() => {
-    const pos = new THREE.Vector3(position[0], position[1], position[2]);
     const enemy: Enemy = {
-      getPosition: () => pos,
+      getPosition: () => pos.current,
       hitRadius: 0.85,
       hitHeight: 1.0,
       bodyRadius: 0.5,
@@ -60,27 +65,59 @@ export function Blocker({ position }: { position: [number, number, number] }) {
     return () => clearTimeout(id);
   }, [flash]);
 
-  // Engage: face the player and fire on a cooldown when in range with clear LOS.
+  // Engage: pursue toward a fighting range, strafe, and fire when LOS is clear.
   useFrame((_, rawDt) => {
     if (dead || useGame.getState().roundState !== "playing") return;
     const dt = Math.min(rawDt, 1 / 30);
     cooldown.current -= dt;
+    strafeTimer.current -= dt;
+    if (strafeTimer.current <= 0) {
+      strafeDir.current *= -1; // flip strafe direction periodically
+      strafeTimer.current = 2 + Math.random() * 2;
+    }
 
-    const dx = runtime.playerPos.x - position[0];
-    const dz = runtime.playerPos.z - position[2];
+    const dx = runtime.playerPos.x - pos.current.x;
+    const dz = runtime.playerPos.z - pos.current.z;
     const dist = Math.hypot(dx, dz);
-    if (dist > ENGAGE_RANGE) return;
 
-    const from = new THREE.Vector3(position[0], position[1] + 1.0, position[2]);
-    const to = new THREE.Vector3(runtime.playerPos.x, runtime.playerPos.y + 1.0, runtime.playerPos.z);
-    if (raycastBoxes(from, to, BOXES3D) < 1) return; // wall between us — hold fire
+    // Movement toward the player (pursues even without LOS, to come around cover).
+    if (dist < AGGRO_RANGE && dist > 0.01) {
+      const nx = dx / dist;
+      const nz = dz / dist;
+      let mx: number;
+      let mz: number;
+      if (dist > RANGE_MAX) {
+        mx = nx; // advance
+        mz = nz;
+      } else if (dist < RANGE_MIN) {
+        mx = -nx; // back off
+        mz = -nz;
+      } else {
+        mx = -nz * strafeDir.current; // strafe (perpendicular)
+        mz = nx * strafeDir.current;
+      }
+      pos.current.x += mx * MOVE_SPEED * dt;
+      pos.current.z += mz * MOVE_SPEED * dt;
+      resolveColliders(pos.current, BODY_R, COLLIDERS);
+      const lim = VILLAGE.half - BODY_R;
+      pos.current.x = Math.max(-lim, Math.min(lim, pos.current.x));
+      pos.current.z = Math.max(-lim, Math.min(lim, pos.current.z));
+    }
 
-    if (group.current) group.current.rotation.y = Math.atan2(dx, dz); // face the player
+    if (group.current) {
+      group.current.position.set(pos.current.x, 0, pos.current.z);
+      group.current.rotation.y = Math.atan2(dx, dz); // face the player
+    }
 
-    if (cooldown.current <= 0) {
-      cooldown.current = FIRE_COOLDOWN;
-      const dir = to.clone().sub(from).normalize();
-      spawnProjectile(from.clone().addScaledVector(dir, 0.7), dir, PROJECTILE_SPEED);
+    // Fire when in range with a clear line of sight.
+    if (dist <= ENGAGE_RANGE && cooldown.current <= 0) {
+      const from = new THREE.Vector3(pos.current.x, 1.0, pos.current.z);
+      const to = new THREE.Vector3(runtime.playerPos.x, runtime.playerPos.y + 1.0, runtime.playerPos.z);
+      if (raycastBoxes(from, to, BOXES3D) >= 1) {
+        cooldown.current = FIRE_COOLDOWN;
+        const dir = to.clone().sub(from).normalize();
+        spawnProjectile(from.clone().addScaledVector(dir, 0.7), dir, PROJECTILE_SPEED);
+      }
     }
   });
 

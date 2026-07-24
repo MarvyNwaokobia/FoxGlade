@@ -65,7 +65,6 @@ export const useGame = create<GameState>((set, get) => ({
     runtime.hintSilenced.fill(false);
     runtime.revealRealUntil = -1;
     runtime.sniffReadyAt = 0;
-    runtime.thiefAlive = true;
     set((s) => ({
       treasureClaimed: false,
       playerHealth: MAX_PLAYER_HEALTH,
