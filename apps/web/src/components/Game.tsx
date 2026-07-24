@@ -2,6 +2,7 @@
 
 import { Suspense } from "react";
 import { Canvas } from "@react-three/fiber";
+import { Loader } from "@react-three/drei";
 import * as THREE from "three";
 import { PlayerController } from "@/engine/player/PlayerController";
 import { FoxCompanion } from "@/engine/fox/FoxCompanion";
@@ -23,13 +24,23 @@ export default function Game() {
           gl.setClearColor("#c8895a"); // dusk fallback until the HDRI sky loads
         }}
       >
+        {/* Hold the whole scene (and the player/fox) until every asset — HDRI,
+            building models, props, textures — has loaded, so nothing renders
+            black-and-unlit during the download. */}
         <Suspense fallback={null}>
           <VillageScene />
+          <PlayerController />
+          <FoxCompanion />
         </Suspense>
-        <PlayerController />
-        <FoxCompanion />
       </Canvas>
       <Hud />
+      {/* DOM loading screen with a progress bar until assets are ready. */}
+      <Loader
+        containerStyles={{ background: "#1a140f" }}
+        barStyles={{ background: "#f2c14e", height: 4 }}
+        dataStyles={{ color: "#e8dcc6", fontSize: 13, fontFamily: "system-ui, sans-serif", letterSpacing: 1 }}
+        dataInterpolation={(p) => `Entering the village… ${p.toFixed(0)}%`}
+      />
     </>
   );
 }
