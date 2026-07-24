@@ -49,4 +49,6 @@ export const BLOCKER = {
   fireCooldown: 2.2, // seconds between shots
   projectileSpeed: 16, // m/s — slow enough to sidestep or break LOS
   shotDamage: 9, // player health lost per hit (player has 100)
+  /** Aggro/engage ranges shrink to this fraction while the player is crouched. */
+  crouchDetectionMult: 0.55,
 } as const;

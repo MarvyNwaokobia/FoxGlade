@@ -13,6 +13,7 @@ export const FEEL = {
   // --- Locomotion (metres / second) ---
   walkSpeed: 4.2,
   runSpeed: 8.0, // hold Shift
+  crouchSpeed: 2.2, // while crouched (C toggles; crouching disables run)
   /** How fast horizontal velocity ramps toward the target (higher = snappier). */
   accel: 14,
   /** Exponential velocity decay when there's no input (higher = harder stop). */
@@ -45,6 +46,12 @@ export const FEEL = {
   cameraLerp: 12,
   /** Height on the player the camera aims at. */
   lookAtHeight: 1.4,
+  /** Eye/aim height while crouched (camera + throws lower with you). */
+  crouchEyeHeight: 0.95,
+  /** Visual body height while crouched (capsule squashes to this). */
+  crouchHeight: 1.1,
+  /** How fast the eye/body height eases between stand and crouch. */
+  crouchLerp: 10,
   baseFov: 60,
   runFovKick: 7, // camera widens slightly while running, so speed is felt
   fovLerp: 8,

@@ -48,7 +48,7 @@ function pointInBoxes(x: number, y: number, z: number): boolean {
  */
 export function stepProjectiles(dt: number, onPlayerHit: () => void) {
   const px = runtime.playerPos.x;
-  const py = runtime.playerPos.y + PLAYER_CHEST;
+  const py = runtime.playerPos.y + (runtime.crouching ? 0.6 : PLAYER_CHEST); // duck under shots
   const pz = runtime.playerPos.z;
   const hitR = RADIUS + PLAYER_HIT_RADIUS;
 

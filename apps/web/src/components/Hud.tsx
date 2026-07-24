@@ -23,6 +23,7 @@ export function Hud() {
   const promptEl = useRef<HTMLDivElement>(null);
   const timerEl = useRef<HTMLDivElement>(null);
   const runEl = useRef<HTMLDivElement>(null);
+  const crouchEl = useRef<HTMLDivElement>(null);
   const crossEl = useRef<HTMLDivElement>(null);
   const dmgEl = useRef<HTMLDivElement>(null);
   const [locked, setLocked] = useState(false);
@@ -127,6 +128,7 @@ export function Hud() {
       }
 
       if (runEl.current) runEl.current.style.opacity = runtime.running ? "1" : "0";
+      if (crouchEl.current) crouchEl.current.style.opacity = runtime.crouching ? "1" : "0";
       if (dmgEl.current) {
         const since = now - runtime.damageAt;
         dmgEl.current.style.opacity = since < 450 ? String(0.55 * (1 - since / 450)) : "0";
@@ -242,13 +244,18 @@ export function Hud() {
         running
       </div>
 
+      {/* Crouch indicator (mutually exclusive with running) */}
+      <div ref={crouchEl} style={styles.crouchPill}>
+        crouched
+      </div>
+
       {/* Proximity prompt (claim / false lead) — text set from the game loop */}
       <div ref={promptEl} style={styles.prompt} />
 
       {/* Controls, bottom-left */}
       <div style={styles.controls}>
         <div>
-          <b>WASD</b> move &nbsp;·&nbsp; <b>Shift</b> run &nbsp;·&nbsp; <b>Space</b> jump
+          <b>WASD</b> move &nbsp;·&nbsp; <b>Shift</b> run &nbsp;·&nbsp; <b>Space</b> jump &nbsp;·&nbsp; <b>C</b> crouch
         </div>
         <div>
           <b>Mouse</b> look &nbsp;·&nbsp; <b>Left-click</b> / <b>F</b> shoot
@@ -452,6 +459,24 @@ const styles: Record<string, React.CSSProperties> = {
     background: "rgba(242,193,78,0.15)",
     border: "1px solid rgba(242,193,78,0.5)",
     color: "#f2c14e",
+    fontSize: 12,
+    letterSpacing: 1.5,
+    textTransform: "uppercase",
+    opacity: 0,
+    transition: "opacity 0.12s ease",
+    pointerEvents: "none",
+    userSelect: "none",
+  },
+  crouchPill: {
+    position: "absolute",
+    left: "50%",
+    bottom: 26,
+    transform: "translateX(-50%)",
+    padding: "4px 12px",
+    borderRadius: 999,
+    background: "rgba(143,208,224,0.12)",
+    border: "1px solid rgba(143,208,224,0.5)",
+    color: "#8fd0e0",
     fontSize: 12,
     letterSpacing: 1.5,
     textTransform: "uppercase",

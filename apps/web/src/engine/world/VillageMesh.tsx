@@ -4,7 +4,7 @@ import { useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Grid, Html } from "@react-three/drei";
 import * as THREE from "three";
-import { BUILDINGS, VILLAGE, type Building } from "./village";
+import { BUILDINGS, VILLAGE, wallSegments, type Building } from "./village";
 import { HINTS } from "./hints";
 import { useGame } from "@/engine/store";
 import { runtime } from "@/engine/runtime";
@@ -21,10 +21,36 @@ function Wall({ position, size }: { position: [number, number, number]; size: [n
   );
 }
 
-/** A building block with a contrasting roof cap so it reads as a structure. */
+/**
+ * A building block. Solid ones render as one box with a roof cap; enterable
+ * ones (with a door) render their wall strips — the same boxes the collision
+ * and LOS systems use — plus the roof, so you can walk in through the gap.
+ */
 function BuildingBlock({ b, i }: { b: Building; i: number }) {
   const wall = i % 2 === 0 ? "#7c828b" : "#6e767f";
   const isCrate = b.h < 2;
+  if (b.door) {
+    return (
+      <group>
+        {wallSegments(b).map((s, j) => (
+          <mesh
+            key={j}
+            position={[(s.minX + s.maxX) / 2, b.h / 2, (s.minZ + s.maxZ) / 2]}
+            castShadow
+            receiveShadow
+          >
+            <boxGeometry args={[s.maxX - s.minX, b.h, s.maxZ - s.minZ]} />
+            <meshStandardMaterial color={wall} roughness={0.85} />
+          </mesh>
+        ))}
+        {/* Roof cap (slight overhang; the LOS roof slab matches the footprint) */}
+        <mesh position={[b.x, b.h + 0.2, b.z]} castShadow>
+          <boxGeometry args={[b.w + 0.5, 0.4, b.d + 0.5]} />
+          <meshStandardMaterial color="#3f464e" roughness={0.8} />
+        </mesh>
+      </group>
+    );
+  }
   return (
     <group position={[b.x, 0, b.z]}>
       <mesh position={[0, b.h / 2, 0]} castShadow receiveShadow>

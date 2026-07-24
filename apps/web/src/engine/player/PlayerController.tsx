@@ -44,6 +44,8 @@ export function PlayerController() {
   const fireHeld = useRef(false);
   const fireCd = useRef(0);
   const bombAim = useRef(false); // holding G: telegraph shows, release throws
+  const crouching = useRef(false); // C toggles; jump stands you back up
+  const eyeH = useRef(FEEL.lookAtHeight); // eased eye height (stand ↔ crouch)
 
   // Interaction keys: E claim (only at the real hint), R respawn, F fire,
   // Q fox-sniff (reveals the real hint on a cooldown).
@@ -64,6 +66,7 @@ export function PlayerController() {
         useGame.getState().restart();
       }
       if (e.code === "KeyF") fireHeld.current = true; // keyboard fire (hold to auto-fire)
+      if (e.code === "KeyC" && !e.repeat) crouching.current = !crouching.current;
       if (e.code === "KeyG" && !e.repeat) {
         // Start aiming a bomb throw (needs the mouse captured, a bomb, live play).
         const st = useGame.getState();
@@ -96,7 +99,7 @@ export function PlayerController() {
           );
           const head = new THREE.Vector3(
             pos.current.x,
-            pos.current.y + FEEL.lookAtHeight,
+            pos.current.y + eyeH.current,
             pos.current.z
           );
           spawnBomb(head, aim);
@@ -116,6 +119,7 @@ export function PlayerController() {
   useEffect(() => {
     pos.current.copy(VILLAGE.spawn);
     vel.current.set(0, 0, 0);
+    crouching.current = false;
   }, [respawnNonce]);
 
   // Mouse look via pointer lock; left-click fires once the mouse is captured.
@@ -178,11 +182,12 @@ export function PlayerController() {
     if (k.left) wish.sub(right);
 
     const moving = wish.lengthSq() > 0 && !frozen;
-    runtime.running = moving && k.run;
+    runtime.running = moving && k.run && !crouching.current;
+    runtime.crouching = crouching.current;
 
     if (moving) {
       wish.normalize();
-      const speed = k.run ? FEEL.runSpeed : FEEL.walkSpeed;
+      const speed = crouching.current ? FEEL.crouchSpeed : k.run ? FEEL.runSpeed : FEEL.walkSpeed;
       const t = Math.min(1, FEEL.accel * dt);
       vel.current.x += (wish.x * speed - vel.current.x) * t;
       vel.current.z += (wish.z * speed - vel.current.z) * t;
@@ -198,8 +203,9 @@ export function PlayerController() {
     pos.current.x += vel.current.x * dt;
     pos.current.z += vel.current.z * dt;
 
-    // Jump + gravity.
-    if (grounded.current && k.jump) {
+    // Jump + gravity (jumping stands you back up).
+    if (grounded.current && k.jump && !frozen) {
+      crouching.current = false;
       vel.current.y = FEEL.jumpForce;
       grounded.current = false;
     }
@@ -232,10 +238,14 @@ export function PlayerController() {
     pos.current.x = THREE.MathUtils.clamp(pos.current.x, -lim, lim);
     pos.current.z = THREE.MathUtils.clamp(pos.current.z, -lim, lim);
 
-    // Apply to the visible body.
+    // Apply to the visible body (squashing the capsule while crouched).
+    const eyeTarget = crouching.current ? FEEL.crouchEyeHeight : FEEL.lookAtHeight;
+    eyeH.current += (eyeTarget - eyeH.current) * Math.min(1, FEEL.crouchLerp * dt);
     if (body.current) {
       body.current.position.copy(pos.current);
       body.current.rotation.y = bodyRot.current;
+      const scaleTarget = crouching.current ? FEEL.crouchHeight / FEEL.playerHeight : 1;
+      body.current.scale.y += (scaleTarget - body.current.scale.y) * Math.min(1, FEEL.crouchLerp * dt);
     }
     // Contact shadow stays flat on the ground under the player (even mid-jump).
     if (shadow.current) {
@@ -266,7 +276,7 @@ export function PlayerController() {
     const cp = Math.cos(pitch.current);
     const sp = Math.sin(pitch.current);
     const aim = new THREE.Vector3(-Math.sin(yaw.current) * cp, sp, -Math.cos(yaw.current) * cp);
-    const head = new THREE.Vector3(pos.current.x, pos.current.y + FEEL.lookAtHeight, pos.current.z);
+    const head = new THREE.Vector3(pos.current.x, pos.current.y + eyeH.current, pos.current.z);
     const rightV = new THREE.Vector3(Math.cos(yaw.current), 0, -Math.sin(yaw.current));
 
     // Bomb aim telegraph: predict the landing point along the current aim line

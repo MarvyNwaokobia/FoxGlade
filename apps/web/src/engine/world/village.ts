@@ -7,12 +7,20 @@ import * as THREE from "three";
  * are axis-aligned boxes, which keeps collision trivial (circle-vs-AABB).
  */
 
+/** Which face of a building its door opening is on (N = -Z, S = +Z, E = +X, W = -X). */
+export interface Door {
+  side: "N" | "S" | "E" | "W";
+  width?: number; // opening width (metres), default DOOR_W
+}
+
 export interface Building {
   x: number;
   z: number;
   w: number; // size along X
   d: number; // size along Z
   h: number; // height
+  /** A doored building is ENTERABLE: hollow, four walls with a gap (§14.2). */
+  door?: Door;
 }
 
 export interface Rect {
@@ -51,7 +59,8 @@ export const BUILDINGS: Building[] = [
   { x: 16, z: 22, w: 12, d: 8, h: 5 },
 
   // Second ring with a small central blocker to force an early weave
-  { x: -13, z: 10, w: 8, d: 8, h: 6 },
+  // (the west one is enterable — its door faces the central street)
+  { x: -13, z: 10, w: 8, d: 8, h: 6, door: { side: "E" } },
   { x: 13, z: 10, w: 10, d: 8, h: 6 },
   { x: 0, z: 13, w: 6, d: 4, h: 4 },
 
@@ -59,12 +68,13 @@ export const BUILDINGS: Building[] = [
   { x: -24, z: -5, w: 10, d: 8, h: 6 },
   { x: -31, z: 13, w: 6, d: 12, h: 5 },
 
-  // Mid blocks (central gap ~9m wide stays walkable)
+  // Mid blocks (central gap ~9m wide stays walkable; the east one is enterable)
   { x: -8, z: -2, w: 8, d: 8, h: 5 },
-  { x: 11, z: -4, w: 10, d: 9, h: 7 },
+  { x: 11, z: -4, w: 10, d: 9, h: 7, door: { side: "W" } },
 
   // Deep ring guarding the treasure, plus a backdrop wall behind it
-  { x: -14, z: -20, w: 9, d: 8, h: 6 },
+  // (the west one is enterable — a hideout right on the treasure approach)
+  { x: -14, z: -20, w: 9, d: 8, h: 6, door: { side: "E" } },
   { x: 14, z: -20, w: 9, d: 8, h: 6 },
   { x: 0, z: -33, w: 16, d: 6, h: 8 },
 
@@ -74,24 +84,88 @@ export const BUILDINGS: Building[] = [
   { x: 6, z: -12, w: 2, d: 2, h: 1.5 },
 ];
 
-/** AABB colliders derived from the buildings (perimeter is handled by bounds clamp). */
-export const COLLIDERS: Rect[] = BUILDINGS.map((b) => ({
-  minX: b.x - b.w / 2,
-  maxX: b.x + b.w / 2,
-  minZ: b.z - b.d / 2,
-  maxZ: b.z + b.d / 2,
-}));
+export const WALL_T = 0.35; // enterable-building wall thickness
+export const DOOR_W = 2.0; // default door opening width
+
+/** Enterable buildings (have a door) vs plain solid blocks. */
+export const ENTERABLES: Building[] = BUILDINGS.filter((b) => b.door);
+export const SOLIDS: Building[] = BUILDINGS.filter((b) => !b.door);
+
+/**
+ * The four wall strips of an enterable building, with the doored face split in
+ * two around a centred opening. One data source drives render, movement
+ * collision, projectile/LOS blocking, and camera collision — walls can't lie.
+ */
+export function wallSegments(b: Building): Box3[] {
+  const minX = b.x - b.w / 2;
+  const maxX = b.x + b.w / 2;
+  const minZ = b.z - b.d / 2;
+  const maxZ = b.z + b.d / 2;
+  const dw = b.door?.width ?? DOOR_W;
+  const side = b.door?.side;
+  const segs: Box3[] = [];
+
+  const strip = (sMinX: number, sMaxX: number, sMinZ: number, sMaxZ: number) => {
+    segs.push({ minX: sMinX, maxX: sMaxX, minY: 0, maxY: b.h, minZ: sMinZ, maxZ: sMaxZ });
+  };
+  const facedX = (sMinZ: number, sMaxZ: number, doored: boolean) => {
+    // A wall running along X (N/S face).
+    if (!doored) return strip(minX, maxX, sMinZ, sMaxZ);
+    strip(minX, b.x - dw / 2, sMinZ, sMaxZ);
+    strip(b.x + dw / 2, maxX, sMinZ, sMaxZ);
+  };
+  const facedZ = (sMinX: number, sMaxX: number, doored: boolean) => {
+    // A wall running along Z (E/W face).
+    if (!doored) return strip(sMinX, sMaxX, minZ, maxZ);
+    strip(sMinX, sMaxX, minZ, b.z - dw / 2);
+    strip(sMinX, sMaxX, b.z + dw / 2, maxZ);
+  };
+  facedX(minZ, minZ + WALL_T, side === "N");
+  facedX(maxZ - WALL_T, maxZ, side === "S");
+  facedZ(minX, minX + WALL_T, side === "W");
+  facedZ(maxX - WALL_T, maxX, side === "E");
+  return segs;
+}
+
+/** Roof slab of an enterable building — blocks sight/camera/bombs from above. */
+export function roofBox(b: Building): Box3 {
+  return {
+    minX: b.x - b.w / 2,
+    maxX: b.x + b.w / 2,
+    minY: b.h,
+    maxY: b.h + 0.4,
+    minZ: b.z - b.d / 2,
+    maxZ: b.z + b.d / 2,
+  };
+}
+
+const ENTERABLE_WALLS: Box3[] = ENTERABLES.flatMap(wallSegments);
+
+/**
+ * AABB colliders for movement (perimeter is handled by bounds clamp): solid
+ * buildings as whole footprints, enterable ones as their wall strips so you can
+ * walk in through the door.
+ */
+export const COLLIDERS: Rect[] = [
+  ...SOLIDS.map((b) => ({
+    minX: b.x - b.w / 2,
+    maxX: b.x + b.w / 2,
+    minZ: b.z - b.d / 2,
+    maxZ: b.z + b.d / 2,
+  })),
+  ...ENTERABLE_WALLS.map((s) => ({ minX: s.minX, maxX: s.maxX, minZ: s.minZ, maxZ: s.maxZ })),
+];
 
 const H = VILLAGE.half;
 const WALL_H = 3;
 
 /**
- * 3D boxes (buildings + perimeter walls) for the camera-collision raycast, so
- * the camera pulls in when a wall comes between it and the player instead of
- * clipping inside geometry.
+ * 3D boxes (buildings + perimeter walls) for the camera-collision raycast,
+ * projectile blocking, and NPC line-of-sight. Enterable buildings contribute
+ * their wall strips + roof slab, so ducking inside genuinely breaks LOS.
  */
 export const BOXES3D: Box3[] = [
-  ...BUILDINGS.map((b) => ({
+  ...SOLIDS.map((b) => ({
     minX: b.x - b.w / 2,
     maxX: b.x + b.w / 2,
     minY: 0,
@@ -99,6 +173,8 @@ export const BOXES3D: Box3[] = [
     minZ: b.z - b.d / 2,
     maxZ: b.z + b.d / 2,
   })),
+  ...ENTERABLE_WALLS,
+  ...ENTERABLES.map(roofBox),
   { minX: -H, maxX: H, minY: 0, maxY: WALL_H, minZ: -H - 0.3, maxZ: -H + 0.3 },
   { minX: -H, maxX: H, minY: 0, maxY: WALL_H, minZ: H - 0.3, maxZ: H + 0.3 },
   { minX: -H - 0.3, maxX: -H + 0.3, minY: 0, maxY: WALL_H, minZ: -H, maxZ: H },

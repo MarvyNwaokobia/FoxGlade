@@ -11,6 +11,8 @@ export const runtime = {
   /** Body yaw in radians (0 = facing -Z). */
   yaw: 0,
   running: false,
+  /** True while the player is crouched (stealth: NPCs detect at reduced range). */
+  crouching: false,
   /** Index of the hint zone the player is standing in (-1 = none). */
   nearHintIndex: -1,
   /** Whether that hint is the real one. */
