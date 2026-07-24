@@ -10,17 +10,10 @@ import { raycastBoxes, resolveColliders } from "@/engine/world/collision";
 import { BOXES3D, COLLIDERS, VILLAGE } from "@/engine/world/village";
 import { runtime } from "@/engine/runtime";
 import { useGame } from "@/engine/store";
+import { BLOCKER } from "@/engine/config/round";
 
-const MAX_HEALTH = 3;
 const BODY_H = 1.8;
 const BODY_R = 0.45;
-const ENGAGE_RANGE = 24; // starts shooting within this distance
-const FIRE_COOLDOWN = 1.6; // seconds between shots
-const PROJECTILE_SPEED = 20; // m/s — slow enough to dodge / break LOS
-const MOVE_SPEED = 2.6; // m/s when advancing/strafing
-const AGGRO_RANGE = 32; // starts pursuing within this distance
-const RANGE_MAX = 15; // farther than this → advance
-const RANGE_MIN = 7; // closer than this → back off (otherwise strafe)
 
 /**
  * A blocker NPC: an armed enemy that engages. It pursues the player toward a
@@ -28,11 +21,11 @@ const RANGE_MIN = 7; // closer than this → back off (otherwise strafe)
  * health bar, flashes on hit, despawns when killed.
  */
 export function Blocker({ position }: { position: [number, number, number] }) {
-  const [health, setHealth] = useState(MAX_HEALTH);
+  const [health, setHealth] = useState<number>(BLOCKER.health);
   const [flash, setFlash] = useState(false);
   const dead = health <= 0;
   const group = useRef<THREE.Group>(null);
-  const cooldown = useRef(Math.random() * FIRE_COOLDOWN); // stagger initial volleys
+  const cooldown = useRef(Math.random() * BLOCKER.fireCooldown); // stagger initial volleys
   const pos = useRef(new THREE.Vector3(position[0], position[1], position[2]));
   const strafeDir = useRef(Math.random() < 0.5 ? 1 : -1);
   const strafeTimer = useRef(2 + Math.random() * 2);
@@ -81,23 +74,23 @@ export function Blocker({ position }: { position: [number, number, number] }) {
     const dist = Math.hypot(dx, dz);
 
     // Movement toward the player (pursues even without LOS, to come around cover).
-    if (dist < AGGRO_RANGE && dist > 0.01) {
+    if (dist < BLOCKER.aggroRange && dist > 0.01) {
       const nx = dx / dist;
       const nz = dz / dist;
       let mx: number;
       let mz: number;
-      if (dist > RANGE_MAX) {
+      if (dist > BLOCKER.rangeMax) {
         mx = nx; // advance
         mz = nz;
-      } else if (dist < RANGE_MIN) {
+      } else if (dist < BLOCKER.rangeMin) {
         mx = -nx; // back off
         mz = -nz;
       } else {
         mx = -nz * strafeDir.current; // strafe (perpendicular)
         mz = nx * strafeDir.current;
       }
-      pos.current.x += mx * MOVE_SPEED * dt;
-      pos.current.z += mz * MOVE_SPEED * dt;
+      pos.current.x += mx * BLOCKER.moveSpeed * dt;
+      pos.current.z += mz * BLOCKER.moveSpeed * dt;
       resolveColliders(pos.current, BODY_R, COLLIDERS);
       const lim = VILLAGE.half - BODY_R;
       pos.current.x = Math.max(-lim, Math.min(lim, pos.current.x));
@@ -110,20 +103,20 @@ export function Blocker({ position }: { position: [number, number, number] }) {
     }
 
     // Fire when in range with a clear line of sight.
-    if (dist <= ENGAGE_RANGE && cooldown.current <= 0) {
+    if (dist <= BLOCKER.engageRange && cooldown.current <= 0) {
       const from = new THREE.Vector3(pos.current.x, 1.0, pos.current.z);
       const to = new THREE.Vector3(runtime.playerPos.x, runtime.playerPos.y + 1.0, runtime.playerPos.z);
       if (raycastBoxes(from, to, BOXES3D) >= 1) {
-        cooldown.current = FIRE_COOLDOWN;
+        cooldown.current = BLOCKER.fireCooldown;
         const dir = to.clone().sub(from).normalize();
-        spawnProjectile(from.clone().addScaledVector(dir, 0.7), dir, PROJECTILE_SPEED);
+        spawnProjectile(from.clone().addScaledVector(dir, 0.7), dir, BLOCKER.projectileSpeed);
       }
     }
   });
 
   if (dead) return null;
 
-  const frac = health / MAX_HEALTH;
+  const frac = health / BLOCKER.health;
   return (
     <group ref={group} position={position}>
       <mesh position={[0, BODY_H / 2, 0]} castShadow>

@@ -1,10 +1,12 @@
 "use client";
 
 import { Thief } from "./Thief";
+import { THIEF } from "@/engine/config/round";
 
 /**
  * Three thieves racing the real treasure from different directions, with
- * staggered starts so they trickle in as pressure rather than one instant swarm.
+ * staggered starts (THIEF.starts in config/round.ts) so pressure escalates
+ * across the round rather than deciding it in the opening seconds.
  * Paths thread the open streets to the treasure at (0, -28).
  */
 const EAST: [number, number, number][] = [
@@ -33,11 +35,12 @@ const CENTER: [number, number, number][] = [
 ];
 
 export function Thieves() {
+  const paths = [EAST, WEST, CENTER];
   return (
     <>
-      <Thief path={EAST} startDelay={0} speed={2.1} />
-      <Thief path={WEST} startDelay={6} speed={2.1} />
-      <Thief path={CENTER} startDelay={12} speed={2.3} />
+      {THIEF.starts.map((start, i) => (
+        <Thief key={i} path={paths[i % paths.length]} startDelay={start} />
+      ))}
     </>
   );
 }

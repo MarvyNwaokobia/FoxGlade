@@ -6,20 +6,21 @@ import * as THREE from "three";
 import { enemies, type Enemy } from "@/engine/combat/enemies";
 import { useGame } from "@/engine/store";
 import { thieves, type ThiefRef } from "./thieves";
-import { THIEF_SPEED } from "@/engine/config/round";
+import { THIEF } from "@/engine/config/round";
 
-const MAX_HEALTH = 4;
 const BODY_H = 1.7;
 const BODY_R = 0.4;
 
 /**
  * A thief racing the player to the real treasure along a fixed waypoint path
  * (a simple timed racer, DESIGN §13.6). Reach it first or shoot it down — if any
- * thief arrives, the round is lost. Fast and fragile.
+ * thief arrives, the round is lost. Fast and fragile. It doesn't exist in the
+ * world until its start time hits (so late thieves can't be pre-sniped at
+ * spawn); its blip appearing on the compass IS the "a thief is coming" alarm.
  */
 export function Thief({
   path,
-  speed = THIEF_SPEED,
+  speed = THIEF.speed,
   startDelay = 0,
 }: {
   path: [number, number, number][];
@@ -32,11 +33,13 @@ export function Thief({
   const seg = useRef(0);
   const facing = useRef(0);
   const delay = useRef(startDelay);
-  const [health, setHealth] = useState(MAX_HEALTH);
+  const [started, setStarted] = useState(startDelay <= 0);
+  const [health, setHealth] = useState<number>(THIEF.health);
   const [flash, setFlash] = useState(false);
   const dead = health <= 0;
 
   useEffect(() => {
+    if (!started) return;
     const ref: ThiefRef = { getPos: () => pos.current };
     thieves.add(ref);
     const enemy: Enemy = {
@@ -62,7 +65,7 @@ export function Thief({
       thieves.delete(ref);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [started]);
 
   useEffect(() => {
     if (!flash) return;
@@ -73,9 +76,12 @@ export function Thief({
   useFrame((_, rawDt) => {
     if (dead || useGame.getState().roundState !== "playing") return;
     const dt = Math.min(rawDt, 1 / 30);
-    if (delay.current > 0) {
-      delay.current -= dt; // wait before setting off (staggered starts)
-    } else if (seg.current < wp.length - 1) {
+    if (!started) {
+      delay.current -= dt; // not yet in the world (staggered starts)
+      if (delay.current <= 0) setStarted(true);
+      return;
+    }
+    if (seg.current < wp.length - 1) {
       const target = wp[seg.current + 1];
       const to = target.clone().sub(pos.current);
       to.y = 0;
@@ -98,7 +104,7 @@ export function Thief({
     }
   });
 
-  if (dead) return null;
+  if (dead || !started) return null;
 
   return (
     <group ref={group} position={[wp[0].x, 0, wp[0].z]}>

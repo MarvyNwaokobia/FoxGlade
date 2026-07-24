@@ -6,8 +6,7 @@ import * as THREE from "three";
 import { MAX_PROJECTILES, projectilePool, stepProjectiles } from "./projectiles";
 import { useGame } from "@/engine/store";
 import { runtime } from "@/engine/runtime";
-
-const ENEMY_SHOT_DAMAGE = 12;
+import { BLOCKER } from "@/engine/config/round";
 
 /** Renders the enemy projectile pool as one instanced mesh and steps it. */
 export function Projectiles() {
@@ -18,7 +17,7 @@ export function Projectiles() {
     const dt = Math.min(rawDt, 1 / 30);
     stepProjectiles(dt, () => {
       if (useGame.getState().isDead) return;
-      useGame.getState().damagePlayer(ENEMY_SHOT_DAMAGE);
+      useGame.getState().damagePlayer(BLOCKER.shotDamage);
       runtime.damageAt = performance.now();
     });
 
