@@ -17,4 +17,6 @@ export const runtime = {
   /** Timestamps (performance.now) for crosshair feedback. */
   fireAt: -1,
   hitAt: -1,
+  /** Timestamp the player last took damage (for the screen flash). */
+  damageAt: -1,
 };

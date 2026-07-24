@@ -2,6 +2,7 @@
 
 import { Village } from "@/engine/world/VillageMesh";
 import { Blockers } from "@/engine/npc/Blockers";
+import { Projectiles } from "@/engine/combat/ProjectileLayer";
 
 /**
  * Lighting rig + the village. Kept separate from the world geometry so the
@@ -27,6 +28,7 @@ export function VillageScene() {
       />
       <Village />
       <Blockers />
+      <Projectiles />
     </>
   );
 }

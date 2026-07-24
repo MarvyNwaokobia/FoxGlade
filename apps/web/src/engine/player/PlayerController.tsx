@@ -44,10 +44,20 @@ export function PlayerController() {
       if (e.code === "KeyE" && runtime.nearTreasure && !useGame.getState().treasureClaimed) {
         useGame.getState().claimTreasure();
       }
+      if (e.code === "KeyR" && useGame.getState().isDead) {
+        useGame.getState().respawn();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  // On respawn, return the player to the spawn point.
+  const respawnNonce = useGame((s) => s.respawnNonce);
+  useEffect(() => {
+    pos.current.copy(VILLAGE.spawn);
+    vel.current.set(0, 0, 0);
+  }, [respawnNonce]);
 
   // Mouse look via pointer lock; left-click fires once the mouse is captured.
   useEffect(() => {
@@ -57,7 +67,7 @@ export function PlayerController() {
         canvas.requestPointerLock();
         return;
       }
-      if (e.button === 0) {
+      if (e.button === 0 && !useGame.getState().isDead) {
         const hit = fireHitscan(camera);
         runtime.fireAt = performance.now();
         if (hit) runtime.hitAt = performance.now();
@@ -93,7 +103,7 @@ export function PlayerController() {
     if (k.right) wish.add(right);
     if (k.left) wish.sub(right);
 
-    const moving = wish.lengthSq() > 0;
+    const moving = wish.lengthSq() > 0 && !useGame.getState().isDead;
     runtime.running = moving && k.run;
 
     if (moving) {

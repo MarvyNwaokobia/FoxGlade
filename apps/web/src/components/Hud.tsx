@@ -15,8 +15,12 @@ export function Hud() {
   const runEl = useRef<HTMLDivElement>(null);
   const treasureEl = useRef<HTMLDivElement>(null);
   const crossEl = useRef<HTMLDivElement>(null);
+  const dmgEl = useRef<HTMLDivElement>(null);
   const [locked, setLocked] = useState(false);
   const claimed = useGame((s) => s.treasureClaimed);
+  const health = useGame((s) => s.playerHealth);
+  const maxHealth = useGame((s) => s.maxPlayerHealth);
+  const isDead = useGame((s) => s.isDead);
   const [showClaimed, setShowClaimed] = useState(false);
 
   // Show a brief confirmation toast when the treasure is claimed, then fade it.
@@ -48,6 +52,10 @@ export function Hud() {
         distEl.current.textContent = d < 12 ? "near" : d < 30 ? "mid" : "far";
       }
       if (runEl.current) runEl.current.style.opacity = runtime.running ? "1" : "0";
+      if (dmgEl.current) {
+        const since = performance.now() - runtime.damageAt;
+        dmgEl.current.style.opacity = since < 450 ? String(0.55 * (1 - since / 450)) : "0";
+      }
       if (crossEl.current) {
         const now = performance.now();
         const firing = now - runtime.fireAt < 90;
@@ -74,6 +82,31 @@ export function Hud() {
 
   return (
     <>
+      {/* Red damage flash */}
+      <div ref={dmgEl} style={styles.damageFlash} />
+
+      {/* Player health bar, bottom-center */}
+      <div style={styles.healthWrap}>
+        <div
+          style={{
+            ...styles.healthFill,
+            width: `${(Math.max(0, health) / maxHealth) * 100}%`,
+            background: health > maxHealth * 0.3 ? "#5ad17a" : "#e8563f",
+          }}
+        />
+        <div style={styles.healthLabel}>{Math.max(0, Math.round(health))}</div>
+      </div>
+
+      {/* Downed overlay */}
+      {isDead && (
+        <div style={styles.deathOverlay}>
+          <div style={styles.deathTitle}>You were downed</div>
+          <div style={styles.deathHint}>
+            press <b>R</b> to respawn at the gate
+          </div>
+        </div>
+      )}
+
       {/* Compass, top-center */}
       <div style={styles.compassWrap}>
         <div style={styles.compass}>
@@ -151,6 +184,59 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "center",
     margin: "0 auto",
   },
+  damageFlash: {
+    position: "absolute",
+    inset: 0,
+    background: "radial-gradient(ellipse at center, rgba(255,40,40,0) 45%, rgba(200,20,20,0.9) 100%)",
+    opacity: 0,
+    pointerEvents: "none",
+  },
+  healthWrap: {
+    position: "absolute",
+    left: "50%",
+    bottom: 52,
+    transform: "translateX(-50%)",
+    width: 240,
+    height: 16,
+    borderRadius: 8,
+    background: "rgba(11,13,16,0.6)",
+    border: "1px solid rgba(232,238,242,0.25)",
+    overflow: "hidden",
+    pointerEvents: "none",
+    userSelect: "none",
+  },
+  healthFill: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    transition: "width 0.15s ease, background 0.2s ease",
+  },
+  healthLabel: {
+    position: "absolute",
+    inset: 0,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 11,
+    fontWeight: 600,
+    color: "#0b0d10",
+    letterSpacing: 0.5,
+  },
+  deathOverlay: {
+    position: "absolute",
+    inset: 0,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    background: "rgba(11,13,16,0.55)",
+    pointerEvents: "none",
+    userSelect: "none",
+  },
+  deathTitle: { fontSize: 34, fontWeight: 700, letterSpacing: 1, color: "#e8563f" },
+  deathHint: { fontSize: 16, color: "rgba(232,238,242,0.85)" },
   crosshair: {
     position: "absolute",
     left: "50%",
