@@ -33,3 +33,4 @@ Thumbs.db
 *.log
 .vscode/
 .idea/
+apps/web/public/preview-local/
