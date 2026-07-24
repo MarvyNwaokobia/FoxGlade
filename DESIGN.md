@@ -256,6 +256,8 @@ Decisions made while playing the gray-box build. These evolve the core loop — 
 
 **14.7 — Fox breeds, chosen via the egg.** Not one fox — **multiple breeds** (red, arctic, fennec, silver, …). At onboarding the player picks an **egg whose color/type determines the breed** it hatches into; you **carry the egg from the start**, it hatches and grows through the same four stages (Egg → Baby → Juvenile → Adult) within its breed. Breed is **cosmetic identity** (v1, no stat differences), riding on the existing growth/decay/rank system — so it adds art, not new systems. Ties the emotional companion choice to the on-chain `PetNFT` mint at onboarding (§7, §11).
 
+**14.8 — Wallet is Magic (magic.link); on-chain deferred until gameplay is complete.** Onboarding uses **Magic** email/social login → a deterministic embedded wallet (no extension, no seed phrase — the low-friction path for a casual audience, and the same integration Valor already uses). The on-chain layer (treasure mint, egg mint, marketplace, reward claims) is **wired only after the core gameplay loop is proven in gray-box** — hints, combat, thieves, session timer, bomb, marketplace UI first, then chain. Deploy target: **Avalanche Fuji** testnet.
+
 ---
 
 ## 15. Animation & movement plan

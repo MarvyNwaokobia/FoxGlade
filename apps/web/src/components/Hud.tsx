@@ -46,7 +46,11 @@ export function Hud() {
       const revealed = now < runtime.revealRealUntil;
       const isClaimed = useGame.getState().treasureClaimed;
 
-      // One compass arrow per hint, rotated to its (screen-relative) bearing.
+      // One radar blip per hint, placed AROUND the compass ring at its bearing
+      // (top = ahead). Its position around the ring shows direction; color shows
+      // whether the fox has revealed it.
+      const C = 29; // compass centre (px)
+      const R = 20; // ring radius (px)
       for (let i = 0; i < HINTS.length; i++) {
         const el = arrows.current[i];
         if (!el) continue;
@@ -58,8 +62,9 @@ export function Hud() {
         const dx = h.pos.x - runtime.playerPos.x;
         const dz = h.pos.z - runtime.playerPos.z;
         const rel = Math.atan2(dx, dz) - runtime.yaw;
-        el.style.transform = `translate(-50%, -50%) rotate(${-rel}rad)`;
-        el.style.color = revealed ? (h.real ? HINT_REAL : HINT_FAKE) : HINT_DEFAULT;
+        el.style.left = `${C + Math.sin(rel) * R}px`;
+        el.style.top = `${C - Math.cos(rel) * R}px`;
+        el.style.background = revealed ? (h.real ? HINT_REAL : HINT_FAKE) : HINT_DEFAULT;
         el.style.opacity = "1";
       }
 
@@ -148,19 +153,18 @@ export function Hud() {
         </div>
       )}
 
-      {/* Compass, top-center — one arrow per candidate hint */}
+      {/* Compass, top-center — one radar blip per candidate hint */}
       <div style={styles.compassWrap}>
         <div style={styles.compass}>
+          <div style={styles.compassCenter} />
           {HINTS.map((_, i) => (
             <div
               key={i}
               ref={(el) => {
                 arrows.current[i] = el;
               }}
-              style={styles.hintArrow}
-            >
-              ▲
-            </div>
+              style={styles.hintDot}
+            />
           ))}
         </div>
         <div ref={sniffEl} style={styles.sniffPill}>
@@ -226,16 +230,27 @@ const styles: Record<string, React.CSSProperties> = {
     background: "rgba(11,13,16,0.5)",
     margin: "0 auto",
   },
-  hintArrow: {
+  hintDot: {
     position: "absolute",
     left: "50%",
     top: "50%",
+    width: 9,
+    height: 9,
+    borderRadius: "50%",
     transform: "translate(-50%, -50%)",
-    transformOrigin: "50% 50%",
-    fontSize: 20,
-    lineHeight: 1,
-    color: HINT_DEFAULT,
-    transition: "color 0.2s ease",
+    background: HINT_DEFAULT,
+    boxShadow: "0 0 0 1px rgba(0,0,0,0.55)",
+    transition: "background 0.2s ease",
+  },
+  compassCenter: {
+    position: "absolute",
+    left: "50%",
+    top: "50%",
+    width: 4,
+    height: 4,
+    borderRadius: "50%",
+    transform: "translate(-50%, -50%)",
+    background: "rgba(232,238,242,0.5)",
   },
   sniffPill: {
     marginTop: 8,
