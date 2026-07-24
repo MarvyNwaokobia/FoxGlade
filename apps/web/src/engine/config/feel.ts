@@ -30,8 +30,9 @@ export const FEEL = {
   mouseSensitivity: 0.0024,
   pitchMin: -0.55, // radians (look down)
   pitchMax: 0.95, // radians (look up)
-  cameraDistance: 5.2,
-  cameraHeight: 2.6,
+  cameraDistance: 4.8,
+  cameraHeight: 2.6, // (unused by the shoulder cam; kept for reference)
+  cameraShoulder: 0.9, // over-the-shoulder side offset, so the player isn't on the crosshair
   cameraMinHeight: 0.8, // camera never dips below this, so you can't see under the world
   cameraMinDistance: 2.4, // closest the camera pulls to the player on collision (avoids face-cam)
   cameraCollisionBuffer: 0.3, // gap kept in front of a wall the camera pulls up to

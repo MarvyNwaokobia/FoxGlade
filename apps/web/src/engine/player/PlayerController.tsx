@@ -176,21 +176,26 @@ export function PlayerController() {
     runtime.playerPos.copy(pos.current);
     runtime.yaw = yaw.current;
 
-    // Orbit-follow camera.
-    const horiz = FEEL.cameraDistance * Math.cos(pitch.current);
-    const camTarget = new THREE.Vector3(
-      pos.current.x + Math.sin(yaw.current) * horiz,
-      pos.current.y + FEEL.cameraHeight + FEEL.cameraDistance * Math.sin(pitch.current),
-      pos.current.z + Math.cos(yaw.current) * horiz
-    );
-    // Never let the camera dip below ground, or you see under the world.
+    // Aim direction from free-look (yaw + pitch). This is the crosshair/shot line,
+    // decoupled from the body's facing. The camera looks ALONG this (not at the
+    // player), so the crosshair points into the scene and shots travel level at
+    // range — fixing the old "aimed at the ground past your feet" bug.
+    const cp = Math.cos(pitch.current);
+    const sp = Math.sin(pitch.current);
+    const aim = new THREE.Vector3(-Math.sin(yaw.current) * cp, sp, -Math.cos(yaw.current) * cp);
+    const head = new THREE.Vector3(pos.current.x, pos.current.y + FEEL.lookAtHeight, pos.current.z);
+    const rightV = new THREE.Vector3(Math.cos(yaw.current), 0, -Math.sin(yaw.current));
+
+    // Over-the-shoulder: sit behind the aim line and offset to the side.
+    const camTarget = head
+      .clone()
+      .addScaledVector(aim, -FEEL.cameraDistance)
+      .addScaledVector(rightV, FEEL.cameraShoulder);
     camTarget.y = Math.max(camTarget.y, FEEL.cameraMinHeight);
     camera.position.lerp(camTarget, Math.min(1, FEEL.cameraLerp * dt));
 
-    // Camera collision: if a building is between the player and the camera, pull
-    // the camera in to just in front of it — the wall stays solid, you stay in
-    // view (no more camera ending up inside/behind a block).
-    const head = new THREE.Vector3(pos.current.x, pos.current.y + FEEL.lookAtHeight, pos.current.z);
+    // Camera collision: pull in if a building is between the camera and the head,
+    // so the view is never blocked and the wall stays solid.
     const toCam = camera.position.clone().sub(head);
     const dist = toCam.length();
     if (dist > 0.001) {
@@ -200,7 +205,9 @@ export function PlayerController() {
         camera.position.copy(head).addScaledVector(toCam.multiplyScalar(1 / dist), pulled);
       }
     }
-    camera.lookAt(head.x, head.y, head.z);
+
+    // Look along the aim direction so crosshair (screen center) == shot line.
+    camera.lookAt(camera.position.x + aim.x, camera.position.y + aim.y, camera.position.z + aim.z);
 
     // Widen the lens slightly while running so speed is felt, not just numeric.
     const cam = camera as THREE.PerspectiveCamera;
