@@ -27,6 +27,13 @@ export const runtime = {
   sniffReadyAt: 0,
   /** Per-hint: true once its distractor is silenced (decoy removed). */
   hintSilenced: HINTS.map(() => false),
+  /** Per-hint: true once a thief has made off with that (real) treasure. */
+  hintStolen: HINTS.map(() => false),
+  /** Per-hint: true once a bomb blast has cracked that (real) treasure (§13.5). */
+  hintCracked: HINTS.map(() => false),
+  /** Timestamps for HUD toasts: a theft / a crack just happened. */
+  treasureStolenAt: -1,
+  treasureCrackedAt: -1,
   /** performance.now the current round started (drives the countdown). */
   roundStartAt: performance.now(),
   /** True while the player is holding G to aim a bomb throw. */

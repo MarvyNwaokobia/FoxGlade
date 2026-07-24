@@ -166,8 +166,12 @@ function HintBeacon({ index }: { index: number }) {
   const claimed = useGame((s) => s.treasureClaimed);
 
   useFrame((_, dt) => {
-    // A decoy vanishes once its distractor is silenced.
-    if (grp.current) grp.current.visible = !(!hint.real && runtime.hintSilenced[index]);
+    // A decoy vanishes once its distractor is silenced; a real treasure
+    // vanishes once a thief has made off with it.
+    if (grp.current) {
+      grp.current.visible =
+        !(!hint.real && runtime.hintSilenced[index]) && !(hint.real && runtime.hintStolen[index]);
+    }
     const revealed = performance.now() < runtime.revealRealUntil;
     const c = revealed ? (hint.real ? HINT_REAL : HINT_FAKE) : HINT_DEFAULT;
     if (pad.current) {

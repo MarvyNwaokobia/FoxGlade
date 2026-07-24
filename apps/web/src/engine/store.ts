@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { runtime } from "@/engine/runtime";
 import { BOMB } from "@/engine/config/round";
+import { HINTS, type Rarity } from "@/engine/world/hints";
 
 /**
  * Reactive game state (as opposed to per-frame `runtime` data). Kept small — only
@@ -13,11 +14,11 @@ export type RoundReason = "claimed" | "timeout" | "thief" | null;
 
 interface GameState {
   treasureClaimed: boolean;
-  claimTreasure: () => void;
-
-  /** A bomb blast reached the treasure: it still claims, at reduced rarity (§13.5). */
+  /** Rarity of the treasure that won the round (null until claimed). */
+  claimedRarity: Rarity | null;
+  /** The claimed treasure had been cracked by a bomb: reduced rarity (§13.5). */
   treasureCracked: boolean;
-  crackTreasure: () => void;
+  claimTreasure: (hintIndex: number) => void;
 
   bombsLeft: number;
   throwBomb: () => void;
@@ -42,15 +43,19 @@ interface GameState {
 
 export const useGame = create<GameState>((set, get) => ({
   treasureClaimed: false,
-  claimTreasure: () => {
-    if (get().roundState !== "playing") return;
-    set({ treasureClaimed: true, roundState: "won", roundReason: "claimed" });
-  },
-
+  claimedRarity: null,
   treasureCracked: false,
-  crackTreasure: () => {
-    if (get().roundState !== "playing" || get().treasureClaimed) return;
-    set({ treasureCracked: true });
+  claimTreasure: (hintIndex) => {
+    if (get().roundState !== "playing") return;
+    const hint = HINTS[hintIndex];
+    if (!hint?.real || runtime.hintStolen[hintIndex]) return;
+    set({
+      treasureClaimed: true,
+      claimedRarity: hint.rarity ?? "common",
+      treasureCracked: runtime.hintCracked[hintIndex],
+      roundState: "won",
+      roundReason: "claimed",
+    });
   },
 
   bombsLeft: BOMB.perRound,
@@ -85,10 +90,15 @@ export const useGame = create<GameState>((set, get) => ({
     // Reset per-frame world state.
     runtime.roundStartAt = performance.now();
     runtime.hintSilenced.fill(false);
+    runtime.hintStolen.fill(false);
+    runtime.hintCracked.fill(false);
+    runtime.treasureStolenAt = -1;
+    runtime.treasureCrackedAt = -1;
     runtime.revealRealUntil = -1;
     runtime.sniffReadyAt = 0;
     set((s) => ({
       treasureClaimed: false,
+      claimedRarity: null,
       treasureCracked: false,
       bombsLeft: BOMB.perRound,
       playerHealth: MAX_PLAYER_HEALTH,

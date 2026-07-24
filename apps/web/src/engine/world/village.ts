@@ -44,44 +44,55 @@ export const VILLAGE = {
   half: 36,
   spawn: new THREE.Vector3(0, 0, 30),
   spawnYaw: 0 as number, // 0 = facing north (-Z), into the village
-  treasure: new THREE.Vector3(0, 0, -28),
-  market: new THREE.Vector3(-24, 0, 6),
+  market: new THREE.Vector3(-22, 0, 5),
 } as const;
 
 /**
- * Buildings laid out to form a central approach from spawn to the treasure with
- * side streets and a western market plaza — so there's more than one route and
- * plenty of chokepoints/sightlines for NPCs to occupy later (M2).
+ * ORGANIC layout (§14.1): buildings scattered at irregular spacings and sizes —
+ * alleys, nooks, and dead-ends rather than neat rows. A loose main route winds
+ * north from the gate, a market plaza sits west, a shallow treasure courtyard
+ * hides east, and the deep-north cluster guards the rare treasure nook.
+ * (Boxes stay axis-aligned so collision remains trivial; rotated buildings come
+ * with the art pass.) Five houses are enterable.
  */
 export const BUILDINGS: Building[] = [
-  // Spawn-side flanks (leave a central corridor)
-  { x: -16, z: 22, w: 12, d: 8, h: 5 },
-  { x: 16, z: 22, w: 12, d: 8, h: 5 },
+  // South cluster around the gate — staggered, not mirrored
+  { x: -18, z: 24, w: 9, d: 7, h: 5 },
+  { x: -7, z: 20, w: 6, d: 9, h: 6, door: { side: "E" } },
+  { x: 9, z: 25, w: 12, d: 6, h: 4 },
+  { x: 17, z: 15, w: 7, d: 7, h: 6 },
 
-  // Second ring with a small central blocker to force an early weave
-  // (the west one is enterable — its door faces the central street)
-  { x: -13, z: 10, w: 8, d: 8, h: 6, door: { side: "E" } },
-  { x: 13, z: 10, w: 10, d: 8, h: 6 },
-  { x: 0, z: 13, w: 6, d: 4, h: 4 },
+  // West market district (plaza stays open around [-22, 5])
+  { x: -28, z: 14, w: 6, d: 10, h: 5 },
+  { x: -26, z: -3, w: 9, d: 7, h: 6, door: { side: "S" } },
+  { x: -14, z: 6, w: 7, d: 6, h: 5 },
 
-  // Western market district (frames the open market plaza at [-24, 6])
-  { x: -24, z: -5, w: 10, d: 8, h: 6 },
-  { x: -31, z: 13, w: 6, d: 12, h: 5 },
+  // Central weave — tight alleys and a bent main route
+  { x: -3, z: 12, w: 8, d: 5, h: 6 },
+  { x: 6, z: 6, w: 5, d: 8, h: 7 },
+  { x: -6, z: -1, w: 6, d: 7, h: 4, door: { side: "E" } },
+  { x: 3, z: -7, w: 9, d: 5, h: 5 },
+  { x: 14, z: 1, w: 6, d: 6, h: 5 },
 
-  // Mid blocks (central gap ~9m wide stays walkable; the east one is enterable)
-  { x: -8, z: -2, w: 8, d: 8, h: 5 },
-  { x: 11, z: -4, w: 10, d: 9, h: 7, door: { side: "W" } },
+  // East courtyard hiding the shallow (common) treasure pocket
+  { x: 23, z: -7, w: 8, d: 7, h: 6, door: { side: "W" } },
+  { x: 28, z: -15, w: 6, d: 8, h: 5 },
+  { x: 15, z: -16, w: 6, d: 6, h: 5 },
 
-  // Deep ring guarding the treasure, plus a backdrop wall behind it
-  // (the west one is enterable — a hideout right on the treasure approach)
-  { x: -14, z: -20, w: 9, d: 8, h: 6, door: { side: "E" } },
-  { x: 14, z: -20, w: 9, d: 8, h: 6 },
-  { x: 0, z: -33, w: 16, d: 6, h: 8 },
+  // Deep-north cluster guarding the rare treasure nook, plus a backdrop wall
+  { x: -12, z: -18, w: 8, d: 8, h: 6, door: { side: "S" } },
+  { x: -2, z: -25, w: 7, d: 6, h: 7 },
+  { x: 8, z: -27, w: 8, d: 7, h: 5 },
+  { x: -20, z: -28, w: 9, d: 6, h: 5 },
+  { x: 3, z: -33.5, w: 12, d: 3, h: 8 },
 
-  // Micro-cover crates near chokepoints
-  { x: 0, z: 1, w: 2, d: 2, h: 1.5 },
-  { x: -4, z: -13, w: 2, d: 2, h: 1.5 },
-  { x: 6, z: -12, w: 2, d: 2, h: 1.5 },
+  // Micro-cover crates scattered along the routes
+  { x: 0, z: 17, w: 2, d: 2, h: 1.5 },
+  { x: -12, z: 12, w: 2, d: 2, h: 1.5 },
+  { x: 10, z: -12, w: 2, d: 2, h: 1.5 },
+  { x: -18, z: -10, w: 2, d: 2, h: 1.5 },
+  { x: 25, z: 6, w: 2, d: 2, h: 1.5 },
+  { x: -25, z: -14, w: 2, d: 2, h: 1.5 },
 ];
 
 export const WALL_T = 0.35; // enterable-building wall thickness

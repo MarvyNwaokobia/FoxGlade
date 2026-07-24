@@ -3,14 +3,15 @@
 import { Blocker } from "./Blocker";
 
 /**
- * Blocker spawn points, placed in the chokepoints along the spawn→treasure path
- * so the route is actually contested. Tuned against the village layout.
+ * Blocker spawn points, placed in the chokepoints of the organic layout so
+ * every route to a treasure is contested. Tuned against the village layout.
  */
 const BLOCKER_SPAWNS: [number, number, number][] = [
-  [0, 0, 6], // central corridor, just past spawn
-  [2, 0, -6], // mid gap between the two central blocks
-  [-6, 0, -21], // guarding the treasure approach
-  [7, 0, -21],
+  [1.8, 0, 17], // mouth of the gate corridor
+  [0, 0, -2], // central crossroads
+  [-20, 0, 3], // market plaza lurker
+  [17.5, 0, -12], // shallow-treasure courtyard approach
+  [-7, 0, -25], // deep corridor guarding the rare nook
 ];
 
 export function Blockers() {

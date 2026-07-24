@@ -5,7 +5,7 @@ import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { bombPool, MAX_BOMBS, explosions, MAX_EXPLOSIONS, stepBombs, clearBombs } from "./bombs";
 import { BOMB } from "@/engine/config/round";
-import { VILLAGE } from "@/engine/world/village";
+import { HINTS } from "@/engine/world/hints";
 import { runtime } from "@/engine/runtime";
 import { useGame } from "@/engine/store";
 
@@ -39,9 +39,14 @@ export function Bombs() {
           useGame.getState().damagePlayer(BOMB.selfDamage);
           runtime.damageAt = performance.now();
         }
-        // Blast reaching the treasure cracks it: reduced rarity, not a lost run (§13.5).
-        if (Math.hypot(center.x - VILLAGE.treasure.x, center.z - VILLAGE.treasure.z) < BOMB.radius) {
-          useGame.getState().crackTreasure();
+        // Blast reaching a treasure cracks it: reduced rarity, not a lost run (§13.5).
+        for (let i = 0; i < HINTS.length; i++) {
+          const h = HINTS[i];
+          if (!h.real || runtime.hintStolen[i] || runtime.hintCracked[i]) continue;
+          if (Math.hypot(center.x - h.pos.x, center.z - h.pos.z) < BOMB.radius) {
+            runtime.hintCracked[i] = true;
+            runtime.treasureCrackedAt = performance.now();
+          }
         }
       });
     }

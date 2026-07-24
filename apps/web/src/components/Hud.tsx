@@ -25,6 +25,7 @@ export function Hud() {
   const runEl = useRef<HTMLDivElement>(null);
   const crouchEl = useRef<HTMLDivElement>(null);
   const shelterEl = useRef<HTMLDivElement>(null);
+  const eventEl = useRef<HTMLDivElement>(null);
   const crossEl = useRef<HTMLDivElement>(null);
   const dmgEl = useRef<HTMLDivElement>(null);
   const [locked, setLocked] = useState(false);
@@ -35,6 +36,7 @@ export function Hud() {
   const roundReason = useGame((s) => s.roundReason);
   const bombsLeft = useGame((s) => s.bombsLeft);
   const treasureCracked = useGame((s) => s.treasureCracked);
+  const claimedRarity = useGame((s) => s.claimedRarity);
 
   useEffect(() => {
     const onLockChange = () => setLocked(!!document.pointerLockElement);
@@ -55,7 +57,7 @@ export function Hud() {
         const el = arrows.current[i];
         if (!el) continue;
         const h = HINTS[i];
-        if ((h.real && isClaimed) || (!h.real && runtime.hintSilenced[i])) {
+        if ((h.real && (isClaimed || runtime.hintStolen[i])) || (!h.real && runtime.hintSilenced[i])) {
           el.style.opacity = "0";
           continue;
         }
@@ -130,6 +132,27 @@ export function Hud() {
 
       if (runEl.current) runEl.current.style.opacity = runtime.running ? "1" : "0";
       if (crouchEl.current) crouchEl.current.style.opacity = runtime.crouching ? "1" : "0";
+
+      // Event toast: a treasure was just stolen or cracked (whichever is fresher).
+      if (eventEl.current) {
+        const stolenAge = now - runtime.treasureStolenAt;
+        const crackedAge = now - runtime.treasureCrackedAt;
+        const age = Math.min(
+          runtime.treasureStolenAt < 0 ? Infinity : stolenAge,
+          runtime.treasureCrackedAt < 0 ? Infinity : crackedAge
+        );
+        if (age < 3200) {
+          const isTheft = age === stolenAge;
+          eventEl.current.textContent = isTheft
+            ? "A thief made off with a treasure!"
+            : "The blast cracked the treasure!";
+          eventEl.current.style.color = isTheft ? "#ff8a7a" : "#ffb054";
+          eventEl.current.style.borderColor = isTheft ? "rgba(232,86,63,0.6)" : "rgba(255,138,60,0.6)";
+          eventEl.current.style.opacity = String(age < 2600 ? 1 : (3200 - age) / 600);
+        } else {
+          eventEl.current.style.opacity = "0";
+        }
+      }
 
       // Shelter / rest prompt while inside a house.
       if (shelterEl.current) {
@@ -210,10 +233,12 @@ export function Hud() {
           <div style={{ ...styles.roundTitle, color: roundState === "won" ? "#ffd873" : "#e8563f" }}>
             {roundState === "won"
               ? treasureCracked
-                ? "Treasure claimed — cracked by your bomb (reduced rarity)"
-                : "Treasure claimed!"
+                ? claimedRarity === "rare"
+                  ? "Treasure claimed — cracked (rare → common)"
+                  : "Treasure claimed — cracked (common → scrap)"
+                : `Treasure claimed! · ${(claimedRarity ?? "common").toUpperCase()}`
               : roundReason === "thief"
-                ? "A thief took the treasure"
+                ? "Thieves took every treasure"
                 : "Time's up"}
           </div>
           <div style={styles.roundHint}>
@@ -265,6 +290,9 @@ export function Hud() {
 
       {/* Shelter / rest prompt (inside a house) — text set from the game loop */}
       <div ref={shelterEl} style={styles.shelterPill} />
+
+      {/* Event toast (treasure stolen / cracked) — text set from the game loop */}
+      <div ref={eventEl} style={styles.eventToast} />
 
       {/* Proximity prompt (claim / false lead) — text set from the game loop */}
       <div ref={promptEl} style={styles.prompt} />
@@ -499,6 +527,25 @@ const styles: Record<string, React.CSSProperties> = {
     textTransform: "uppercase",
     opacity: 0,
     transition: "opacity 0.12s ease",
+    pointerEvents: "none",
+    userSelect: "none",
+  },
+  eventToast: {
+    position: "absolute",
+    left: "50%",
+    top: "27%",
+    transform: "translateX(-50%)",
+    padding: "8px 18px",
+    borderRadius: 10,
+    background: "rgba(11,13,16,0.65)",
+    border: "1px solid rgba(232,86,63,0.6)",
+    color: "#ff8a7a",
+    fontSize: 16,
+    fontWeight: 600,
+    letterSpacing: 0.5,
+    whiteSpace: "nowrap",
+    opacity: 0,
+    transition: "opacity 0.2s ease",
     pointerEvents: "none",
     userSelect: "none",
   },

@@ -58,7 +58,7 @@ export function PlayerController() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code === "KeyE" && runtime.nearHintIsReal && !useGame.getState().treasureClaimed) {
-        useGame.getState().claimTreasure();
+        useGame.getState().claimTreasure(runtime.nearHintIndex);
       }
       if (e.code === "KeyR" && useGame.getState().isDead) {
         useGame.getState().respawn();
@@ -285,6 +285,7 @@ export function PlayerController() {
     for (let i = 0; i < HINTS.length; i++) {
       const h = HINTS[i];
       if (!h.real && runtime.hintSilenced[i]) continue; // silenced decoy is gone
+      if (h.real && runtime.hintStolen[i]) continue; // stolen treasure is gone
       if (Math.hypot(h.pos.x - pos.current.x, h.pos.z - pos.current.z) < HINT_RADIUS) {
         runtime.nearHintIndex = i;
         runtime.nearHintIsReal = h.real;
