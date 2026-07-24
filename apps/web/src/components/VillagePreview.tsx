@@ -2,7 +2,7 @@
 
 import { Suspense, useMemo } from "react";
 import { Canvas } from "@react-three/fiber";
-import { OrbitControls, Environment, useGLTF, Html } from "@react-three/drei";
+import { OrbitControls, Environment, useGLTF, Html, Bounds } from "@react-three/drei";
 import * as THREE from "three";
 
 /**
@@ -11,23 +11,22 @@ import * as THREE from "three";
  */
 function VillageModel() {
   const { scene } = useGLTF("/models/village/castle_village.glb");
-  const centered = useMemo(() => {
-    const root = scene.clone(true);
-    const box = new THREE.Box3().setFromObject(root);
+  const root = useMemo(() => {
+    const r = scene.clone(true);
+    const box = new THREE.Box3().setFromObject(r);
     const center = box.getCenter(new THREE.Vector3());
-    const size = box.getSize(new THREE.Vector3());
     // Recentre on origin and drop onto the ground plane.
-    root.position.set(-center.x, -box.min.y, -center.z);
-    root.traverse((o) => {
+    r.position.set(-center.x, -box.min.y, -center.z);
+    r.traverse((o) => {
       if ((o as THREE.Mesh).isMesh) {
         o.castShadow = true;
         o.receiveShadow = true;
       }
     });
-    return { root, size };
+    return r;
   }, [scene]);
 
-  return <primitive object={centered.root} />;
+  return <primitive object={root} />;
 }
 
 export default function VillagePreview() {
@@ -43,9 +42,11 @@ export default function VillagePreview() {
         >
           <Environment files="/env/dusk_2k.hdr" background />
           <directionalLight position={[50, 60, 30]} intensity={2} castShadow />
-          <VillageModel />
+          <Bounds fit clip observe margin={1.15}>
+            <VillageModel />
+          </Bounds>
         </Suspense>
-        <OrbitControls makeDefault target={[0, 5, 0]} maxPolarAngle={Math.PI / 2.05} />
+        <OrbitControls makeDefault maxPolarAngle={Math.PI / 2.05} />
       </Canvas>
       <div
         style={{
