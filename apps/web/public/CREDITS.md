@@ -2,6 +2,10 @@
 
 Free assets used in FoxGlade, with attribution as required by their licenses.
 
+## Fox companion (CC-BY 4.0 — attribution required)
+- **"Fox"** by **pxltiger** — https://sketchfab.com/3d-models/fox-39f97fe58f0b47ce80b6e02814001dd7
+  (rigged + 30 animations; low-poly model originally by PixelMannen, animation by @tomkranis lineage)
+
 ## 3D environments (candidates — in /preview)
 All **CC-BY 4.0** (attribution required), via Sketchfab:
 - **"Castle village scene"** by **BlackSpire** — https://sketchfab.com/blackspire

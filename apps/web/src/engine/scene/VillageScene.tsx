@@ -20,10 +20,12 @@ import { useGame } from "@/engine/store";
 export function VillageScene({
   bloom = true,
   shadowSize = 2048,
+  shadows = true,
   degraded = false,
 }: {
   bloom?: boolean;
   shadowSize?: number;
+  shadows?: boolean;
   degraded?: boolean;
 }) {
   // Remount all NPCs on restart (revives blockers, distractors, thief).
@@ -49,7 +51,7 @@ export function VillageScene({
         position={[38, 26, 14]}
         color="#fff4e0"
         intensity={2.4}
-        castShadow={!degraded}
+        castShadow={shadows && !degraded}
         shadow-mapSize={[shadowSize, shadowSize]}
         shadow-camera-left={-40}
         shadow-camera-right={40}

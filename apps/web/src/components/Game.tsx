@@ -58,7 +58,12 @@ export default function Game() {
             building models, props, textures — has loaded, so nothing renders
             black-and-unlit during the download. */}
         <Suspense fallback={null}>
-          <VillageScene bloom={q.bloom && !degraded} shadowSize={q.shadow} degraded={degraded} />
+          <VillageScene
+            bloom={q.bloom && !degraded}
+            shadows={quality === "high" && !degraded}
+            shadowSize={q.shadow}
+            degraded={degraded}
+          />
           <PlayerController />
           <FoxCompanion />
         </Suspense>
