@@ -3,8 +3,9 @@
 Free assets used in FoxGlade, with attribution as required by their licenses.
 
 ## Fox companion (CC-BY 4.0 — attribution required)
-- **"Fox"** by **pxltiger** — https://sketchfab.com/3d-models/fox-39f97fe58f0b47ce80b6e02814001dd7
-  (rigged + 30 animations; low-poly model originally by PixelMannen, animation by @tomkranis lineage)
+- **"Animated Fox 3D Model"** by **AnimalMesh3D** — https://sketchfab.com/3d-models/animated-fox-3d-model-7b7d4f07d47a444ab6c08b62adfd4aff
+  (realistic rigged red fox, 69 animations)
+- (baby-stage candidate) **"Fox"** by **pxltiger** — stylized low-poly rigged fox, 30 animations
 
 ## 3D environments (candidates — in /preview)
 All **CC-BY 4.0** (attribution required), via Sketchfab:

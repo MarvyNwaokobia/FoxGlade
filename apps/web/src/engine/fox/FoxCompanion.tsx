@@ -18,9 +18,16 @@ import { resolveColliders } from "@/engine/world/collision";
  * the body (same pattern as the human rigs) and the feet stay planted.
  */
 const FOX_URL = "/models/fox/fox.glb";
-const TARGET_HEIGHT = 0.55; // real-world fox height (m) to scale the model to
+// Fixed scale — this rigged model already renders ~fox-sized at scale 1; a
+// bounding-box auto-scale is unreliable for skinned meshes (geometry bounds ≠
+// skinned size). Tune FOX_SCALE / FOX_LIFT by eye.
+const FOX_SCALE = 1.0;
+const FOX_LIFT = 0; // vertical offset (m) if it floats/buries
 const WALK_ABOVE = 0.4; // fox planar speed (m/s) above which it walks
 const RUN_ABOVE = 4.5; // …above which it runs
+// This realistic fox's own clip names (AnimalMesh3D). Locomotion clips carry root
+// motion on RigRoot_01 — stripped below so code drives the follow, legs in place.
+const CLIP = { idle: "A3_Stand_Idle_01", walk: "Loco_Walk", run: "Run" };
 
 function lerpAngle(a: number, b: number, t: number) {
   let d = b - a;
@@ -40,13 +47,8 @@ export function FoxCompanion() {
   const { scene, animations } = useGLTF(FOX_URL);
   const model = useMemo(() => {
     const clone = SkeletonUtils.clone(scene);
-    // Scale to a fox-sized height and drop its feet to y=0.
-    const box = new THREE.Box3().setFromObject(clone);
-    const size = box.getSize(new THREE.Vector3());
-    const s = TARGET_HEIGHT / (size.y || 1);
-    clone.scale.setScalar(s);
-    const box2 = new THREE.Box3().setFromObject(clone);
-    clone.position.y = -box2.min.y;
+    clone.scale.setScalar(FOX_SCALE);
+    clone.position.y = FOX_LIFT;
     clone.traverse((o) => {
       if ((o as THREE.Mesh).isMesh) {
         o.castShadow = false;
@@ -58,7 +60,18 @@ export function FoxCompanion() {
     return clone;
   }, [scene]);
 
-  const { actions } = useAnimations(animations, inner);
+  // Strip root motion (RigRoot_01 translation) so the fox animates in place and
+  // code moves it along the follow path — no forward drift / foot-skate compounding.
+  const clips = useMemo(
+    () =>
+      animations.map((c) => {
+        const cc = c.clone();
+        cc.tracks = cc.tracks.filter((t) => !/RigRoot_01\.position$/.test(t.name));
+        return cc;
+      }),
+    [animations]
+  );
+  const { actions } = useAnimations(clips, inner);
   const current = useRef<string>("");
 
   // Crossfade to a clip by name (idempotent if already playing it).
@@ -72,7 +85,7 @@ export function FoxCompanion() {
   };
 
   useEffect(() => {
-    play("Fox_Idle");
+    play(CLIP.idle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actions]);
 
@@ -105,11 +118,12 @@ export function FoxCompanion() {
     const targetFace = s > WALK_ABOVE ? Math.atan2(delta.x, delta.z) : yaw + Math.PI;
     facing.current = lerpAngle(facing.current, targetFace, Math.min(1, 9 * dt));
 
-    play(s > RUN_ABOVE ? "Fox_Run_InPlace" : s > WALK_ABOVE ? "Fox_Walk_InPlace" : "Fox_Idle");
+    play(s > RUN_ABOVE ? CLIP.run : s > WALK_ABOVE ? CLIP.walk : CLIP.idle);
 
     if (group.current) {
       group.current.position.set(foxPos.current.x, foxPos.current.y, foxPos.current.z);
       group.current.rotation.y = facing.current;
+
     }
     if (shadow.current) shadow.current.position.set(foxPos.current.x, 0.02, foxPos.current.z);
   });

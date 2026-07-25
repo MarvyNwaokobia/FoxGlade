@@ -11,17 +11,11 @@ import { Hud } from "@/components/Hud";
 import { MobileControls } from "@/components/MobileControls";
 import { isTouchDevice } from "@/engine/input/touch";
 
-// Quality presets. `dpr` is the render-resolution CEILING — capped low because
-// dpr 2 on a fullscreen retina display is ~4× the pixels (27M/frame) and tanks
-// any GPU. PerformanceMonitor + AdaptiveDpr drop it further automatically under
-// load, so the framerate self-corrects per device.
-type Quality = "low" | "med" | "high";
-const QUALITY: Record<Quality, { dpr: number; bloom: boolean; shadow: number }> = {
-  low: { dpr: 0.7, bloom: false, shadow: 1024 },
-  med: { dpr: 1, bloom: false, shadow: 1024 },
-  high: { dpr: 1.35, bloom: true, shadow: 1024 },
-};
-const NEXT: Record<Quality, Quality> = { low: "med", med: "high", high: "low" };
+// Locked to HIGH — graphics quality is core to the game (Marvy's call). The
+// render-resolution ceiling stays capped (dpr 2 on fullscreen retina is ~27M px
+// and tanks any GPU); AdaptiveDpr + PerformanceMonitor still auto-protect a weak
+// device invisibly, and degraded mode is the last-resort safety net.
+const HIGH = { dpr: 1.35, bloom: true, shadow: 1024 };
 
 /**
  * Top-level game mount: the R3F canvas plus the DOM HUD overlay. Client-only
@@ -30,18 +24,14 @@ const NEXT: Record<Quality, Quality> = { low: "med", med: "high", high: "low" };
 export default function Game() {
   // Detect touch after mount (avoids SSR mismatch). Drives on-screen controls.
   const [mobile, setMobile] = useState(false);
-  const [quality, setQuality] = useState<Quality>("high");
-  // Valor-style escape hatch: if the machine can't hold framerate even after
-  // AdaptiveDpr drops the resolution, latch "degraded" — kills shadows + the
-  // heavy post pass so weak laptops/phones stay playable. Capable machines never
-  // trip it and keep the full look.
+  // Last-resort safety: if a machine can't hold framerate even after AdaptiveDpr
+  // drops resolution, latch "degraded" (shadows + bloom off). Capable machines
+  // never trip it and keep the full HIGH look.
   const [degraded, setDegraded] = useState(false);
   useEffect(() => {
-    const touch = isTouchDevice();
-    setMobile(touch);
-    setQuality("med"); // start safe everywhere; bump to High if it holds
+    setMobile(isTouchDevice());
   }, []);
-  const q = QUALITY[quality];
+  const q = HIGH;
 
   return (
     <>
@@ -60,7 +50,7 @@ export default function Game() {
         <Suspense fallback={null}>
           <VillageScene
             bloom={q.bloom && !degraded}
-            shadows={quality === "high" && !degraded}
+            shadows={!degraded}
             shadowSize={q.shadow}
             degraded={degraded}
           />
@@ -77,26 +67,6 @@ export default function Game() {
       </Canvas>
       <Hud />
       {mobile && <MobileControls />}
-      {/* Quality switch — dial the perf/looks balance per device. */}
-      <button
-        onClick={() => setQuality((c) => NEXT[c])}
-        style={{
-          position: "fixed",
-          top: "calc(env(safe-area-inset-top, 0px) + 8px)",
-          right: "calc(env(safe-area-inset-right, 0px) + 8px)",
-          zIndex: 50,
-          padding: "8px 12px",
-          borderRadius: 999,
-          border: "1.5px solid rgba(255,255,255,0.35)",
-          background: "rgba(20,20,24,0.5)",
-          color: "#fff",
-          font: "600 12px system-ui, sans-serif",
-          letterSpacing: 1,
-          touchAction: "none",
-        }}
-      >
-        Quality: {quality.toUpperCase()}
-      </button>
       {/* DOM loading screen with a progress bar until assets are ready. */}
       <Loader
         containerStyles={{ background: "#1a140f" }}

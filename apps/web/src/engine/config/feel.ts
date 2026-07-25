@@ -63,10 +63,10 @@ export const FEEL = {
   // --- Fox companion follow ---
   // The fox stays BESIDE (and slightly ahead of) the player so it's always in
   // view — a companion you watch and care for, never hidden behind you.
-  foxForwardOffset: 0.9, // how far ahead of the player it walks (keeps it on-screen)
-  foxSideOffset: 1.3, // how far out to the side it walks
+  foxForwardOffset: 0.1, // barely ahead so it stays on-screen but close at heel
+  foxSideOffset: 0.72, // how far out to the side it walks (right at the player's heel)
   foxSide: 1, // 1 = player's right, -1 = left
-  foxSpeed: 9, // how quickly it catches up (higher = tighter to heel)
+  foxSpeed: 11, // how quickly it catches up (higher = tighter to heel)
   foxBobAmplitude: 0.12,
   foxBobSpeed: 9,
 
