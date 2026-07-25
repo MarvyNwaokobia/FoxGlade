@@ -57,11 +57,11 @@ export const LOOT = {
 /** Blockers: the armed NPCs contesting the route (DESIGN §2). */
 export const BLOCKER = {
   health: 3, // player hits to kill
-  moveSpeed: 2.4, // m/s when advancing/strafing
+  moveSpeed: 3.3, // m/s when advancing/strafing
   aggroRange: 26, // starts pursuing within this distance
   engageRange: 20, // starts shooting within this distance
-  rangeMax: 15, // farther than this → advance
-  rangeMin: 7, // closer than this → back off (otherwise strafe)
+  rangeMax: 9, // farther than this → advance (narrow band so they close in, not just circle)
+  rangeMin: 4, // closer than this → back off (otherwise strafe-with-advance)
   fireCooldown: 2.2, // seconds between shots
   projectileSpeed: 16, // m/s — slow enough to sidestep or break LOS
   shotDamage: 9, // player health lost per hit (player has 100)

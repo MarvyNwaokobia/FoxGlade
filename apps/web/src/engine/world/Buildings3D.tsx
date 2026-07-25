@@ -14,7 +14,6 @@ import { runtime } from "@/engine/runtime";
  * from COLLIDERS in village.ts), so the model is purely visual.
  */
 const MODELS = {
-  house: "/models/buildings/house_timber.glb",
   tavern: "/models/buildings/tavern.glb",
   hall: "/models/buildings/stone_hall.glb",
 } as const;
@@ -22,12 +21,14 @@ Object.values(MODELS).forEach((u) => useGLTF.preload(u));
 
 export type ModelKey = keyof typeof MODELS;
 
-/** Pick a model for a solid building by its size, varied by index. */
-export function chooseModel(b: Building, i: number): ModelKey {
-  const big = Math.max(b.w, b.d);
-  if (big >= 10) return "hall";
-  if (big >= 8) return i % 2 === 0 ? "tavern" : "hall";
-  return i % 3 === 0 ? "tavern" : "house";
+/**
+ * Uniform houses (Marvy's call): every regular house uses the one COMPLETE
+ * `tavern` model. Retired: `house_timber` (open arches → read as unfinished/
+ * incomplete) and `stone_hall` as a house (a grand hall squished to house size
+ * looked out of place). `stone_hall` (`hall`) is now the BANK's landmark only.
+ */
+export function chooseModel(_b: Building, _i: number): ModelKey {
+  return "tavern";
 }
 
 /**

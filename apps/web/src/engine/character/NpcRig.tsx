@@ -69,6 +69,11 @@ export const NpcRig = memo(function NpcRig({
         child.castShadow = false;
         child.receiveShadow = true;
         child.frustumCulled = false;
+        (Array.isArray(child.material) ? child.material : [child.material]).forEach((m) => {
+          const sm = m as THREE.MeshStandardMaterial;
+          if ("roughness" in sm) sm.roughness = Math.max(sm.roughness ?? 1, 0.9);
+          if ("metalness" in sm) sm.metalness = 0;
+        });
       }
     });
     return clone;

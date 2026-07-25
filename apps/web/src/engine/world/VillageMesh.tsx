@@ -158,7 +158,6 @@ function BuildingBlock({ b, mats }: { b: Building; mats: VillageMaterials }) {
               depthWrite={false}
             />
           </mesh>
-          <pointLight position={[0, 2.4, -1.8]} intensity={6} distance={10} color={THEME.lantern} />
         </group>
         {/* A hung lantern beside the door, so lit windows read at dusk */}
         <mesh position={[op.cx + op.nx * 0.3 - op.nz * (op.width / 2 + 0.4), 2.1, op.cz + op.nz * 0.3 + op.nx * (op.width / 2 + 0.4)]}>
@@ -229,7 +228,6 @@ function EnterableHouse({ b, eIndex, mats }: { b: Building; eIndex: number; mats
           <planeGeometry args={[op.width + 0.4, 1.8]} />
           <meshBasicMaterial color={THEME.lantern} transparent opacity={0.35} depthWrite={false} />
         </mesh>
-        <pointLight position={[0, 2.2, -1.2]} intensity={5} distance={9} color={THEME.lantern} />
       </group>
     </group>
   );

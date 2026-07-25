@@ -11,7 +11,6 @@ import { Interiors } from "@/engine/world/Interiors";
 import { Props } from "@/engine/world/Props";
 import { Atmosphere } from "@/engine/world/Atmosphere";
 import { PostFX } from "@/engine/scene/PostFX";
-import { THEME } from "@/engine/world/theme";
 import { useGame } from "@/engine/store";
 
 /**
@@ -21,37 +20,49 @@ import { useGame } from "@/engine/store";
 export function VillageScene({
   bloom = true,
   shadowSize = 2048,
+  degraded = false,
 }: {
   bloom?: boolean;
   shadowSize?: number;
+  degraded?: boolean;
 }) {
   // Remount all NPCs on restart (revives blockers, distractors, thief).
   const roundNonce = useGame((s) => s.roundNonce);
   return (
     <>
-      {/* Real dusk sky + image-based lighting from a CC0 HDRI (Poly Haven).
-          `background` shows the photographic sky; it also lights every surface. */}
-      <Environment files="/env/dusk_2k.hdr" background backgroundBlurriness={0} environmentIntensity={1.0} />
-      {/* Warm haze so far buildings melt into the horizon, matching the sky */}
-      <fog attach="fog" args={[THEME.fog, THEME.fogNear, THEME.fogFar]} />
-      {/* A low warm key light for the crisp shadows the HDRI alone can't cast */}
+      {/* Real CC0 daytime sky (partly cloudy) as the BACKGROUND — realistic
+          clouds, no fake sun disc. environmentIntensity kept low so surfaces get
+          a little sky fill but DON'T turn shiny (that was the old problem). */}
+      <Environment
+        files="/env/day_clouds_2k.hdr"
+        background
+        backgroundIntensity={1.0}
+        environmentIntensity={0.3}
+      />
+      {/* Light daytime haze so far buildings melt into the horizon */}
+      <fog attach="fog" args={["#c3ccd6", 55, 175]} />
+      {/* Bright sky/ground fill so characters aren't murky in the shade */}
+      <ambientLight intensity={0.45} />
+      <hemisphereLight color="#cfe0f2" groundColor="#6a5b48" intensity={1.0} />
+      {/* Daytime sun casting the shadows */}
       <directionalLight
-        position={[38, 20, 14]}
-        color={THEME.sunColor}
-        intensity={2.1}
-        castShadow
+        position={[38, 26, 14]}
+        color="#fff4e0"
+        intensity={2.4}
+        castShadow={!degraded}
         shadow-mapSize={[shadowSize, shadowSize]}
-        shadow-camera-left={-50}
-        shadow-camera-right={50}
-        shadow-camera-top={50}
-        shadow-camera-bottom={-50}
+        shadow-camera-left={-40}
+        shadow-camera-right={40}
+        shadow-camera-top={40}
+        shadow-camera-bottom={-40}
         shadow-camera-near={1}
-        shadow-camera-far={140}
+        shadow-camera-far={120}
         shadow-bias={-0.0004}
       />
       <Village />
       <Interiors />
-      <Props />
+      {/* Set-dressing props are cut on struggling machines (Valor's approach). */}
+      {!degraded && <Props />}
       <Atmosphere />
       <group key={roundNonce}>
         <Blockers />

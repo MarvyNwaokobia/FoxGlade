@@ -71,7 +71,9 @@ function Lantern({ position }: { position: [number, number, number] }) {
           toneMapped={false}
         />
       </mesh>
-      <pointLight intensity={6} distance={11} decay={2} color={THEME.lantern} />
+      {/* No real point light — 8 of these in forward rendering murdered the frame
+          rate, and in daytime they do nothing. The day→night pass re-adds a few
+          cheap lights (or a single baked scheme) at dusk. */}
     </group>
   );
 }
@@ -87,11 +89,11 @@ const LANTERNS: [number, number, number][] = [
   [8, 2.6, -26],
 ];
 
-/** Mood layer: embers + warm lantern pools of light through the streets. */
+/** Mood layer: warm lantern bulbs through the streets. (Embers read as odd
+ *  daytime "stars", so they're off until the day→night pass brings dusk back.) */
 export function Atmosphere() {
   return (
     <>
-      <Embers />
       {LANTERNS.map((p, i) => (
         <Lantern key={i} position={p} />
       ))}

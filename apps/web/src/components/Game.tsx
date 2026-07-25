@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { Canvas } from "@react-three/fiber";
-import { Loader, Stats } from "@react-three/drei";
+import { Loader, Stats, PerformanceMonitor, AdaptiveDpr } from "@react-three/drei";
 import * as THREE from "three";
 import { PlayerController } from "@/engine/player/PlayerController";
 import { FoxCompanion } from "@/engine/fox/FoxCompanion";
@@ -11,14 +11,15 @@ import { Hud } from "@/components/Hud";
 import { MobileControls } from "@/components/MobileControls";
 import { isTouchDevice } from "@/engine/input/touch";
 
-// Quality presets — the perf/looks tradeoff, tunable live so it can be dialled
-// per-device. `dpr` (render resolution) and `bloom` update live; `shadow` map
-// size is read at mount. Mobile defaults to Med, desktop to High.
+// Quality presets. `dpr` is the render-resolution CEILING — capped low because
+// dpr 2 on a fullscreen retina display is ~4× the pixels (27M/frame) and tanks
+// any GPU. PerformanceMonitor + AdaptiveDpr drop it further automatically under
+// load, so the framerate self-corrects per device.
 type Quality = "low" | "med" | "high";
 const QUALITY: Record<Quality, { dpr: number; bloom: boolean; shadow: number }> = {
-  low: { dpr: 1, bloom: false, shadow: 1024 },
-  med: { dpr: 1.5, bloom: false, shadow: 1024 },
-  high: { dpr: 2, bloom: true, shadow: 2048 },
+  low: { dpr: 0.7, bloom: false, shadow: 1024 },
+  med: { dpr: 1, bloom: false, shadow: 1024 },
+  high: { dpr: 1.35, bloom: true, shadow: 1024 },
 };
 const NEXT: Record<Quality, Quality> = { low: "med", med: "high", high: "low" };
 
@@ -30,10 +31,15 @@ export default function Game() {
   // Detect touch after mount (avoids SSR mismatch). Drives on-screen controls.
   const [mobile, setMobile] = useState(false);
   const [quality, setQuality] = useState<Quality>("high");
+  // Valor-style escape hatch: if the machine can't hold framerate even after
+  // AdaptiveDpr drops the resolution, latch "degraded" — kills shadows + the
+  // heavy post pass so weak laptops/phones stay playable. Capable machines never
+  // trip it and keep the full look.
+  const [degraded, setDegraded] = useState(false);
   useEffect(() => {
     const touch = isTouchDevice();
     setMobile(touch);
-    setQuality(touch ? "med" : "high");
+    setQuality("med"); // start safe everywhere; bump to High if it holds
   }, []);
   const q = QUALITY[quality];
 
@@ -41,7 +47,7 @@ export default function Game() {
     <>
       <Canvas
         shadows
-        dpr={q.dpr}
+        dpr={[0.6, q.dpr]}
         gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 0.82 }}
         camera={{ fov: 60, near: 0.1, far: 400, position: [0, 4, 8] }}
         onCreated={({ gl }) => {
@@ -52,10 +58,15 @@ export default function Game() {
             building models, props, textures — has loaded, so nothing renders
             black-and-unlit during the download. */}
         <Suspense fallback={null}>
-          <VillageScene bloom={q.bloom} shadowSize={q.shadow} />
+          <VillageScene bloom={q.bloom && !degraded} shadowSize={q.shadow} degraded={degraded} />
           <PlayerController />
           <FoxCompanion />
         </Suspense>
+        {/* Auto-scale render resolution to hold framerate: AdaptiveDpr lowers the
+            pixel ratio under load. If a machine STILL can't cope after that,
+            PerformanceMonitor.onDecline latches degraded mode (shadows + bloom off). */}
+        <PerformanceMonitor onDecline={() => setDegraded(true)} />
+        <AdaptiveDpr pixelated />
         {/* Perf readout (FPS/ms) — temporary, to gauge game vs hardware. */}
         <Stats />
       </Canvas>

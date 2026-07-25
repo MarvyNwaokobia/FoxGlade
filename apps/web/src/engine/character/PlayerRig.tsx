@@ -124,7 +124,13 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
         child.material = Array.isArray(child.material)
           ? child.material.map((m) => m.clone())
           : child.material.clone();
-        (Array.isArray(child.material) ? child.material : [child.material]).forEach((m) => mats.push(m));
+        (Array.isArray(child.material) ? child.material : [child.material]).forEach((m) => {
+          // Matte — kill the wet/shiny plastic highlight on the character.
+          const sm = m as THREE.MeshStandardMaterial;
+          if ("roughness" in sm) sm.roughness = Math.max(sm.roughness ?? 1, 0.9);
+          if ("metalness" in sm) sm.metalness = 0;
+          mats.push(m);
+        });
       }
     });
     materials.current = mats;

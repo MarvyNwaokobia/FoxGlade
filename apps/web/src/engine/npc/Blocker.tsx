@@ -93,8 +93,10 @@ export function Blocker({ position }: { position: [number, number, number] }) {
         mx = -nx; // back off
         mz = -nz;
       } else {
-        mx = -nz * strafeDir.current; // strafe (perpendicular)
-        mz = nx * strafeDir.current;
+        // Strafe, but with an advance bias so they spiral IN toward the player
+        // (reads as active pursuit, not just sliding sideways).
+        mx = -nz * strafeDir.current * 0.7 + nx * 0.4;
+        mz = nx * strafeDir.current * 0.7 + nz * 0.4;
       }
       pos.current.x += mx * BLOCKER.moveSpeed * dt;
       pos.current.z += mz * BLOCKER.moveSpeed * dt;

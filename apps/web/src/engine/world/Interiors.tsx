@@ -1,11 +1,13 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { useGLTF } from "@react-three/drei";
+import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { ENTERABLES, INTERIORS, VILLAGE, type Building } from "./village";
 import { THEME } from "./theme";
 import { useVillageMaterials } from "./VillageMesh";
+import { runtime } from "@/engine/runtime";
 
 /** CC0 Poly Haven glTF props (real-world scale, in metres). */
 const MODELS = {
@@ -39,7 +41,7 @@ function Prop({
     const c = scene.clone(true);
     c.traverse((o) => {
       if ((o as THREE.Mesh).isMesh) {
-        o.castShadow = true;
+        o.castShadow = false;
         o.receiveShadow = true;
       }
     });
@@ -73,15 +75,23 @@ function isBank(r: Rect) {
  * A warm point light + a timber floor make the room read as a real interior
  * rather than the inside of a stone box.
  */
-function Interior({ b, r, floorMat }: { b: Building; r: Rect; floorMat: THREE.Material }) {
+function Interior({ b, r, floorMat, index }: { b: Building; r: Rect; floorMat: THREE.Material; index: number }) {
   const cx = (r.minX + r.maxX) / 2;
   const cz = (r.minZ + r.maxZ) / 2;
   const floorW = r.maxX - r.minX;
   const floorD = r.maxZ - r.minZ;
   const bank = isBank(r);
 
+  // Only render (and light) this interior while the player is inside it — outside,
+  // its furniture + fill light are pure waste (5 houses × furniture + a point
+  // light each). Invisible groups are culled and their lights skipped.
+  const grp = useRef<THREE.Group>(null);
+  useFrame(() => {
+    if (grp.current) grp.current.visible = runtime.shelterIndex === index;
+  });
+
   return (
-    <group>
+    <group ref={grp} visible={false}>
       {/* Timber floor just above the ground plane */}
       <mesh material={floorMat} rotation={[-Math.PI / 2, 0, 0]} position={[cx, 0.02, cz]} receiveShadow>
         <planeGeometry args={[floorW, floorD]} />
@@ -122,7 +132,7 @@ export function Interiors() {
   return (
     <>
       {ENTERABLES.map((b, i) => (
-        <Interior key={i} b={b} r={INTERIORS[i]} floorMat={mats.timber} />
+        <Interior key={i} b={b} r={INTERIORS[i]} floorMat={mats.timber} index={i} />
       ))}
     </>
   );

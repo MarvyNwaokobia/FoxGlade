@@ -64,7 +64,7 @@ function PropModel({ prop, x, z, rot, scale }: { prop: PropKey; x: number; z: nu
     c.position.y = -box.min.y;
     c.traverse((o) => {
       if ((o as THREE.Mesh).isMesh) {
-        o.castShadow = true;
+        o.castShadow = false; // props out of the shadow pass — big cost, little gain
         o.receiveShadow = true;
       }
     });

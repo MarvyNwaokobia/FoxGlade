@@ -11,8 +11,8 @@
  */
 export const FEEL = {
   // --- Locomotion (metres / second) ---
-  walkSpeed: 4.2,
-  runSpeed: 8.0, // hold Shift
+  walkSpeed: 5.6,
+  runSpeed: 11.0, // hold Shift
   crouchSpeed: 2.2, // while crouched (C toggles; crouching disables run)
   /** How fast horizontal velocity ramps toward the target (higher = snappier). */
   accel: 14,
