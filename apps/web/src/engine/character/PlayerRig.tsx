@@ -92,6 +92,9 @@ const FIRE_HOLD = 0.22;
 // this much while seated — same code-driven trick as the death drop. Tune to the
 // Sitting clip if he sits too high/low.
 const SIT_DROP = -0.4;
+// Crouch clips also bake a hip-drop that gets stripped → the crouch pose floats.
+// Settle it back to the ground (tune if he hovers / sinks while crouched).
+const CROUCH_DROP = -0.45;
 
 // Weapons are their own asset line (§14.6) and need proper per-gun sizing/grip —
 // off for now so the socketed rifle's native scale doesn't render meters-long.
@@ -364,7 +367,8 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
     // pivots at hip height (root motion is stripped), so ease the whole rig down
     // to settle the body on the ground instead of floating.
     const seated = animMachine.state === AnimState.Sit || animMachine.state === AnimState.Drink;
-    const dropTarget = state.dead ? -0.78 : seated ? SIT_DROP : 0;
+    const crouched = animMachine.state === AnimState.CrouchIdle || animMachine.state === AnimState.CrouchWalk;
+    const dropTarget = state.dead ? -0.78 : seated ? SIT_DROP : crouched ? CROUCH_DROP : 0;
     deathDrop.current += (dropTarget - deathDrop.current) * Math.min(1, 5 * dt);
     groupRef.current.position.copy(state.position);
     groupRef.current.position.y = Math.max(0, state.position.y) + deathDrop.current;
@@ -422,21 +426,24 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
       gunRef.current.matrix.multiplyMatrices(_gunScratch, handBoneRef.current.matrixWorld).multiply(GUN_GRIP);
     }
 
-    // Held bomb + hand position: sit the bomb in the throwing hand during the
-    // wind-up, and publish the hand's world position so the controller lobs the
-    // real bomb FROM the hand at release (seamless — it leaves exactly there).
-    if (handBoneRef.current) {
+    // Held bomb + hand position — only during a throw (otherwise this per-frame
+    // bone-matrix walk is wasted work). Publishes the hand's world position so the
+    // controller lobs the real bomb FROM the hand, and shows the bomb in-hand
+    // through the wind-up.
+    const throwElapsed = state.throwAt > 0 ? (performance.now() - state.throwAt) / 1000 : Infinity;
+    if (handBoneRef.current && throwElapsed < BOMB.windup + 0.15) {
       handBoneRef.current.updateWorldMatrix(true, false);
       runtime.rightHandPos.setFromMatrixPosition(handBoneRef.current.matrixWorld);
       const held = heldBombRef.current;
       if (held) {
-        const throwing = state.throwAt > 0 && (performance.now() - state.throwAt) / 1000 < BOMB.windup;
-        held.visible = throwing && groupRef.current.visible;
+        held.visible = throwElapsed < BOMB.windup && groupRef.current.visible;
         if (held.visible) {
           _gunScratch.copy(groupRef.current.matrixWorld).invert();
           held.matrix.multiplyMatrices(_gunScratch, handBoneRef.current.matrixWorld).multiply(BOMB_GRIP);
         }
       }
+    } else if (heldBombRef.current && heldBombRef.current.visible) {
+      heldBombRef.current.visible = false;
     }
   });
 
@@ -448,7 +455,7 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
       {/* Bomb held in the throwing hand during the wind-up (matrix driven from
           the hand bone each frame; hidden until a throw starts). */}
       <mesh ref={heldBombRef} visible={false} matrixAutoUpdate={false} castShadow>
-        <sphereGeometry args={[0.16, 12, 12]} />
+        <sphereGeometry args={[0.1, 12, 12]} />
         <meshStandardMaterial color="#2a2e34" roughness={0.5} metalness={0.35} />
       </mesh>
     </group>

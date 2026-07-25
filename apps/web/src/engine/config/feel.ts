@@ -31,10 +31,10 @@ export const FEEL = {
   mouseSensitivity: 0.0024,
   pitchMin: -0.55, // radians (look down)
   pitchMax: 0.95, // radians (look up)
-  cameraDistance: 4.8,
+  cameraDistance: 3.4, // pulled in tighter (was 4.8) — more grounded, less "orbiting the town"
   cameraHeight: 2.6, // (unused by the shoulder cam; kept for reference)
-  cameraShoulder: 0.9, // over-the-shoulder side offset, so the player isn't on the crosshair
-  cameraMinHeight: 0.8, // camera never dips below this, so you can't see under the world
+  cameraShoulder: 0.75, // over-the-shoulder side offset, so the player isn't on the crosshair
+  cameraMinHeight: 0.7, // camera never dips below this, so you can't see under the world
   cameraMinDistance: 1.2, // closest the camera pulls in on collision (kept back so the character stays framed, not slammed against his back)
   // Instead of hard-hiding the character when the camera is close (which read as
   // "vanishing"), fade him out: fully visible past fadeStart, gone by fadeEnd.

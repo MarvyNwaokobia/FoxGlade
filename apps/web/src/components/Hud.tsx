@@ -349,7 +349,7 @@ export function Hud() {
       {/* Controls, bottom-left */}
       <div style={styles.controls}>
         <div>
-          <b>WASD</b> move &nbsp;·&nbsp; <b>Shift</b> run &nbsp;·&nbsp; <b>Space</b> jump &nbsp;·&nbsp; <b>C</b> crouch
+          <b>WASD</b> move &nbsp;·&nbsp; <b>Shift</b> run &nbsp;·&nbsp; <b>Space</b> jump &nbsp;·&nbsp; <b>C</b> crouch &nbsp;·&nbsp; <b>V</b> view
         </div>
         <div>
           <b>Mouse</b> look &nbsp;·&nbsp; <b>Left-click</b> / <b>F</b> shoot

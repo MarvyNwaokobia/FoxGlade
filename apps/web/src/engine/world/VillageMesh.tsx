@@ -221,17 +221,36 @@ function EnterableHouse({ b, eIndex, mats }: { b: Building; eIndex: number; mats
         <GableRoof b={b} mat={mats.roof} />
       </group>
 
-      {/* Door cue (always): a glowing threshold pad so the entrance reads from
-          outside even though the exterior model is solid. */}
+      {/* Enterable-door marker: a glowing torch-lit door FRAME (two posts + a
+          lintel) + a brighter threshold pad, so shelters read clearly from
+          across the map even though the exterior model is solid. */}
       <group position={[op.cx, 0, op.cz]} rotation={[0, doorYaw, 0]}>
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, -0.6]}>
-          <planeGeometry args={[op.width + 0.4, 1.8]} />
-          <meshBasicMaterial color={THEME.lantern} transparent opacity={0.35} depthWrite={false} />
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, -0.5]}>
+          <planeGeometry args={[op.width + 0.5, 2.0]} />
+          <meshBasicMaterial color={DOOR_COLOR} transparent opacity={0.55} depthWrite={false} />
+        </mesh>
+        {[-1, 1].map((s) => (
+          <mesh key={s} position={[s * (op.width / 2 + 0.16), 1.3, -0.08]}>
+            <boxGeometry args={[0.13, 2.6, 0.13]} />
+            <meshStandardMaterial color={DOOR_COLOR} emissive={DOOR_COLOR} emissiveIntensity={1.4} toneMapped={false} />
+          </mesh>
+        ))}
+        <mesh position={[0, 2.6, -0.08]}>
+          <boxGeometry args={[op.width + 0.45, 0.13, 0.13]} />
+          <meshStandardMaterial color={DOOR_COLOR} emissive={DOOR_COLOR} emissiveIntensity={1.4} toneMapped={false} />
+        </mesh>
+        {/* A glowing pennant above the frame — a cheap 3D "flag" (no DOM/Html) that
+            catches the eye from across the map, marking this as enterable. */}
+        <mesh position={[0, b.h * 0.82 + 0.6, -0.08]}>
+          <boxGeometry args={[0.9, 0.5, 0.04]} />
+          <meshStandardMaterial color={DOOR_COLOR} emissive={DOOR_COLOR} emissiveIntensity={1.1} toneMapped={false} />
         </mesh>
       </group>
     </group>
   );
 }
+
+const DOOR_COLOR = "#ffb454"; // warm torch — distinct from cyan hints / gold treasure
 
 /**
  * Floating billboard label marking a zone. `occlude` hides it behind buildings,

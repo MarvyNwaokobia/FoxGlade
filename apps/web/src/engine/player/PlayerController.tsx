@@ -63,6 +63,7 @@ export function PlayerController() {
   const fireCd = useRef(0);
   const bombAim = useRef(false); // holding G: telegraph shows, release throws
   const crouching = useRef(false); // C toggles; jump stands you back up
+  const firstPerson = useRef(false); // V toggles the camera between 3rd and 1st person
   const resting = useRef(false); // sitting indoors (X); any movement stands up
   const eyeH = useRef(FEEL.lookAtHeight); // eased eye height (stand ↔ crouch ↔ sit)
 
@@ -90,6 +91,7 @@ export function PlayerController() {
       }
       if (e.code === "KeyF") fireHeld.current = true; // keyboard fire (hold to auto-fire)
       if (e.code === "KeyC" && !e.repeat) crouching.current = !crouching.current;
+      if (e.code === "KeyV" && !e.repeat) firstPerson.current = !firstPerson.current;
       if (e.code === "KeyX" && !e.repeat) {
         // Sit to rest — only indoors, and standing back up is always allowed.
         if (resting.current) resting.current = false;
@@ -383,25 +385,35 @@ export function PlayerController() {
     runtime.bombAiming = bombAim.current;
     if (bombAim.current) predictLanding(head, aim, runtime.bombAimPoint);
 
-    // Over-the-shoulder desired target (behind the aim line, offset to the side).
-    const desired = head
-      .clone()
-      .addScaledVector(aim, -FEEL.cameraDistance)
-      .addScaledVector(rightV, FEEL.cameraShoulder);
-    desired.y = Math.max(desired.y, FEEL.cameraMinHeight);
+    // Camera target: FIRST-PERSON sits right at the eyes (V toggles); otherwise
+    // it rides over the shoulder behind the aim line, with wall collision.
+    let desired: THREE.Vector3;
+    if (firstPerson.current) {
+      // At the eyes, nudged a touch forward so we're past the neck. The body
+      // fades out on its own here (camera is essentially inside it).
+      desired = head.clone().addScaledVector(aim, 0.14);
+      desired.y = Math.max(desired.y, 0.3);
+    } else {
+      // Over-the-shoulder desired target (behind the aim line, offset to the side).
+      desired = head
+        .clone()
+        .addScaledVector(aim, -FEEL.cameraDistance)
+        .addScaledVector(rightV, FEEL.cameraShoulder);
+      desired.y = Math.max(desired.y, FEEL.cameraMinHeight);
 
-    // Camera collision: raycast head → the DESIRED target (a stable point, not the
-    // current camera position) and pull the target in to just before any wall.
-    // Correcting the target once and then smoothing to it avoids the per-frame
-    // lerp-out / snap-in oscillation that made the camera shake against buildings.
-    const toDesired = desired.clone().sub(head);
-    const dist = toDesired.length();
-    if (dist > 0.001) {
-      const t = raycastBoxes(head, desired, BOXES3D);
-      if (t < 1) {
-        const d = Math.max(FEEL.cameraMinDistance, Math.min(dist, dist * t - FEEL.cameraCollisionBuffer));
-        desired.copy(head).addScaledVector(toDesired.multiplyScalar(1 / dist), d);
-        desired.y = Math.max(desired.y, FEEL.cameraMinHeight);
+      // Camera collision: raycast head → the DESIRED target (a stable point, not the
+      // current camera position) and pull the target in to just before any wall.
+      // Correcting the target once and then smoothing to it avoids the per-frame
+      // lerp-out / snap-in oscillation that made the camera shake against buildings.
+      const toDesired = desired.clone().sub(head);
+      const dist = toDesired.length();
+      if (dist > 0.001) {
+        const t = raycastBoxes(head, desired, BOXES3D);
+        if (t < 1) {
+          const d = Math.max(FEEL.cameraMinDistance, Math.min(dist, dist * t - FEEL.cameraCollisionBuffer));
+          desired.copy(head).addScaledVector(toDesired.multiplyScalar(1 / dist), d);
+          desired.y = Math.max(desired.y, FEEL.cameraMinHeight);
+        }
       }
     }
 
