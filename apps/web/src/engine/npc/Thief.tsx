@@ -10,6 +10,7 @@ import { THIEF } from "@/engine/config/round";
 import { HINTS } from "@/engine/world/hints";
 import { runtime } from "@/engine/runtime";
 import type { Enemy as EnemyT } from "@/engine/combat/enemies";
+import { NpcRig, type NpcRigState } from "@/engine/character/NpcRig";
 
 const BODY_H = 1.7;
 const BODY_R = 0.4;
@@ -45,6 +46,7 @@ export function Thief({
   const [health, setHealth] = useState<number>(THIEF.health);
   const [flash, setFlash] = useState(false);
   const live = useRef<{ enemy: EnemyT; ref: ThiefRef } | null>(null);
+  const anim = useRef<NpcRigState>({ moving: false, running: true, fireAt: -1, speed });
   const dead = health <= 0;
 
   useEffect(() => {
@@ -129,16 +131,14 @@ export function Thief({
       group.current.position.set(pos.current.x, 0, pos.current.z);
       group.current.rotation.y = facing.current;
     }
+    anim.current.moving = true; // always racing while alive
   });
 
   if (dead || escaped || !started) return null;
 
   return (
     <group ref={group} position={[wp[0].x, 0, wp[0].z]}>
-      <mesh position={[0, BODY_H / 2, 0]} castShadow>
-        <capsuleGeometry args={[BODY_R, BODY_H - BODY_R * 2, 6, 12]} />
-        <meshStandardMaterial color={flash ? "#ffffff" : "#3f7f6e"} roughness={0.6} />
-      </mesh>
+      <NpcRig model="npc_thief" state={anim.current} />
       {/* Loot sack over the shoulder */}
       <mesh position={[-0.3, BODY_H * 0.62, -0.12]}>
         <sphereGeometry args={[0.22, 10, 10]} />

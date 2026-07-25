@@ -11,6 +11,7 @@ import { BOXES3D, COLLIDERS, VILLAGE } from "@/engine/world/village";
 import { runtime } from "@/engine/runtime";
 import { useGame } from "@/engine/store";
 import { BLOCKER } from "@/engine/config/round";
+import { NpcRig, type NpcRigState } from "@/engine/character/NpcRig";
 
 const BODY_H = 1.8;
 const BODY_R = 0.45;
@@ -29,6 +30,7 @@ export function Blocker({ position }: { position: [number, number, number] }) {
   const pos = useRef(new THREE.Vector3(position[0], position[1], position[2]));
   const strafeDir = useRef(Math.random() < 0.5 ? 1 : -1);
   const strafeTimer = useRef(2 + Math.random() * 2);
+  const anim = useRef<NpcRigState>({ moving: false, running: false, fireAt: -1, speed: BLOCKER.moveSpeed });
 
   useEffect(() => {
     const enemy: Enemy = {
@@ -77,7 +79,9 @@ export function Blocker({ position }: { position: [number, number, number] }) {
     const stealth = runtime.crouching ? BLOCKER.crouchDetectionMult : 1;
 
     // Movement toward the player (pursues even without LOS, to come around cover).
+    let moved = false;
     if (dist < BLOCKER.aggroRange * stealth && dist > 0.01) {
+      moved = true;
       const nx = dx / dist;
       const nz = dz / dist;
       let mx: number;
@@ -104,6 +108,7 @@ export function Blocker({ position }: { position: [number, number, number] }) {
       group.current.position.set(pos.current.x, 0, pos.current.z);
       group.current.rotation.y = Math.atan2(dx, dz); // face the player
     }
+    anim.current.moving = moved;
 
     // Fire when in range with a clear line of sight.
     if (dist <= BLOCKER.engageRange * stealth && cooldown.current <= 0) {
@@ -113,6 +118,7 @@ export function Blocker({ position }: { position: [number, number, number] }) {
       const to = new THREE.Vector3(runtime.playerPos.x, runtime.playerPos.y + chestY, runtime.playerPos.z);
       if (raycastBoxes(from, to, BOXES3D) >= 1) {
         cooldown.current = BLOCKER.fireCooldown;
+        anim.current.fireAt = performance.now();
         const dir = to.clone().sub(from).normalize();
         spawnProjectile(from.clone().addScaledVector(dir, 0.7), dir, BLOCKER.projectileSpeed);
       }
@@ -124,15 +130,7 @@ export function Blocker({ position }: { position: [number, number, number] }) {
   const frac = health / BLOCKER.health;
   return (
     <group ref={group} position={position}>
-      <mesh position={[0, BODY_H / 2, 0]} castShadow>
-        <capsuleGeometry args={[BODY_R, BODY_H - BODY_R * 2, 6, 12]} />
-        <meshStandardMaterial color={flash ? "#ffffff" : "#b23b3b"} roughness={0.6} />
-      </mesh>
-      {/* A muzzle nub so it reads as armed (it can't shoot yet) */}
-      <mesh position={[0.3, BODY_H * 0.55, 0.35]} rotation={[Math.PI / 2, 0, 0]}>
-        <boxGeometry args={[0.12, 0.6, 0.12]} />
-        <meshStandardMaterial color="#20242a" roughness={0.5} />
-      </mesh>
+      <NpcRig model="npc_blocker" state={anim.current} />
 
       {/* Health bar (billboarded to face the camera) */}
       <Billboard position={[0, BODY_H + 0.35, 0]}>

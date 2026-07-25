@@ -6,6 +6,10 @@ import * as THREE from "three";
 import { Html } from "@react-three/drei";
 import { enemies, type Enemy } from "@/engine/combat/enemies";
 import { runtime } from "@/engine/runtime";
+import { NpcRig, type NpcRigState } from "@/engine/character/NpcRig";
+
+// Distractors just stand and lie — a single shared idle drive is enough.
+const IDLE: NpcRigState = { moving: false, running: false, fireAt: -1, speed: 0 };
 
 const MAX_HEALTH = 2;
 const BODY_H = 1.8;
@@ -85,10 +89,7 @@ export function Distractor({
 
   return (
     <group position={position}>
-      <mesh position={[0, BODY_H / 2, 0]} castShadow>
-        <capsuleGeometry args={[BODY_R, BODY_H - BODY_R * 2, 6, 12]} />
-        <meshStandardMaterial color={flash ? "#ffffff" : "#7a6cae"} roughness={0.7} />
-      </mesh>
+      <NpcRig model="npc_distractor" state={IDLE} />
       {/* Lantern prop — the "false light" it waves at you */}
       <mesh position={[0.35, BODY_H * 0.55, 0.12]}>
         <boxGeometry args={[0.22, 0.28, 0.22]} />
