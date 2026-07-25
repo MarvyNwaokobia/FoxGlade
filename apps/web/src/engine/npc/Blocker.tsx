@@ -10,6 +10,8 @@ import { raycastBoxes, resolveColliders } from "@/engine/world/collision";
 import { BOXES3D, COLLIDERS, VILLAGE } from "@/engine/world/village";
 import { runtime } from "@/engine/runtime";
 import { useGame } from "@/engine/store";
+import { audio } from "@/engine/audio/audio";
+import { AUDIO } from "@/engine/config/audio";
 import { BLOCKER } from "@/engine/config/round";
 import { NpcRig, type NpcRigState } from "@/engine/character/NpcRig";
 
@@ -123,6 +125,8 @@ export function Blocker({ position }: { position: [number, number, number] }) {
         anim.current.fireAt = performance.now();
         const dir = to.clone().sub(from).normalize();
         spawnProjectile(from.clone().addScaledVector(dir, 0.7), dir, BLOCKER.projectileSpeed);
+        // Incoming fire, quieter the farther off it is.
+        audio.play("enemyGun", audio.distanceVolume(dist, AUDIO.enemyGunNear, AUDIO.enemyGunFar));
       }
     }
   });

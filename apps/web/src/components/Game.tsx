@@ -7,6 +7,8 @@ import * as THREE from "three";
 import { PlayerController } from "@/engine/player/PlayerController";
 import { FoxCompanion } from "@/engine/fox/FoxCompanion";
 import { VillageScene } from "@/engine/scene/VillageScene";
+import { AudioDriver } from "@/engine/audio/AudioDriver";
+import { audio } from "@/engine/audio/audio";
 import { Hud } from "@/components/Hud";
 import { MobileControls } from "@/components/MobileControls";
 import { isTouchDevice } from "@/engine/input/touch";
@@ -31,6 +33,21 @@ export default function Game() {
   useEffect(() => {
     setMobile(isTouchDevice());
   }, []);
+
+  // Browsers hold the AudioContext suspended until a user gesture — resume it
+  // (and start the ambient beds) on the first click / key / touch.
+  useEffect(() => {
+    const wake = () => audio.unlock();
+    window.addEventListener("pointerdown", wake);
+    window.addEventListener("keydown", wake);
+    window.addEventListener("touchstart", wake);
+    return () => {
+      window.removeEventListener("pointerdown", wake);
+      window.removeEventListener("keydown", wake);
+      window.removeEventListener("touchstart", wake);
+    };
+  }, []);
+
   const q = HIGH;
 
   return (
@@ -57,6 +74,9 @@ export default function Game() {
           <PlayerController />
           <FoxCompanion />
         </Suspense>
+        {/* Reads game state → schedules audio cues (outside Suspense so it runs
+            even while assets stream in). */}
+        <AudioDriver />
         {/* Auto-scale render resolution to hold framerate: AdaptiveDpr lowers the
             pixel ratio under load. If a machine STILL can't cope after that,
             PerformanceMonitor.onDecline latches degraded mode (shadows + bloom off). */}

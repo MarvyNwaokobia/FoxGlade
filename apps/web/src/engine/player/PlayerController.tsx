@@ -11,8 +11,9 @@ import { resolveColliders, raycastBoxes } from "@/engine/world/collision";
 import { useGame } from "@/engine/store";
 import { fireHitscan, enemies } from "@/engine/combat/enemies";
 import { spawnBomb, predictLanding } from "@/engine/combat/bombs";
+import { audio } from "@/engine/audio/audio";
 import { HINTS, HINT_RADIUS, SNIFF_COOLDOWN, SNIFF_REVEAL } from "@/engine/world/hints";
-import { SESSION_SECONDS, REST } from "@/engine/config/round";
+import { SESSION_SECONDS, REST, BOMB } from "@/engine/config/round";
 import { PlayerRig, type PlayerRigState } from "@/engine/character/PlayerRig";
 import { touch } from "@/engine/input/touch";
 
@@ -46,6 +47,8 @@ export function PlayerController() {
     grounded: true,
     dead: false,
     fireAt: -1,
+    throwAt: -1,
+    resting: false,
     visible: true,
     opacity: 1,
   });
@@ -128,6 +131,7 @@ export function PlayerController() {
         const st = useGame.getState();
         if (st.bombsLeft > 0 && !st.isDead && st.roundState === "playing") {
           st.throwBomb();
+          rigState.current.throwAt = performance.now(); // arm starts the throw NOW
           const cp = Math.cos(pitch.current);
           const aim = new THREE.Vector3(
             -Math.sin(yaw.current) * cp,
@@ -139,7 +143,18 @@ export function PlayerController() {
             pos.current.y + eyeH.current,
             pos.current.z
           );
-          spawnBomb(head, aim);
+          // Release at the throw clip's forward swing (BOMB.windup) so the bomb
+          // leaves the hand in sync with the animation + whoosh, not at wind-up.
+          // Launch FROM the hand (published by the rig) so it exits where the
+          // held bomb was; fall back to the head if the hand isn't posed yet.
+          window.setTimeout(() => {
+            const g = useGame.getState();
+            if (g.isDead || g.roundState !== "playing") return;
+            const origin = runtime.rightHandPos.lengthSq() > 0.01 ? runtime.rightHandPos.clone() : head;
+            spawnBomb(origin, aim);
+            audio.play("bombThrow");
+          }, BOMB.windup * 1000);
+
         }
       }
     };
@@ -324,6 +339,7 @@ export function PlayerController() {
     rs.grounded = grounded.current;
     rs.dead = useGame.getState().isDead;
     rs.fireAt = runtime.fireAt;
+    rs.resting = resting.current;
     // Contact shadow stays flat on the ground under the player (even mid-jump).
     if (shadow.current) {
       shadow.current.position.set(pos.current.x, 0.02, pos.current.z);

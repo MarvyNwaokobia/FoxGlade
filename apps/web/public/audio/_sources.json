@@ -1,0 +1,34 @@
+[
+  {
+    "name": "gunshot",
+    "title": "Single Gunshot.wav",
+    "author": "morganpurkis",
+    "id": 369782,
+    "license": "http://creativecommons.org/publicdomain/zero/1.0/",
+    "duration": 1.8937
+  },
+  {
+    "name": "enemy_gun",
+    "title": "Single Pistol Gunshot 3.wav",
+    "author": "morganpurkis",
+    "id": 385811,
+    "license": "http://creativecommons.org/publicdomain/zero/1.0/",
+    "duration": 2.14023
+  },
+  {
+    "name": "blast",
+    "title": "bad explosion",
+    "author": "deleted_user_364925",
+    "id": 47252,
+    "license": "http://creativecommons.org/publicdomain/zero/1.0/",
+    "duration": 1.49007
+  },
+  {
+    "name": "hurt",
+    "title": "Voice_AdultMale_PainGrunts_09.wav",
+    "author": "MrFossy",
+    "id": 547209,
+    "license": "http://creativecommons.org/publicdomain/zero/1.0/",
+    "duration": 0.319637
+  }
+]

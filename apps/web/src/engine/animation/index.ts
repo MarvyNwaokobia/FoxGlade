@@ -3,6 +3,7 @@ export {
   AnimState,
   buildAnimMap,
   classifyMoveDir,
+  isUpperBodyTrack,
 } from "./AnimationStateMachine";
 export type { AnimationMap, HitDirection, MoveDir } from "./AnimationStateMachine";
 export {

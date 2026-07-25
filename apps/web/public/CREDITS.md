@@ -31,5 +31,15 @@ All **CC-BY 4.0** (attribution required), via Sketchfab:
 - `treasure_chest`, `WoodenTable_01`, `WoodenChair_01`, `barrel_03`,
   `wicker_basket_01`, `Lantern_01`, `Shelf_01`, `ceramic_pot`
 
+## Audio — SFX (CC0 — no attribution required, credited anyway; via freesound.org)
+- **gunshot** — "Single Gunshot" by **morganpurkis** — https://freesound.org/s/369782/
+- **enemy_gun** — "Single Pistol Gunshot 3" by **morganpurkis** — https://freesound.org/s/385811/
+- **blast** — "bad explosion" by **deleted_user_364925** — https://freesound.org/s/47252/
+- **hurt** — "Voice_AdultMale_PainGrunts_09" by **MrFossy** — https://freesound.org/s/547209/
+
+> All other in-game audio (bomb throw, treasure/deposit/UI cues, fox, sniff,
+> ambient wind + birds, music loop) is procedurally synthesized (Web Audio) —
+> no files, no license.
+
 > Note: CC-BY assets require visible author attribution in the shipped build
 > (credits screen / about page). CC0 assets do not, but are listed for good hygiene.

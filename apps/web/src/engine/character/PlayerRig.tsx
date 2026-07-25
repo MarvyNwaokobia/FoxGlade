@@ -12,7 +12,11 @@ import {
   loadMixamoAnimations,
   getMixamoClips,
   isMixamoLoadComplete,
+  isUpperBodyTrack,
+  CLIP_NAMES,
 } from "@/engine/animation";
+import { BOMB } from "@/engine/config/round";
+import { runtime } from "@/engine/runtime";
 
 /**
  * The per-frame state the rig reads to drive its animation + transform. The
@@ -30,6 +34,8 @@ export interface PlayerRigState {
   grounded: boolean;
   dead: boolean;
   fireAt: number; // performance.now of the last shot
+  throwAt: number; // performance.now of the last bomb lob (drives the throw clip)
+  resting: boolean; // seated indoors (drives the sit clip)
   visible: boolean; // false only when fully faded (camera extremely close)
   opacity: number; // 0..1 — fades as the camera closes in, so he never hard-vanishes
 }
@@ -71,8 +77,21 @@ const GUN_GRIP = new THREE.Matrix4().compose(
 );
 const _gunScratch = new THREE.Matrix4();
 
+// Held bomb: nudge it into the palm of the throwing hand during the wind-up.
+const BOMB_GRIP = new THREE.Matrix4().compose(
+  new THREE.Vector3(0, 0.03, 0.05),
+  new THREE.Quaternion(),
+  new THREE.Vector3(1, 1, 1)
+);
+
 // Recent-shot window (seconds) that keeps the standing Fire clip playing.
 const FIRE_HOLD = 0.22;
+
+// Seated clips bake their hip-drop into the (stripped) Hips position track, so
+// the rig would sit at standing height = floating. Settle the whole rig down by
+// this much while seated — same code-driven trick as the death drop. Tune to the
+// Sitting clip if he sits too high/low.
+const SIT_DROP = -0.4;
 
 // Weapons are their own asset line (§14.6) and need proper per-gun sizing/grip —
 // off for now so the socketed rifle's native scale doesn't render meters-long.
@@ -92,7 +111,6 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
   const hipsBoneRef = useRef<THREE.Object3D | null>(null);
   const hipsFixApplied = useRef(false);
   const lean = useRef({ x: 0, z: 0 });
-  const crouchScale = useRef(1);
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
   const initDone = useRef(false);
   const mixamoApplied = useRef(false);
@@ -101,6 +119,18 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
   const lastFireAt = useRef(state.fireAt);
   const deathPlayed = useRef(false);
   const deathDrop = useRef(0); // eased downward offset that settles the corpse
+  // Additive upper-body fire layer (run-and-gun) + its eased weight.
+  const fireAddAction = useRef<THREE.AnimationAction | null>(null);
+  const fireLayerBuilt = useRef(false);
+  const fireWeight = useRef(0);
+  // Edge trackers for the one-shot / stateful movement clips.
+  const lastThrowAt = useRef(state.throwAt);
+  const prevGrounded = useRef(true);
+  const wasResting = useRef(false);
+  const sipClock = useRef(4); // seconds until the next seated sip while resting
+  const prevRotation = useRef(state.rotation); // for turn-in-place detection
+  const turnHold = useRef(0); // keeps the turn clip up briefly (anti-flicker)
+  const heldBombRef = useRef<THREE.Mesh | null>(null); // bomb in hand during wind-up
 
   const { scene, animations } = useGLTF(MODEL_PATHS[model]);
   const rifle = useGLTF(RIFLE_PATH);
@@ -195,6 +225,34 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
           groupRef.current.add(gun);
           gunRef.current = gun;
         }
+
+        // Build the additive upper-body FIRE layer (§15.3 run-and-gun): take the
+        // shot clip, mask it to arm/torso/head tracks, and make it additive
+        // relative to the idle pose. Played on top of the base locomotion action,
+        // it raises the gun and fires while the legs keep walking/running. Legs
+        // are untouched because the layer only carries upper-body tracks.
+        if (!fireLayerBuilt.current && mixerRef.current) {
+          fireLayerBuilt.current = true;
+          const mixer = mixerRef.current;
+          const fire = mixamoClips.get(CLIP_NAMES.gunplayShooting);
+          const idle = mixamoClips.get(CLIP_NAMES.rifleIdle);
+          if (fire && idle) {
+            const upper = fire.clone();
+            const idleNames = new Set(idle.tracks.map((t) => t.name));
+            // makeClipAdditive subtracts a reference value per track, so keep only
+            // upper-body tracks that also exist in the idle reference clip.
+            upper.tracks = upper.tracks.filter((t) => isUpperBodyTrack(t.name) && idleNames.has(t.name));
+            if (upper.tracks.length > 0) {
+              upper.name = "fireUpperAdditive";
+              THREE.AnimationUtils.makeClipAdditive(upper, 0, idle, 30);
+              const action = mixer.clipAction(upper);
+              action.setLoop(THREE.LoopRepeat, Infinity);
+              action.setEffectiveWeight(0);
+              action.play();
+              fireAddAction.current = action;
+            }
+          }
+        }
       }
     }
 
@@ -217,6 +275,9 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
     }
 
     // ── Choose the animation state from gameplay flags ──
+    const firedRecently = (performance.now() - state.fireAt) / 1000 < FIRE_HOLD;
+    if (state.fireAt !== lastFireAt.current) lastFireAt.current = state.fireAt;
+
     if (state.dead) {
       if (!deathPlayed.current) {
         deathPlayed.current = true;
@@ -227,23 +288,83 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
         deathPlayed.current = false;
         animMachine.transition(AnimState.Idle, true);
       }
-      // Fire only when standing (full-body clip; layered aim-while-moving is a
-      // later slice). While moving, legs keep running and the shot still fires.
-      const firedRecently = (performance.now() - state.fireAt) / 1000 < FIRE_HOLD;
-      if (state.fireAt !== lastFireAt.current) lastFireAt.current = state.fireAt;
-      if (state.moving) {
-        animMachine.transition(state.running ? AnimState.Run : AnimState.Walk);
-      } else if (firedRecently) {
-        animMachine.transition(AnimState.Fire);
-      } else {
-        animMachine.transition(AnimState.Idle);
+
+      // One-shot / stateful movement clips (edge-triggered). A missing clip makes
+      // the transition a clean no-op, so these are safe before Marvy's downloads.
+      if (state.throwAt !== lastThrowAt.current) {
+        lastThrowAt.current = state.throwAt;
+        if (state.throwAt > 0) animMachine.transition(AnimState.Throw, true);
       }
+      if (prevGrounded.current && !state.grounded) {
+        // A running jump reads as a hurdle/vault; a standing jump is a plain jump.
+        const hurdle = state.moving && state.running;
+        animMachine.transition(hurdle ? AnimState.Vault : AnimState.Jump, true);
+      }
+      prevGrounded.current = state.grounded;
+      if (state.resting && !wasResting.current) animMachine.transition(AnimState.Sit, true);
+      else if (!state.resting && wasResting.current) animMachine.transition(AnimState.Idle, true);
+      wasResting.current = state.resting;
+      // While seated, take a sip every few seconds (the "Sitting Drinking" clip).
+      if (state.resting) {
+        sipClock.current -= dt;
+        if (sipClock.current <= 0 && animMachine.state === AnimState.Sit) {
+          sipClock.current = 6 + Math.random() * 4;
+          animMachine.transition(AnimState.Drink, true);
+        }
+      } else {
+        sipClock.current = 4;
+      }
+
+      // Turn-in-place: how fast the body's target facing is sweeping (turning the
+      // camera while standing). Above a threshold, play the turn shuffle instead
+      // of a static idle — a short hold prevents flicker at the threshold.
+      let dRot = state.rotation - prevRotation.current;
+      while (dRot > Math.PI) dRot -= Math.PI * 2;
+      while (dRot < -Math.PI) dRot += Math.PI * 2;
+      prevRotation.current = state.rotation;
+      if (Math.abs(dRot) / Math.max(dt, 1e-3) > 1.4) turnHold.current = 0.22;
+      else turnHold.current = Math.max(0, turnHold.current - dt);
+      const turningInPlace = !state.moving && state.grounded && !state.crouching && turnHold.current > 0;
+
+      // Base locomotion — but never while a committed clip owns the whole body.
+      const busyStates: AnimState[] = [
+        AnimState.Throw, AnimState.Jump, AnimState.Vault, AnimState.Sit, AnimState.Drink, AnimState.Grab,
+        AnimState.Dodge, AnimState.HitLight, AnimState.HitHeavy,
+      ];
+      const busy = busyStates.includes(animMachine.state);
+      if (!busy) {
+        if (state.crouching) {
+          animMachine.transition(state.moving ? AnimState.CrouchWalk : AnimState.CrouchIdle);
+        } else if (state.moving) {
+          animMachine.transition(state.running ? AnimState.Run : AnimState.Walk);
+        } else if (turningInPlace) {
+          animMachine.transition(AnimState.Turn);
+        } else if (firedRecently && !fireAddAction.current) {
+          animMachine.transition(AnimState.Fire); // fallback if the additive layer failed to build
+        } else {
+          animMachine.transition(AnimState.Idle);
+        }
+      }
+    }
+
+    // Additive upper-body fire weight: raise the gun and shoot over whatever the
+    // legs are doing. Suppressed while a committed full-body clip is playing.
+    if (fireAddAction.current) {
+      const s = animMachine.state;
+      const allowFire =
+        firedRecently && !state.dead &&
+        s !== AnimState.Throw && s !== AnimState.Vault &&
+        s !== AnimState.Sit && s !== AnimState.Drink && s !== AnimState.Grab;
+      const target = allowFire ? 1 : 0;
+      fireWeight.current += (target - fireWeight.current) * Math.min(1, 18 * dt);
+      fireAddAction.current.setEffectiveWeight(fireWeight.current);
     }
 
     // Body faces state.rotation. On death the clip lays him horizontal but
     // pivots at hip height (root motion is stripped), so ease the whole rig down
     // to settle the body on the ground instead of floating.
-    const dropTarget = state.dead ? -0.78 : 0;
+    const seated = animMachine.state === AnimState.Sit || animMachine.state === AnimState.Drink;
+    const dropTarget = state.dead ? -0.78 : seated ? SIT_DROP : 0;
     deathDrop.current += (dropTarget - deathDrop.current) * Math.min(1, 5 * dt);
     groupRef.current.position.copy(state.position);
     groupRef.current.position.y = Math.max(0, state.position.y) + deathDrop.current;
@@ -263,12 +384,8 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
       animMachine.setMoveDirection(fwdAmt, rightAmt);
     }
 
-    // Crouch: no dedicated clip yet — squash the rig vertically so it reads as a
-    // duck while keeping feet planted (origin is at the feet). Placeholder until
-    // a crouch/crouch-walk clip is added.
-    const crouchTarget = state.crouching ? 0.78 : 1;
-    crouchScale.current += (crouchTarget - crouchScale.current) * Math.min(1, 10 * dt);
-    if (modelRef.current) modelRef.current.scale.y = crouchScale.current;
+    // (Crouch now uses real CrouchIdle/CrouchWalk clips — the old vertical-squash
+    // placeholder was removed.)
 
     // Subtle lean into movement for weight.
     const sin = Math.sin(state.rotation),
@@ -304,6 +421,23 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
       _gunScratch.copy(groupRef.current.matrixWorld).invert();
       gunRef.current.matrix.multiplyMatrices(_gunScratch, handBoneRef.current.matrixWorld).multiply(GUN_GRIP);
     }
+
+    // Held bomb + hand position: sit the bomb in the throwing hand during the
+    // wind-up, and publish the hand's world position so the controller lobs the
+    // real bomb FROM the hand at release (seamless — it leaves exactly there).
+    if (handBoneRef.current) {
+      handBoneRef.current.updateWorldMatrix(true, false);
+      runtime.rightHandPos.setFromMatrixPosition(handBoneRef.current.matrixWorld);
+      const held = heldBombRef.current;
+      if (held) {
+        const throwing = state.throwAt > 0 && (performance.now() - state.throwAt) / 1000 < BOMB.windup;
+        held.visible = throwing && groupRef.current.visible;
+        if (held.visible) {
+          _gunScratch.copy(groupRef.current.matrixWorld).invert();
+          held.matrix.multiplyMatrices(_gunScratch, handBoneRef.current.matrixWorld).multiply(BOMB_GRIP);
+        }
+      }
+    }
   });
 
   return (
@@ -311,6 +445,12 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
       <group ref={modelRef}>
         <primitive object={clonedScene} />
       </group>
+      {/* Bomb held in the throwing hand during the wind-up (matrix driven from
+          the hand bone each frame; hidden until a throw starts). */}
+      <mesh ref={heldBombRef} visible={false} matrixAutoUpdate={false} castShadow>
+        <sphereGeometry args={[0.16, 12, 12]} />
+        <meshStandardMaterial color="#2a2e34" roughness={0.5} metalness={0.35} />
+      </mesh>
     </group>
   );
 });

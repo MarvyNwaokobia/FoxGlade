@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { runtime } from "@/engine/runtime";
 import { useGame } from "@/engine/store";
+import { audio } from "@/engine/audio/audio";
 import { HINTS } from "@/engine/world/hints";
 import { SESSION_SECONDS } from "@/engine/config/round";
 import { thieves, MAX_THIEVES } from "@/engine/npc/thieves";
@@ -30,6 +31,7 @@ export function Hud() {
   const crossEl = useRef<HTMLDivElement>(null);
   const dmgEl = useRef<HTMLDivElement>(null);
   const [locked, setLocked] = useState(false);
+  const [muted, setMuted] = useState(false);
   const health = useGame((s) => s.playerHealth);
   const maxHealth = useGame((s) => s.maxPlayerHealth);
   const isDead = useGame((s) => s.isDead);
@@ -40,6 +42,20 @@ export function Hud() {
   const claimedRarity = useGame((s) => s.claimedRarity);
   const villeCarrying = useGame((s) => s.villeCarrying);
   const villeBanked = useGame((s) => s.villeBanked);
+
+  // Mute toggle: reflect the persisted state, keep in sync, and bind M.
+  useEffect(() => {
+    setMuted(audio.muted);
+    const off = audio.onMuteChange(setMuted);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code === "KeyM" && !e.repeat) audio.toggleMute();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      off();
+      window.removeEventListener("keydown", onKey);
+    };
+  }, []);
 
   useEffect(() => {
     const onLockChange = () => setLocked(!!document.pointerLockElement);
@@ -319,6 +335,16 @@ export function Hud() {
 
       {/* Proximity prompt (claim / false lead) — text set from the game loop */}
       <div ref={promptEl} style={styles.prompt} />
+
+      {/* Mute toggle, bottom-right (the one interactive HUD element) */}
+      <button
+        type="button"
+        onClick={() => audio.toggleMute()}
+        style={{ ...styles.muteBtn, opacity: muted ? 0.6 : 1 }}
+        title="Mute / unmute (M)"
+      >
+        {muted ? "🔇" : "🔊"}
+      </button>
 
       {/* Controls, bottom-left */}
       <div style={styles.controls}>
@@ -654,6 +680,22 @@ const styles: Record<string, React.CSSProperties> = {
     color: "rgba(232,238,242,0.75)",
     lineHeight: 1.7,
     pointerEvents: "none",
+    userSelect: "none",
+  },
+  muteBtn: {
+    position: "absolute",
+    right: 18,
+    bottom: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 999,
+    background: "rgba(11,13,16,0.6)",
+    border: "1px solid rgba(232,238,242,0.25)",
+    color: "#e8eef2",
+    fontSize: 18,
+    lineHeight: 1,
+    cursor: "pointer",
+    pointerEvents: "auto",
     userSelect: "none",
   },
   lockPrompt: { position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" },

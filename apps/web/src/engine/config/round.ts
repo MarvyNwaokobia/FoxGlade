@@ -36,6 +36,10 @@ export const BOMB = {
   enemyDamage: 3, // kills a full-health blocker or thief outright
   selfDamage: 35, // player health lost if caught inside the blast
   fuse: 3, // seconds before it detonates mid-air anyway (safety net)
+  /** Wind-up before the bomb actually leaves the hand — the throw clip cocks
+   *  back, then releases at this point, so the lob (and its whoosh) sync to the
+   *  arm's forward swing instead of firing at wind-up. Tune to the clip's release. */
+  windup: 0.38,
 } as const;
 
 /**

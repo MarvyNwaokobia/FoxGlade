@@ -18,6 +18,17 @@ export const CLIP_NAMES = {
   gettingHit: "gettingHit", // HitHeavy — heavier flinch
   deathForward: "deathForward", // Death
   victory: "victory", // Victory
+  throwBomb: "throwBomb", // Throw — bomb lob (from Valor's Throw.fbx)
+  // ── Movement clips Marvy downloads from Mixamo (load-skipped until present) ──
+  jump: "jump", // real jump-up (replaces the fake procedural hop)
+  sit: "sit", // seated rest pose (indoors, X)
+  drink: "drink", // drink flavour
+  grab: "grab", // pick-up / grab (claim later)
+  crouchIdle: "crouchIdle", // crouched stand (replaces the squash hack)
+  crouchWalk: "crouchWalk", // crouched forward locomotion
+  crouchStrafe: "crouchStrafe", // crouched sideways (right; reversed = left)
+  turn: "turn", // turn-in-place shuffle (kills the idle foot-slide)
+  vault: "vault", // hurdle / vault over a low obstacle
 } as const;
 
 const ALL_ANIMS: Record<string, string> = {
@@ -33,6 +44,18 @@ const ALL_ANIMS: Record<string, string> = {
   [CLIP_NAMES.gettingHit]: "/characters/raw/Getting Hit.fbx",
   [CLIP_NAMES.deathForward]: "/characters/raw/Standing Death Forward 02.fbx",
   [CLIP_NAMES.victory]: "/characters/raw/Victory.fbx",
+  [CLIP_NAMES.throwBomb]: "/characters/raw/Throw.fbx",
+  // These four are load-skipped (Promise.allSettled) until Marvy drops the FBX
+  // in — save each Mixamo download at exactly this path and it lights up.
+  [CLIP_NAMES.jump]: "/characters/raw/Jump.fbx",
+  [CLIP_NAMES.sit]: "/characters/raw/Sitting.fbx",
+  [CLIP_NAMES.drink]: "/characters/raw/Drinking.fbx",
+  [CLIP_NAMES.grab]: "/characters/raw/Picking Up.fbx",
+  [CLIP_NAMES.crouchIdle]: "/characters/raw/Crouch Idle.fbx",
+  [CLIP_NAMES.crouchWalk]: "/characters/raw/Crouch Walking.fbx",
+  [CLIP_NAMES.crouchStrafe]: "/characters/raw/Walk Crouching Right.fbx",
+  [CLIP_NAMES.turn]: "/characters/raw/Turning.fbx",
+  [CLIP_NAMES.vault]: "/characters/raw/Vault Over Box.fbx",
 };
 
 const allClips: Map<string, THREE.AnimationClip> = new Map();

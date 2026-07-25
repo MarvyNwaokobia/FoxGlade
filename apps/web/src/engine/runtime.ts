@@ -50,4 +50,7 @@ export const runtime = {
   hitAt: -1,
   /** Timestamp the player last took damage (for the screen flash). */
   damageAt: -1,
+  /** World position of the player's right hand (published by PlayerRig each
+   *  frame) so a thrown bomb launches FROM the hand, in sync with the throw. */
+  rightHandPos: new THREE.Vector3(0, 0, 0),
 };

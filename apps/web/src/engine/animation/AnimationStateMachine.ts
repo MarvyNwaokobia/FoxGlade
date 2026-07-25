@@ -22,6 +22,15 @@ export enum AnimState {
   HitHeavy = "hitHeavy",
   Death = "death",
   Victory = "victory",
+  Throw = "throw",
+  Jump = "jump",
+  Sit = "sit",
+  Drink = "drink",
+  Grab = "grab",
+  CrouchIdle = "crouchIdle",
+  CrouchWalk = "crouchWalk",
+  Turn = "turn",
+  Vault = "vault",
 }
 
 export type HitDirection = "front" | "back" | "side";
@@ -81,8 +90,41 @@ export function buildAnimMap(tempo = 1.0): AnimationMap {
     [AnimState.Death]: { clip: CLIP_NAMES.deathForward, loop: false, speed: 1.0, fadeIn: 0.08, fadeOut: 0, canInterrupt: false },
     [AnimState.Victory]: { clip: CLIP_NAMES.victory, loop: false, speed: 1.0, fadeIn: 0.2, fadeOut: 0, canInterrupt: false },
     // Fire is class-agnostic; played one-shot on each shot, returning to Idle.
+    // (Now usually driven as an ADDITIVE upper-body layer in PlayerRig so you can
+    // shoot while running — this full-body entry is the fallback if that fails.)
     [AnimState.Fire]: { clip: CLIP_NAMES.gunplayShooting, loop: false, speed: 1.0, fadeIn: 0.04, fadeOut: 0.08, canInterrupt: true, nextState: AnimState.Idle },
+    // Bomb lob — a committed full-body one-shot (real clip from Valor).
+    [AnimState.Throw]: { clip: CLIP_NAMES.throwBomb, loop: false, speed: 1.1, fadeIn: 0.06, fadeOut: 0.12, canInterrupt: false, nextState: AnimState.Idle },
+    // Below are load-gated on Marvy's Mixamo downloads; a missing clip makes the
+    // transition a clean no-op (transition() bails when the clip isn't found).
+    [AnimState.Jump]: { clip: CLIP_NAMES.jump, loop: false, speed: 1.0, fadeIn: 0.06, fadeOut: 0.14, canInterrupt: true, nextState: AnimState.Idle },
+    [AnimState.Sit]: { clip: CLIP_NAMES.sit, loop: true, speed: 1.0, fadeIn: 0.25, fadeOut: 0.2, canInterrupt: true },
+    // Drink is a SEATED sip (Mixamo "Sitting Drinking") — return to Sit, not Idle.
+    [AnimState.Drink]: { clip: CLIP_NAMES.drink, loop: false, speed: 1.0, fadeIn: 0.2, fadeOut: 0.2, canInterrupt: true, nextState: AnimState.Sit },
+    [AnimState.Grab]: { clip: CLIP_NAMES.grab, loop: false, speed: 1.0, fadeIn: 0.1, fadeOut: 0.14, canInterrupt: false, nextState: AnimState.Idle },
+    // Crouch locomotion — real clips replacing the old vertical-squash hack.
+    [AnimState.CrouchIdle]: { clip: CLIP_NAMES.crouchIdle, loop: true, speed: 1.0, fadeIn: 0.18, fadeOut: 0.18, canInterrupt: true },
+    [AnimState.CrouchWalk]: { clip: CLIP_NAMES.crouchWalk, clipsByMove: { left: CLIP_NAMES.crouchStrafe, right: CLIP_NAMES.crouchStrafe }, loop: true, speed: 1.0, fadeIn: 0.15, fadeOut: 0.15, canInterrupt: true },
+    // Turn-in-place shuffle (loop; played only while pivoting on the spot).
+    [AnimState.Turn]: { clip: CLIP_NAMES.turn, loop: true, speed: 1.0, fadeIn: 0.12, fadeOut: 0.14, canInterrupt: true },
+    // Hurdle over a low obstacle — a committed one-shot on a running jump.
+    [AnimState.Vault]: { clip: CLIP_NAMES.vault, loop: false, speed: 1.1, fadeIn: 0.06, fadeOut: 0.14, canInterrupt: true, nextState: AnimState.Idle },
   };
+}
+
+/**
+ * Which skeleton bones count as "upper body" for the additive run-and-gun layer —
+ * the shot/aim clip is masked to these so the legs keep running underneath. Track
+ * names are the colon-less mixamorig form (see normalizeBoneTrackName). Spine base
+ * stays with the legs (torso bob); Spine1 up + both arms + head are upper.
+ */
+const UPPER_BODY_BONES = [
+  "Spine1", "Spine2", "Neck", "Head",
+  "LeftShoulder", "LeftArm", "LeftForeArm", "LeftHand",
+  "RightShoulder", "RightArm", "RightForeArm", "RightHand",
+];
+export function isUpperBodyTrack(trackName: string): boolean {
+  return UPPER_BODY_BONES.some((b) => trackName.startsWith("mixamorig" + b));
 }
 
 export class AnimationStateMachine {
@@ -159,7 +201,7 @@ export class AnimationStateMachine {
     const dir = classifyMoveDir(fwdAmt, rightAmt, this.moveDir);
     if (dir === this.moveDir) return;
     this.moveDir = dir;
-    if (this.currentState === AnimState.Walk || this.currentState === AnimState.Run) {
+    if (this.isLoco(this.currentState)) {
       this.transition(this.currentState, true);
     }
   }
@@ -257,7 +299,7 @@ export class AnimationStateMachine {
   matchLocomotionSpeed(worldSpeed: number) {
     if (!this.activeAction || this.paused) return;
     const s = this.currentState;
-    if (s !== AnimState.Walk && s !== AnimState.Run) return;
+    if (s !== AnimState.Walk && s !== AnimState.Run && s !== AnimState.CrouchWalk) return;
 
     const sign = this.locoReversed ? -1 : 1;
     const stride = getClipStride(this.activeAction.getClip().name);
@@ -270,7 +312,7 @@ export class AnimationStateMachine {
   }
 
   private isLoco(s: AnimState): boolean {
-    return s === AnimState.Walk || s === AnimState.Run;
+    return s === AnimState.Walk || s === AnimState.Run || s === AnimState.CrouchWalk;
   }
 
   pause() {
