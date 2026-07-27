@@ -181,13 +181,13 @@ export const NpcRig = memo(function NpcRig({
       lastHitAt.current = state.hitAt;
       hitPunch.current = 1;
     }
-    hitPunch.current = Math.max(0, hitPunch.current - 7 * dt);
+    hitPunch.current = Math.max(0, hitPunch.current - 6 * dt);
     const p = hitPunch.current;
-    groupRef.current.scale.set(1 + 0.05 * p, 1 - 0.1 * p, 1 + 0.05 * p);
-    groupRef.current.rotation.x = -0.14 * p; // brief lean back from the impact
+    groupRef.current.scale.set(1 + 0.08 * p, 1 - 0.16 * p, 1 + 0.08 * p);
+    groupRef.current.rotation.x = -0.24 * p; // clear lean back from the impact
     for (const m of materials.current) {
-      m.emissive.setRGB(p, p * 0.55, p * 0.5); // hot white → red flash (p=0 → no glow)
-      m.emissiveIntensity = p * 1.6;
+      m.emissive.setRGB(p, p, p); // bright white impact flash (p=0 → no glow)
+      m.emissiveIntensity = p * 2.6;
     }
 
     if (hipsBoneRef.current && hipsFixApplied.current) {

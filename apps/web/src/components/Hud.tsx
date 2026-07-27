@@ -340,8 +340,9 @@ export function Hud() {
         </div>
       </div>
 
-      {/* Dynamic crosshair — only while the mouse is captured (aiming) */}
-      {locked && (
+      {/* Dynamic crosshair — while aiming (mouse captured) OR on touch, which has
+          no pointer lock but still needs a reticle to aim by. */}
+      {(locked || isTouchDevice()) && (
         <div style={styles.crosshairWrap}>
           <div ref={crossTop} style={styles.crossTickV} />
           <div ref={crossBottom} style={styles.crossTickV} />
