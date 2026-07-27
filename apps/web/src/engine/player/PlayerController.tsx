@@ -41,6 +41,7 @@ export function PlayerController() {
   const rigState = useRef<PlayerRigState>({
     position: VILLAGE.spawn.clone(),
     rotation: VILLAGE.spawnYaw,
+    aimPitch: 0.35,
     velocity: new THREE.Vector3(),
     moving: false,
     running: false,
@@ -384,6 +385,7 @@ export function PlayerController() {
     recoilYaw.current += (0 - recoilYaw.current) * rec;
     const aimYaw = yaw.current + recoilYaw.current;
     const aimPitch = THREE.MathUtils.clamp(pitch.current + recoilPitch.current, FEEL.pitchMin, FEEL.pitchMax + 0.35);
+    rigState.current.aimPitch = aimPitch; // drives the rig's spine aim-elevation
 
     const cp = Math.cos(aimPitch);
     const sp = Math.sin(aimPitch);

@@ -28,6 +28,7 @@ import { makeRifle } from "./GunMesh";
 export interface PlayerRigState {
   position: THREE.Vector3;
   rotation: number; // body yaw (radians)
+  aimPitch: number; // camera aim pitch (radians) — drives the spine aim-elevation
   velocity: THREE.Vector3;
   moving: boolean;
   running: boolean;
@@ -85,6 +86,13 @@ const _gunOff = new THREE.Vector3();
 const _gunEuler = new THREE.Euler();
 const _tmpQ = new THREE.Quaternion();
 
+// Aim elevation: pitch the upper spine toward the vertical aim so the socketed gun
+// tracks the crosshair up/down instead of staying level. Axis/gain are tuned by eye
+// (verified via screenshots); gain < 1 keeps the lean from looking extreme.
+const SPINE_AIM_AXIS = new THREE.Vector3(1, 0, 0);
+const SPINE_AIM_GAIN = -0.6; // negative: aim down → gun down (sign verified by screenshot)
+const _spineQ = new THREE.Quaternion();
+
 // Held bomb: nudge it into the palm of the throwing hand during the wind-up.
 const BOMB_GRIP = new THREE.Matrix4().compose(
   new THREE.Vector3(0, 0.03, 0.05),
@@ -126,6 +134,9 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
   const gunRef = useRef<THREE.Object3D | null>(null);
   const handBoneRef = useRef<THREE.Object3D | null>(null);
   const hipsBoneRef = useRef<THREE.Object3D | null>(null);
+  const spineBoneRef = useRef<THREE.Object3D | null>(null); // upper spine → aim elevation
+  const spineAimApplied = useRef(false);
+  const spineAimUndo = useRef(new THREE.Quaternion());
   const hipsFixApplied = useRef(false);
   const lean = useRef({ x: 0, z: 0 });
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
@@ -239,6 +250,7 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
             hipsBoneRef.current = child;
           }
           if (!handBoneRef.current && /righthand$/i.test(child.name)) handBoneRef.current = child;
+          if (!spineBoneRef.current && /spine1$/i.test(child.name)) spineBoneRef.current = child;
         }
       });
       if (hipsBone) {
@@ -445,9 +457,13 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
     lean.current.z += (targetZ - lean.current.z) * lk;
     if (modelRef.current) modelRef.current.rotation.set(lean.current.x, 0, lean.current.z);
 
-    // UNDO last frame's pitch correction before the mixer runs, so re-applying it
-    // is idempotent (a finished one-shot clip like Death stops rewriting the Hips,
-    // and an unconditional premultiply would compound -90°/frame and spin it).
+    // UNDO last frame's corrections before the mixer runs, so re-applying them is
+    // idempotent (a finished one-shot clip stops rewriting the bones, and an
+    // unconditional premultiply would compound every frame).
+    if (spineBoneRef.current && spineAimApplied.current) {
+      spineBoneRef.current.quaternion.premultiply(spineAimUndo.current);
+      spineAimApplied.current = false;
+    }
     if (needsPitchFix && hipsBoneRef.current && hipsFixApplied.current) {
       hipsBoneRef.current.quaternion.premultiply(HIPS_PITCH_FIX_INV);
     }
@@ -459,6 +475,16 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
     if (needsPitchFix && hipsBoneRef.current) {
       hipsBoneRef.current.quaternion.premultiply(HIPS_PITCH_FIX);
       hipsFixApplied.current = true;
+    }
+
+    // Aim elevation: pitch the upper body toward the vertical aim so the socketed
+    // gun tracks the crosshair up/down instead of staying level. Applied on top of
+    // the animated pose (after the mixer + hips fix), suppressed while dead/seated.
+    if (spineBoneRef.current && !state.dead && !state.resting) {
+      _spineQ.setFromAxisAngle(SPINE_AIM_AXIS, SPINE_AIM_GAIN * state.aimPitch);
+      spineBoneRef.current.quaternion.premultiply(_spineQ);
+      spineAimUndo.current.copy(_spineQ).invert();
+      spineAimApplied.current = true;
     }
 
     // Drive the gun from the hand bone (Valor's socket): gun.matrix =
