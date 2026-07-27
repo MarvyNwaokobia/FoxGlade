@@ -285,6 +285,12 @@ export const SFX: Record<string, (ctx: AudioContext, out: AudioNode, t0: number,
     o2.stop(t0 + 0.32);
   },
 
+  // Fox grew a stage — a bright, happy little rising double-yip.
+  foxYip(ctx, out, t0, vol) {
+    blip(ctx, out, t0, 720, { type: "triangle", peak: 0.26 * vol, atk: 0.005, dec: 0.12, glideTo: 1080 });
+    blip(ctx, out, t0 + 0.12, 900, { type: "triangle", peak: 0.24 * vol, atk: 0.005, dec: 0.16, glideTo: 1500 });
+  },
+
   // Fox idle pant/huff — soft, occasional companion flavour.
   foxPant(ctx, out, t0, vol) {
     const n = noiseSource(ctx);

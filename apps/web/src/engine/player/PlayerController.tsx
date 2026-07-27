@@ -14,6 +14,7 @@ import { spawnShot } from "@/engine/combat/shotfx";
 import { spawnBomb, predictLanding } from "@/engine/combat/bombs";
 import { audio } from "@/engine/audio/audio";
 import { HINTS, HINT_RADIUS, SNIFF_COOLDOWN, SNIFF_REVEAL } from "@/engine/world/hints";
+import { foxGrowthFor } from "@/engine/config/fox";
 import { SESSION_SECONDS, REST, BOMB } from "@/engine/config/round";
 import { PlayerRig, type PlayerRigState } from "@/engine/character/PlayerRig";
 import { touch } from "@/engine/input/touch";
@@ -124,7 +125,9 @@ export function PlayerController() {
         const now = performance.now();
         if (now >= runtime.sniffReadyAt) {
           runtime.revealRealUntil = now + SNIFF_REVEAL * 1000;
-          runtime.sniffReadyAt = now + SNIFF_COOLDOWN * 1000;
+          // A matured fox sniffs more often (DESIGN §2.5): cooldown scales with stage.
+          const mult = foxGrowthFor(useGame.getState().villeBanked).sniffCooldownMult;
+          runtime.sniffReadyAt = now + SNIFF_COOLDOWN * mult * 1000;
         }
       }
     };

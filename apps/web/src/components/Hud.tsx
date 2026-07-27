@@ -6,6 +6,7 @@ import { useGame } from "@/engine/store";
 import { audio } from "@/engine/audio/audio";
 import { HINTS } from "@/engine/world/hints";
 import { SESSION_SECONDS } from "@/engine/config/round";
+import { foxGrowthFor, foxNextThreshold } from "@/engine/config/fox";
 import { thieves, MAX_THIEVES } from "@/engine/npc/thieves";
 import { isTouchDevice } from "@/engine/input/touch";
 
@@ -28,6 +29,7 @@ export function Hud() {
   const crouchEl = useRef<HTMLDivElement>(null);
   const shelterEl = useRef<HTMLDivElement>(null);
   const eventEl = useRef<HTMLDivElement>(null);
+  const foxToastEl = useRef<HTMLDivElement>(null);
   const crossEl = useRef<HTMLDivElement>(null); // centre dot
   const crossTop = useRef<HTMLDivElement>(null);
   const crossBottom = useRef<HTMLDivElement>(null);
@@ -153,6 +155,17 @@ export function Hud() {
         }
       }
 
+      // Fox grew a stage — a brief celebratory toast.
+      if (foxToastEl.current) {
+        const age = now - runtime.foxGrewAt;
+        if (runtime.foxGrewAt > 0 && age < 3200) {
+          foxToastEl.current.textContent = `🦊 Your fox grew — ${runtime.foxStageName}!`;
+          foxToastEl.current.style.opacity = String(age < 2600 ? 1 : (3200 - age) / 600);
+        } else {
+          foxToastEl.current.style.opacity = "0";
+        }
+      }
+
       if (runEl.current) runEl.current.style.opacity = runtime.running ? "1" : "0";
       if (crouchEl.current) crouchEl.current.style.opacity = runtime.crouching ? "1" : "0";
 
@@ -266,6 +279,12 @@ export function Hud() {
       <div style={styles.wallet}>
         <div style={styles.walletBanked}>🏦 {villeBanked} VILLE</div>
         {villeCarrying > 0 && <div style={styles.walletCarry}>◆ carrying {villeCarrying} — bank it</div>}
+        <div style={styles.foxStage}>
+          🦊 {foxGrowthFor(villeBanked).name}
+          {foxNextThreshold(villeBanked) !== null && (
+            <span style={styles.foxNext}> · bank {foxNextThreshold(villeBanked)! - villeBanked} to grow</span>
+          )}
+        </div>
       </div>
 
       {/* Countdown timer, top-right */}
@@ -367,6 +386,9 @@ export function Hud() {
 
       {/* Event toast (treasure stolen / cracked) — text set from the game loop */}
       <div ref={eventEl} style={styles.eventToast} />
+
+      {/* Fox grew a stage — celebratory toast, text set from the game loop */}
+      <div ref={foxToastEl} style={styles.foxToast} />
 
       {/* Proximity prompt (claim / false lead) — text set from the game loop */}
       <div ref={promptEl} style={styles.prompt} />
@@ -545,6 +567,37 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12,
     color: "#aef2cb",
     letterSpacing: 0.3,
+  },
+  foxStage: {
+    marginTop: 5,
+    fontSize: 13,
+    fontWeight: 600,
+    color: "#f0a860",
+    letterSpacing: 0.3,
+  },
+  foxNext: {
+    fontSize: 11,
+    fontWeight: 400,
+    color: "rgba(232,238,242,0.5)",
+  },
+  foxToast: {
+    position: "absolute",
+    left: "50%",
+    top: "33%",
+    transform: "translateX(-50%)",
+    padding: "8px 18px",
+    borderRadius: 10,
+    background: "rgba(11,13,16,0.65)",
+    border: "1px solid rgba(240,168,96,0.7)",
+    color: "#ffcf9a",
+    fontSize: 17,
+    fontWeight: 700,
+    letterSpacing: 0.5,
+    whiteSpace: "nowrap",
+    opacity: 0,
+    transition: "opacity 0.25s ease",
+    pointerEvents: "none",
+    userSelect: "none",
   },
   bombPill: {
     position: "absolute",

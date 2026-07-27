@@ -13,6 +13,7 @@ import { enemies } from "@/engine/combat/enemies";
 import { useGame } from "@/engine/store";
 import { HINTS } from "@/engine/world/hints";
 import { audio } from "@/engine/audio/audio";
+import { foxGrowthFor } from "@/engine/config/fox";
 
 /**
  * The fox companion — a real rigged, animated fox (CC-BY "Fox" by pxltiger, see
@@ -63,6 +64,8 @@ export function FoxCompanion() {
   const growlClock = useRef(0.4); // cadence timer for the alert growl
   const wasAlerting = useRef(false); // edge → immediate bark when a threat first appears
   const lastDamageAt = useRef(-1); // edge-detect player hits for the flinch/whine
+  const foxScale = useRef(0.6); // eased render scale (grows with maturity)
+  const lastStage = useRef(-1); // edge-detect a stage-up → grow toast + happy yip
 
   const { scene, animations } = useGLTF(FOX_URL);
   const model = useMemo(() => {
@@ -137,6 +140,20 @@ export function FoxCompanion() {
     const now = performance.now();
     const gs = useGame.getState();
     const active = gs.roundState === "playing" && !runtime.sheltered && !gs.isDead;
+
+    // Growth: the fox matures as you bank loot. Ease the render scale toward the
+    // stage size, and celebrate a stage-up (once, on the edge) with a yip + toast.
+    const growth = foxGrowthFor(gs.villeBanked);
+    foxScale.current += (growth.scale - foxScale.current) * Math.min(1, 3 * dt);
+    if (inner.current) inner.current.scale.setScalar(foxScale.current);
+    if (lastStage.current < 0) {
+      lastStage.current = growth.stage; // init: no toast at start
+    } else if (growth.stage > lastStage.current) {
+      lastStage.current = growth.stage;
+      runtime.foxGrewAt = now;
+      runtime.foxStageName = growth.name;
+      audio.play("foxYip");
+    }
 
     // Nearest THREAT (blocker/thief — not the harmless distractor) to the player:
     // the fox's early-warning sense.

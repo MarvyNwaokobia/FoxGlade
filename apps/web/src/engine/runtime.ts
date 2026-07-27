@@ -32,6 +32,10 @@ export const runtime = {
   revealRealUntil: -1,
   /** performance.now when the fox can sniff again (cooldown gate). */
   sniffReadyAt: 0,
+  /** performance.now the fox last grew a stage (drives the HUD toast). */
+  foxGrewAt: -1,
+  /** Name of the stage the fox just grew INTO (for the toast). */
+  foxStageName: "",
   /** Per-hint: true once its distractor is silenced (decoy removed). */
   hintSilenced: HINTS.map(() => false),
   /** Per-hint: true once a thief has made off with that (real) treasure. */
