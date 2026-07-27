@@ -9,6 +9,10 @@ import { FEEL } from "@/engine/config/feel";
 import { runtime } from "@/engine/runtime";
 import { COLLIDERS } from "@/engine/world/village";
 import { resolveColliders } from "@/engine/world/collision";
+import { enemies } from "@/engine/combat/enemies";
+import { useGame } from "@/engine/store";
+import { HINTS } from "@/engine/world/hints";
+import { audio } from "@/engine/audio/audio";
 
 /**
  * The fox companion — a real rigged, animated fox (CC-BY "Fox" by pxltiger, see
@@ -27,7 +31,20 @@ const WALK_ABOVE = 0.4; // fox planar speed (m/s) above which it walks
 const RUN_ABOVE = 4.5; // …above which it runs
 // This realistic fox's own clip names (AnimalMesh3D). Locomotion clips carry root
 // motion on RigRoot_01 — stripped below so code drives the follow, legs in place.
-const CLIP = { idle: "A3_Stand_Idle_01", walk: "Loco_Walk", run: "Run" };
+const CLIP = {
+  idle: "A3_Stand_Idle_01",
+  walk: "Loco_Walk",
+  run: "Run",
+  angry: "A5_StandAngry_Breathing_01", // alert/growl at a nearby threat
+  hit: "Hit_Stand_R01", // flinch when the player is hurt
+  sniff: "A2_Stand_Eating_01", // nose-down, reads as tracking a scent
+};
+
+// Fox reactions (its identity: an alive companion, not a prop).
+const ALERT_RANGE = 12; // an enemy within this of the player → the fox alerts + growls
+const GROWL_INTERVAL = 1.6; // seconds between growls while alerting
+const HURT_REACT_MS = 700; // how long the fox flinches after the player takes damage
+const _enemyPos = new THREE.Vector3(); // nearest-enemy scratch
 
 function lerpAngle(a: number, b: number, t: number) {
   let d = b - a;
@@ -43,6 +60,8 @@ export function FoxCompanion() {
   const foxPos = useRef(new THREE.Vector3(1, 0, 3));
   const facing = useRef(0);
   const speed = useRef(0);
+  const growlClock = useRef(0.4); // cadence timer for the alert growl
+  const lastDamageAt = useRef(-1); // edge-detect player hits for the flinch/whine
 
   const { scene, animations } = useGLTF(FOX_URL);
   const model = useMemo(() => {
@@ -113,12 +132,72 @@ export function FoxCompanion() {
     speed.current += (inst - speed.current) * Math.min(1, 10 * dt); // smoothed
     const s = speed.current;
 
-    // Face travel when moving; face the way the player faces when idle (so it
-    // stands beside you looking ahead, not sideways). Fox model's nose is +Z.
-    const targetFace = s > WALK_ABOVE ? Math.atan2(delta.x, delta.z) : yaw + Math.PI;
+    // ── Reactions: the fox reads the world and responds (companion, not prop) ──
+    const now = performance.now();
+    const gs = useGame.getState();
+    const active = gs.roundState === "playing" && !runtime.sheltered && !gs.isDead;
+
+    // Nearest enemy to the player (the fox's early-warning sense).
+    let nearestD = Infinity;
+    if (active) {
+      for (const e of enemies) {
+        const p = e.getPosition();
+        const d = Math.hypot(p.x - runtime.playerPos.x, p.z - runtime.playerPos.z);
+        if (d < nearestD) {
+          nearestD = d;
+          _enemyPos.copy(p);
+        }
+      }
+    }
+    const alerting = active && nearestD < ALERT_RANGE;
+    const sniffing = active && now < runtime.revealRealUntil;
+    const hurt = active && now - runtime.damageAt < HURT_REACT_MS;
+
+    // Growl on a cadence while a threat is near — you HEAR danger before you see it.
+    if (alerting) {
+      growlClock.current -= dt;
+      if (growlClock.current <= 0) {
+        growlClock.current = GROWL_INTERVAL + Math.random() * 0.6;
+        audio.play("foxGrowl");
+      }
+    } else {
+      growlClock.current = 0.3;
+    }
+    // Whimper the instant the player takes a hit (edge-detected).
+    if (runtime.damageAt !== lastDamageAt.current) {
+      lastDamageAt.current = runtime.damageAt;
+      if (hurt) audio.play("foxWhine");
+    }
+
+    // On a sniff, look toward the real, unclaimed treasure — a subtle guide.
+    let faceTarget: THREE.Vector3 | null = null;
+    if (sniffing && !gs.treasureClaimed) {
+      for (let i = 0; i < HINTS.length; i++) {
+        if (HINTS[i].real && !runtime.hintStolen[i]) {
+          faceTarget = HINTS[i].pos;
+          break;
+        }
+      }
+    }
+
+    const moving = s > WALK_ABOVE;
+    // Facing: travel while moving; toward the threat while alerting; toward the
+    // treasure while sniffing; otherwise beside the player looking ahead.
+    let targetFace: number;
+    if (moving) targetFace = Math.atan2(delta.x, delta.z);
+    else if (alerting) targetFace = Math.atan2(_enemyPos.x - foxPos.current.x, _enemyPos.z - foxPos.current.z);
+    else if (faceTarget) targetFace = Math.atan2(faceTarget.x - foxPos.current.x, faceTarget.z - foxPos.current.z);
+    else targetFace = yaw + Math.PI;
     facing.current = lerpAngle(facing.current, targetFace, Math.min(1, 9 * dt));
 
-    play(s > RUN_ABOVE ? CLIP.run : s > WALK_ABOVE ? CLIP.walk : CLIP.idle);
+    // Clip: locomotion while moving; otherwise the strongest reaction wins.
+    let clip: string;
+    if (moving) clip = s > RUN_ABOVE ? CLIP.run : CLIP.walk;
+    else if (alerting) clip = CLIP.angry;
+    else if (hurt) clip = CLIP.hit;
+    else if (faceTarget) clip = CLIP.sniff;
+    else clip = CLIP.idle;
+    play(clip);
 
     if (group.current) {
       group.current.position.set(foxPos.current.x, foxPos.current.y, foxPos.current.z);

@@ -237,6 +237,54 @@ export const SFX: Record<string, (ctx: AudioContext, out: AudioNode, t0: number,
     blip(ctx, out, t0 + 0.26, 620, { type: "triangle", peak: 0.22 * vol, atk: 0.006, dec: 0.14, glideTo: 950 });
   },
 
+  // Fox growl — a low rumbling warning when a threat is near (early-warning bark).
+  // Placeholder for a real fox sample later (override by name, like the gun cues).
+  foxGrowl(ctx, out, t0, vol) {
+    const dur = 0.45;
+    const o = ctx.createOscillator();
+    o.type = "sawtooth";
+    o.frequency.setValueAtTime(68, t0);
+    o.frequency.linearRampToValueAtTime(52, t0 + dur);
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = 320;
+    lp.Q.value = 4;
+    const g = env(ctx, t0, 0.42 * vol, 0.04, dur);
+    o.connect(lp).connect(g).connect(out);
+    o.start(t0);
+    o.stop(t0 + dur + 0.05);
+    // breathy rasp on top
+    const n = noiseSource(ctx);
+    const bp = ctx.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.frequency.value = 520;
+    bp.Q.value = 1;
+    const ng = env(ctx, t0, 0.12 * vol, 0.03, dur * 0.8);
+    n.connect(bp).connect(ng).connect(out);
+    n.start(t0);
+    n.stop(t0 + dur);
+  },
+
+  // Fox whine/whimper — a plaintive descending yelp when the player is hurt.
+  foxWhine(ctx, out, t0, vol) {
+    const o = ctx.createOscillator();
+    o.type = "sine";
+    o.frequency.setValueAtTime(900, t0);
+    o.frequency.exponentialRampToValueAtTime(500, t0 + 0.3);
+    const g = env(ctx, t0, 0.22 * vol, 0.02, 0.3);
+    o.connect(g).connect(out);
+    o.start(t0);
+    o.stop(t0 + 0.34);
+    const o2 = ctx.createOscillator();
+    o2.type = "triangle";
+    o2.frequency.setValueAtTime(1350, t0);
+    o2.frequency.exponentialRampToValueAtTime(760, t0 + 0.3);
+    const g2 = env(ctx, t0, 0.1 * vol, 0.02, 0.28);
+    o2.connect(g2).connect(out);
+    o2.start(t0);
+    o2.stop(t0 + 0.32);
+  },
+
   // Fox idle pant/huff — soft, occasional companion flavour.
   foxPant(ctx, out, t0, vol) {
     const n = noiseSource(ctx);
