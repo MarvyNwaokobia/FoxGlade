@@ -11,9 +11,13 @@
  */
 export const FEEL = {
   // --- Locomotion (metres / second) ---
-  walkSpeed: 5.6,
-  runSpeed: 11.0, // hold Shift
-  crouchSpeed: 2.2, // while crouched (C toggles; crouching disables run)
+  // Grounded human speeds: the old 5.6 walk / 11 run read as a tabletop (crossed
+  // the ~63 m map in ~6 s). A real jog + a strong run give the map a sense of
+  // distance without feeling sluggish. Player still outpaces thieves (2.2) and
+  // blockers (3.3), so the race/kite balance holds. Retune here if traversal drags.
+  walkSpeed: 3.4,
+  runSpeed: 7.5, // hold Shift
+  crouchSpeed: 1.8, // while crouched (C toggles; crouching disables run)
   /** How fast horizontal velocity ramps toward the target (higher = snappier). */
   accel: 14,
   /** Exponential velocity decay when there's no input (higher = harder stop). */
@@ -24,8 +28,11 @@ export const FEEL = {
   turnSpeed: 12,
 
   // --- Vertical ---
-  gravity: -22,
-  jumpForce: 8.0,
+  // Snappier, more grounded arc than the old floaty hop (was 1.45 m / 0.73 s).
+  // Now ~0.8 m apex over ~0.5 s — a purposeful hop, not a moon-jump. (The ground
+  // is flat at y=0 with no platforming, so this is for dodges/feel, not clearing.)
+  gravity: -26,
+  jumpForce: 6.5,
 
   // --- Camera (third-person orbit follow) ---
   mouseSensitivity: 0.0024,
@@ -59,6 +66,20 @@ export const FEEL = {
   baseFov: 60,
   runFovKick: 7, // camera widens slightly while running, so speed is felt
   fovLerp: 8,
+
+  // --- Weapon recoil (a per-shot VIEW kick that recovers — not a permanent aim
+  //     change). Holding fire walks the view up a touch, then it eases back. ---
+  recoilKickPitch: 0.022, // radians the view punches up per shot (~1.3°)
+  recoilKickYaw: 0.009, // radians of random horizontal jitter per shot
+  recoilRecover: 11, // how fast the view eases back to your aim (higher = snappier)
+
+  // --- Shooting (cosmetic muzzle origin for the tracer + flash) ---
+  // The hitscan is from the camera, but the tracer/flash leave from HERE — a
+  // shouldered-rifle muzzle offset from the eye — so shots read as coming from
+  // the gun, not the lens. Tune if the streak looks off-shoulder.
+  muzzleForward: 0.55, // metres ahead of the eye along the aim line
+  muzzleSide: 0.22, // metres to the aim-right (over-the-shoulder side)
+  muzzleDrop: 0.18, // metres below eye height (the gun sits under the sightline)
 
   // --- Fox companion follow ---
   // The fox stays BESIDE (and slightly ahead of) the player so it's always in

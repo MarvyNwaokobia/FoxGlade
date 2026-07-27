@@ -11,6 +11,8 @@ export const runtime = {
   /** Body yaw in radians (0 = facing -Z). */
   yaw: 0,
   running: false,
+  /** True while the player is on the ground (drives footstep cadence). */
+  grounded: true,
   /** True while the player is crouched (stealth: NPCs detect at reduced range). */
   crouching: false,
   /** True while the player is inside an enterable house (NPCs lose them). */

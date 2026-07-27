@@ -30,6 +30,12 @@ export const AUDIO = {
    *  being hit, never simultaneous with the muzzle report (and never masked by it). */
   hurtDelay: 0.13,
 
+  /** Footsteps: play one each time the player covers this much ground (running
+   *  strides reach farther). Volume is deliberately low — a texture, not an event. */
+  stepDistanceWalk: 1.5,
+  stepDistanceRun: 2.1,
+  stepVolume: 0.5,
+
   /** Whether a light background music loop plays. */
   music_on: true,
 } as const;

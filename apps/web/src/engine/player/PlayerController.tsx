@@ -10,6 +10,7 @@ import { VILLAGE, COLLIDERS, BOXES3D, interiorIndexAt } from "@/engine/world/vil
 import { resolveColliders, raycastBoxes } from "@/engine/world/collision";
 import { useGame } from "@/engine/store";
 import { fireHitscan, enemies } from "@/engine/combat/enemies";
+import { spawnShot } from "@/engine/combat/shotfx";
 import { spawnBomb, predictLanding } from "@/engine/combat/bombs";
 import { audio } from "@/engine/audio/audio";
 import { HINTS, HINT_RADIUS, SNIFF_COOLDOWN, SNIFF_REVEAL } from "@/engine/world/hints";
@@ -62,6 +63,8 @@ export function PlayerController() {
   const fireHeld = useRef(false);
   const fireCd = useRef(0);
   const bombAim = useRef(false); // holding G: telegraph shows, release throws
+  const recoilPitch = useRef(0); // transient view kick from firing (recovers to 0)
+  const recoilYaw = useRef(0);
   const crouching = useRef(false); // C toggles; jump stands you back up
   const firstPerson = useRef(false); // V toggles the camera between 3rd and 1st person
   const resting = useRef(false); // sitting indoors (X); any movement stands up
@@ -368,14 +371,23 @@ export function PlayerController() {
     // Publish for fox + HUD.
     runtime.playerPos.copy(pos.current);
     runtime.yaw = yaw.current;
+    runtime.grounded = grounded.current;
 
     // Aim direction from free-look (yaw + pitch). This is the crosshair/shot line,
     // decoupled from the body's facing. The camera looks ALONG this (not at the
     // player), so the crosshair points into the scene and shots travel level at
     // range — fixing the old "aimed at the ground past your feet" bug.
-    const cp = Math.cos(pitch.current);
-    const sp = Math.sin(pitch.current);
-    const aim = new THREE.Vector3(-Math.sin(yaw.current) * cp, sp, -Math.cos(yaw.current) * cp);
+    // Recoil eases back to zero each frame; it's an additive kick on the AIM
+    // angles only (camera + shot line), never on the movement/body basis.
+    const rec = Math.min(1, FEEL.recoilRecover * dt);
+    recoilPitch.current += (0 - recoilPitch.current) * rec;
+    recoilYaw.current += (0 - recoilYaw.current) * rec;
+    const aimYaw = yaw.current + recoilYaw.current;
+    const aimPitch = THREE.MathUtils.clamp(pitch.current + recoilPitch.current, FEEL.pitchMin, FEEL.pitchMax + 0.35);
+
+    const cp = Math.cos(aimPitch);
+    const sp = Math.sin(aimPitch);
+    const aim = new THREE.Vector3(-Math.sin(aimYaw) * cp, sp, -Math.cos(aimYaw) * cp);
     const head = new THREE.Vector3(pos.current.x, pos.current.y + eyeH.current, pos.current.z);
     const rightV = new THREE.Vector3(Math.cos(yaw.current), 0, -Math.sin(yaw.current));
 
@@ -468,9 +480,20 @@ export function PlayerController() {
       fireCd.current <= 0
     ) {
       fireCd.current = FIRE_INTERVAL;
-      const hit = fireHitscan(camera);
+      const shot = fireHitscan(camera);
       runtime.fireAt = performance.now();
-      if (hit) runtime.hitAt = performance.now();
+      if (shot.hit) runtime.hitAt = performance.now();
+      // Kick the view up + a touch sideways so each shot is FELT (recovers above).
+      recoilPitch.current += FEEL.recoilKickPitch;
+      recoilYaw.current += (Math.random() - 0.5) * 2 * FEEL.recoilKickYaw;
+      // Cosmetic tracer + muzzle flash, launched from a shouldered-rifle muzzle
+      // offset (not the camera) so the streak reads as leaving the gun.
+      const muzzle = head
+        .clone()
+        .addScaledVector(aim, FEEL.muzzleForward)
+        .addScaledVector(rightV, FEEL.muzzleSide);
+      muzzle.y -= FEEL.muzzleDrop;
+      spawnShot(muzzle, shot.point, shot.hit);
     }
   });
 

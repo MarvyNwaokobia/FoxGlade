@@ -28,7 +28,11 @@ export function Hud() {
   const crouchEl = useRef<HTMLDivElement>(null);
   const shelterEl = useRef<HTMLDivElement>(null);
   const eventEl = useRef<HTMLDivElement>(null);
-  const crossEl = useRef<HTMLDivElement>(null);
+  const crossEl = useRef<HTMLDivElement>(null); // centre dot
+  const crossTop = useRef<HTMLDivElement>(null);
+  const crossBottom = useRef<HTMLDivElement>(null);
+  const crossLeft = useRef<HTMLDivElement>(null);
+  const crossRight = useRef<HTMLDivElement>(null);
   const dmgEl = useRef<HTMLDivElement>(null);
   const [locked, setLocked] = useState(false);
   const [muted, setMuted] = useState(false);
@@ -198,14 +202,35 @@ export function Hud() {
         const since = now - runtime.damageAt;
         dmgEl.current.style.opacity = since < 450 ? String(0.55 * (1 - since / 450)) : "0";
       }
-      if (crossEl.current) {
+      // Dynamic crosshair: ticks spread while running/firing, tighten when still;
+      // whole reticle flashes red on a connecting hit (the hitmarker).
+      {
         const firing = now - runtime.fireAt < 90;
         const hitting = now - runtime.hitAt < 160;
-        crossEl.current.style.transform = `translate(-50%, -50%) scale(${firing ? 1.5 : 1})`;
-        crossEl.current.style.background = hitting ? "#ff5a5a" : "#ffffff";
-        crossEl.current.style.boxShadow = hitting
-          ? "0 0 0 2px rgba(0,0,0,0.6), 0 0 0 5px rgba(255,90,90,0.5)"
-          : "0 0 0 2px rgba(0,0,0,0.6)";
+        const fireAge = (now - runtime.fireAt) / 1000;
+        const firePulse = fireAge >= 0 && fireAge < 0.12 ? (1 - fireAge / 0.12) * 6 : 0;
+        const gap = 4 + (runtime.running ? 5 : 0) + firePulse; // px from centre to each tick
+        const col = hitting ? "#ff5a5a" : "#ffffff";
+        if (crossTop.current) {
+          crossTop.current.style.transform = `translate(-50%, calc(-100% - ${gap}px))`;
+          crossTop.current.style.background = col;
+        }
+        if (crossBottom.current) {
+          crossBottom.current.style.transform = `translate(-50%, ${gap}px)`;
+          crossBottom.current.style.background = col;
+        }
+        if (crossLeft.current) {
+          crossLeft.current.style.transform = `translate(calc(-100% - ${gap}px), -50%)`;
+          crossLeft.current.style.background = col;
+        }
+        if (crossRight.current) {
+          crossRight.current.style.transform = `translate(${gap}px, -50%)`;
+          crossRight.current.style.background = col;
+        }
+        if (crossEl.current) {
+          crossEl.current.style.background = col;
+          crossEl.current.style.transform = `translate(-50%, -50%) scale(${firing ? 1.4 : 1})`;
+        }
       }
       raf = requestAnimationFrame(tick);
     };
@@ -314,8 +339,16 @@ export function Hud() {
         </div>
       </div>
 
-      {/* Crosshair — only while the mouse is captured (aiming) */}
-      {locked && <div ref={crossEl} style={styles.crosshair} />}
+      {/* Dynamic crosshair — only while the mouse is captured (aiming) */}
+      {locked && (
+        <div style={styles.crosshairWrap}>
+          <div ref={crossTop} style={styles.crossTickV} />
+          <div ref={crossBottom} style={styles.crossTickV} />
+          <div ref={crossLeft} style={styles.crossTickH} />
+          <div ref={crossRight} style={styles.crossTickH} />
+          <div ref={crossEl} style={styles.crossDot} />
+        </div>
+      )}
 
       {/* Run indicator */}
       <div ref={runEl} style={styles.runPill}>
@@ -552,18 +585,43 @@ const styles: Record<string, React.CSSProperties> = {
   },
   deathTitle: { fontSize: 34, fontWeight: 700, letterSpacing: 1, color: "#e8563f" },
   deathHint: { fontSize: 16, color: "rgba(232,238,242,0.85)" },
-  crosshair: {
+  crosshairWrap: {
     position: "absolute",
     left: "50%",
     top: "50%",
-    transform: "translate(-50%, -50%)",
-    width: 6,
-    height: 6,
+    width: 0,
+    height: 0,
+    pointerEvents: "none",
+    userSelect: "none",
+  },
+  crossDot: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    width: 3,
+    height: 3,
     borderRadius: "50%",
     background: "#ffffff",
-    boxShadow: "0 0 0 2px rgba(0,0,0,0.6)",
-    transition: "transform 0.06s ease, background 0.06s ease",
-    pointerEvents: "none",
+    transform: "translate(-50%, -50%)",
+    boxShadow: "0 0 0 1px rgba(0,0,0,0.7)",
+  },
+  crossTickV: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    width: 2,
+    height: 6,
+    background: "#ffffff",
+    boxShadow: "0 0 0 1px rgba(0,0,0,0.5)",
+  },
+  crossTickH: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    width: 6,
+    height: 2,
+    background: "#ffffff",
+    boxShadow: "0 0 0 1px rgba(0,0,0,0.5)",
   },
   runPill: {
     position: "absolute",

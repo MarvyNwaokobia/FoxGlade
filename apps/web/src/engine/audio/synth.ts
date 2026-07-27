@@ -244,6 +244,28 @@ export const SFX: Record<string, (ctx: AudioContext, out: AudioNode, t0: number,
     n.stop(t0 + 0.16);
   },
 
+  // Footfall: a short low thump + a dusty noise scuff. Quiet by design — it's a
+  // texture under movement, not an event, so it never competes with gunfire.
+  footstep(ctx, out, t0, vol) {
+    const o = ctx.createOscillator();
+    o.type = "sine";
+    o.frequency.setValueAtTime(92, t0);
+    o.frequency.exponentialRampToValueAtTime(52, t0 + 0.08);
+    const og = env(ctx, t0, 0.28 * vol, 0.002, 0.07);
+    o.connect(og).connect(out);
+    o.start(t0);
+    o.stop(t0 + 0.1);
+    const n = noiseSource(ctx);
+    const bp = ctx.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.frequency.value = 2400 + Math.random() * 500; // slight scuff variation
+    bp.Q.value = 0.8;
+    const g = env(ctx, t0, 0.12 * vol, 0.001, 0.05);
+    n.connect(bp).connect(g).connect(out);
+    n.start(t0);
+    n.stop(t0 + 0.07);
+  },
+
   // UI click for the mute button.
   ui(ctx, out, t0, vol) {
     blip(ctx, out, t0, 660, { type: "square", peak: 0.16 * vol, atk: 0.001, dec: 0.05 });

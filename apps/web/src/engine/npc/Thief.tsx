@@ -10,7 +10,7 @@ import { THIEF } from "@/engine/config/round";
 import { HINTS } from "@/engine/world/hints";
 import { runtime } from "@/engine/runtime";
 import type { Enemy as EnemyT } from "@/engine/combat/enemies";
-import { NpcRig, type NpcRigState } from "@/engine/character/NpcRig";
+import { NpcRig, type NpcRigState, DEATH_LINGER_MS } from "@/engine/character/NpcRig";
 
 const BODY_H = 1.7;
 const BODY_R = 0.4;
@@ -44,7 +44,7 @@ export function Thief({
   const [started, setStarted] = useState(startDelay <= 0);
   const [escaped, setEscaped] = useState(false); // reached its treasure and left
   const [health, setHealth] = useState<number>(THIEF.health);
-  const [flash, setFlash] = useState(false);
+  const [removed, setRemoved] = useState(false); // unmount after the death lies out
   const live = useRef<{ enemy: EnemyT; ref: ThiefRef } | null>(null);
   const anim = useRef<NpcRigState>({ moving: false, running: true, fireAt: -1, speed });
   const dead = health <= 0;
@@ -59,7 +59,7 @@ export function Thief({
       hitHeight: 0.9,
       bodyRadius: 0.4,
       takeHit: (damage) => {
-        setFlash(true);
+        anim.current.hitAt = performance.now(); // stagger + flash punch
         setHealth((h) => {
           const next = Math.max(0, h - damage);
           if (next === 0) {
@@ -80,11 +80,13 @@ export function Thief({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [started]);
 
+  // Shot down: stop racing (useFrame bails on `dead`), lie for a beat, then despawn.
   useEffect(() => {
-    if (!flash) return;
-    const id = setTimeout(() => setFlash(false), 90);
+    if (!dead) return;
+    anim.current.dead = true;
+    const id = setTimeout(() => setRemoved(true), DEATH_LINGER_MS);
     return () => clearTimeout(id);
-  }, [flash]);
+  }, [dead]);
 
   useFrame((_, rawDt) => {
     if (dead || escaped || useGame.getState().roundState !== "playing") return;
@@ -134,7 +136,7 @@ export function Thief({
     anim.current.moving = true; // always racing while alive
   });
 
-  if (dead || escaped || !started) return null;
+  if (escaped || !started || removed) return null; // corpse lingers while `dead`
 
   return (
     <group ref={group} position={[wp[0].x, 0, wp[0].z]}>

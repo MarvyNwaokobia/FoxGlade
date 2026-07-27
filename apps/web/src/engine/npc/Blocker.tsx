@@ -13,7 +13,7 @@ import { useGame } from "@/engine/store";
 import { audio } from "@/engine/audio/audio";
 import { AUDIO } from "@/engine/config/audio";
 import { BLOCKER } from "@/engine/config/round";
-import { NpcRig, type NpcRigState } from "@/engine/character/NpcRig";
+import { NpcRig, type NpcRigState, DEATH_LINGER_MS } from "@/engine/character/NpcRig";
 
 const BODY_H = 1.8;
 const BODY_R = 0.45;
@@ -25,7 +25,7 @@ const BODY_R = 0.45;
  */
 export function Blocker({ position }: { position: [number, number, number] }) {
   const [health, setHealth] = useState<number>(BLOCKER.health);
-  const [flash, setFlash] = useState(false);
+  const [removed, setRemoved] = useState(false); // unmount after the death lies out
   const dead = health <= 0;
   const group = useRef<THREE.Group>(null);
   const cooldown = useRef(Math.random() * BLOCKER.fireCooldown); // stagger initial volleys
@@ -41,7 +41,7 @@ export function Blocker({ position }: { position: [number, number, number] }) {
       hitHeight: 1.0,
       bodyRadius: 0.5,
       takeHit: (damage) => {
-        setFlash(true);
+        anim.current.hitAt = performance.now(); // stagger + flash punch
         setHealth((h) => {
           const next = Math.max(0, h - damage);
           if (next === 0) enemies.delete(enemy);
@@ -55,12 +55,13 @@ export function Blocker({ position }: { position: [number, number, number] }) {
     };
   }, [position]);
 
-  // Clear the white hit-flash shortly after each hit.
+  // On death, let the body lie for a beat before despawning (no instant pop-out).
   useEffect(() => {
-    if (!flash) return;
-    const id = setTimeout(() => setFlash(false), 90);
+    if (!dead) return;
+    anim.current.dead = true;
+    const id = setTimeout(() => setRemoved(true), DEATH_LINGER_MS);
     return () => clearTimeout(id);
-  }, [flash]);
+  }, [dead]);
 
   // Engage: pursue toward a fighting range, strafe, and fire when LOS is clear.
   useFrame((_, rawDt) => {
@@ -125,30 +126,32 @@ export function Blocker({ position }: { position: [number, number, number] }) {
         anim.current.fireAt = performance.now();
         const dir = to.clone().sub(from).normalize();
         spawnProjectile(from.clone().addScaledVector(dir, 0.7), dir, BLOCKER.projectileSpeed);
-        // Incoming fire, quieter the farther off it is.
-        audio.play("enemyGun", audio.distanceVolume(dist, AUDIO.enemyGunNear, AUDIO.enemyGunFar));
+        // Incoming fire — panned to the shooter's direction + quieter with distance.
+        audio.playAt("enemyGun", pos.current.x, pos.current.z, AUDIO.enemyGunNear, AUDIO.enemyGunFar);
       }
     }
   });
 
-  if (dead) return null;
+  if (removed) return null;
 
   const frac = health / BLOCKER.health;
   return (
     <group ref={group} position={position}>
       <NpcRig model="npc_blocker" state={anim.current} />
 
-      {/* Health bar (billboarded to face the camera) */}
-      <Billboard position={[0, BODY_H + 0.35, 0]}>
-        <mesh>
-          <planeGeometry args={[1, 0.14]} />
-          <meshBasicMaterial color="#000000" transparent opacity={0.5} depthWrite={false} />
-        </mesh>
-        <mesh position={[-(1 - frac) / 2, 0, 0.001]}>
-          <planeGeometry args={[frac, 0.11]} />
-          <meshBasicMaterial color="#ff5a5a" depthWrite={false} />
-        </mesh>
-      </Billboard>
+      {/* Health bar (billboarded) — gone once downed, so the corpse reads clean */}
+      {!dead && (
+        <Billboard position={[0, BODY_H + 0.35, 0]}>
+          <mesh>
+            <planeGeometry args={[1, 0.14]} />
+            <meshBasicMaterial color="#000000" transparent opacity={0.5} depthWrite={false} />
+          </mesh>
+          <mesh position={[-(1 - frac) / 2, 0, 0.001]}>
+            <planeGeometry args={[frac, 0.11]} />
+            <meshBasicMaterial color="#ff5a5a" depthWrite={false} />
+          </mesh>
+        </Billboard>
+      )}
 
       {/* Contact shadow */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>

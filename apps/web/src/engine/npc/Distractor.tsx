@@ -6,10 +6,7 @@ import * as THREE from "three";
 import { Html } from "@react-three/drei";
 import { enemies, type Enemy } from "@/engine/combat/enemies";
 import { runtime } from "@/engine/runtime";
-import { NpcRig, type NpcRigState } from "@/engine/character/NpcRig";
-
-// Distractors just stand and lie — a single shared idle drive is enough.
-const IDLE: NpcRigState = { moving: false, running: false, fireAt: -1, speed: 0 };
+import { NpcRig, type NpcRigState, DEATH_LINGER_MS } from "@/engine/character/NpcRig";
 
 const MAX_HEALTH = 2;
 const BODY_H = 1.8;
@@ -36,9 +33,12 @@ export function Distractor({
   hintIndex: number;
 }) {
   const [health, setHealth] = useState(MAX_HEALTH);
-  const [flash, setFlash] = useState(false);
+  const [removed, setRemoved] = useState(false); // unmount after the death lies out
   const dead = health <= 0;
   const line = useRef(LINES[hintIndex % LINES.length]);
+  // Per-instance drive so the death flag can be set (it just stands + lies otherwise).
+  const anim = useRef<NpcRigState>({ moving: false, running: false, fireAt: -1, speed: 0 });
+  anim.current.dead = dead;
 
   // The lie is spoken, not broadcast: only render the bubble within earshot
   // (drei's `occlude` proved unreliable at long range through walls).
@@ -62,7 +62,7 @@ export function Distractor({
       hitHeight: 1.0,
       bodyRadius: 0.45,
       takeHit: (damage) => {
-        setFlash(true);
+        anim.current.hitAt = performance.now(); // stagger + flash punch
         setHealth((h) => {
           const next = Math.max(0, h - damage);
           if (next === 0) {
@@ -79,24 +79,27 @@ export function Distractor({
     };
   }, [position, hintIndex]);
 
+  // Shot down: lie for a beat before despawning (its decoy is already silenced).
   useEffect(() => {
-    if (!flash) return;
-    const id = setTimeout(() => setFlash(false), 90);
+    if (!dead) return;
+    const id = setTimeout(() => setRemoved(true), DEATH_LINGER_MS);
     return () => clearTimeout(id);
-  }, [flash]);
+  }, [dead]);
 
-  if (dead) return null;
+  if (removed) return null;
 
   return (
     <group position={position}>
-      <NpcRig model="npc_distractor" state={IDLE} />
-      {/* Lantern prop — the "false light" it waves at you */}
-      <mesh position={[0.35, BODY_H * 0.55, 0.12]}>
-        <boxGeometry args={[0.22, 0.28, 0.22]} />
-        <meshStandardMaterial color="#f2c14e" emissive="#f2c14e" emissiveIntensity={0.6} />
-      </mesh>
-      {/* Fake dialogue — only within earshot */}
-      {nearby && (
+      <NpcRig model="npc_distractor" state={anim.current} />
+      {/* Lantern prop — the "false light" it waves at you (dropped once downed) */}
+      {!dead && (
+        <mesh position={[0.35, BODY_H * 0.55, 0.12]}>
+          <boxGeometry args={[0.22, 0.28, 0.22]} />
+          <meshStandardMaterial color="#f2c14e" emissive="#f2c14e" emissiveIntensity={0.6} />
+        </mesh>
+      )}
+      {/* Fake dialogue — only within earshot, and only while alive */}
+      {nearby && !dead && (
         <Html position={[0, BODY_H + 0.55, 0]} center distanceFactor={18} occlude style={{ pointerEvents: "none" }}>
           <div style={bubble}>{line.current}</div>
         </Html>

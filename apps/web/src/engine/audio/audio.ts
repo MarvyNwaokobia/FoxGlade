@@ -148,6 +148,71 @@ class AudioBus {
     return 1 - (dist - near) / (far - near);
   }
 
+  /** Point the 3D listener at the player each frame (position + facing) so
+   *  positional cues (playAt) pan left/right and attenuate correctly. */
+  setListener(x: number, y: number, z: number, yaw: number) {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const l = ctx.listener;
+    const fx = -Math.sin(yaw);
+    const fz = -Math.cos(yaw);
+    if (l.positionX) {
+      const t = ctx.currentTime;
+      l.positionX.setValueAtTime(x, t);
+      l.positionY.setValueAtTime(y, t);
+      l.positionZ.setValueAtTime(z, t);
+      l.forwardX.setValueAtTime(fx, t);
+      l.forwardY.setValueAtTime(0, t);
+      l.forwardZ.setValueAtTime(fz, t);
+      l.upX.setValueAtTime(0, t);
+      l.upY.setValueAtTime(1, t);
+      l.upZ.setValueAtTime(0, t);
+    } else {
+      // Deprecated API — still needed for Safari.
+      (l as unknown as { setPosition(x: number, y: number, z: number): void }).setPosition?.(x, y, z);
+      (l as unknown as { setOrientation(...a: number[]): void }).setOrientation?.(fx, 0, fz, 0, 1, 0);
+    }
+  }
+
+  /** Play a named cue at a WORLD position — panned left/right and distance-
+   *  attenuated relative to the listener. `near`/`far` reproduce the old linear
+   *  falloff (linear distance model), now with direction. Use for world events
+   *  (enemy fire, blasts); the player's own cues stay centred via play(). */
+  playAt(name: keyof typeof SFX | string, x: number, z: number, near: number, far: number, baseVol = 1) {
+    if (this._muted) return;
+    const ctx = this.ensure();
+    if (!ctx || ctx.state !== "running") return;
+    const panner = ctx.createPanner();
+    panner.panningModel = "equalpower"; // cheap L/R + distance (front/back read off the compass)
+    panner.distanceModel = "linear";
+    panner.refDistance = near;
+    panner.maxDistance = far;
+    panner.rolloffFactor = 1;
+    const t = ctx.currentTime;
+    if (panner.positionX) {
+      panner.positionX.setValueAtTime(x, t);
+      panner.positionY.setValueAtTime(1, t);
+      panner.positionZ.setValueAtTime(z, t);
+    } else {
+      (panner as unknown as { setPosition(x: number, y: number, z: number): void }).setPosition?.(x, 1, z);
+    }
+    panner.connect(this.buses.sfx);
+    const v = Math.max(0, Math.min(1, baseVol));
+    const sample = this.samples[name];
+    if (sample) {
+      const src = ctx.createBufferSource();
+      src.buffer = sample;
+      if (PITCH_VARY.has(name)) src.playbackRate.value = 0.93 + Math.random() * 0.14;
+      const g = ctx.createGain();
+      g.gain.value = v * (SAMPLE_GAIN[name] ?? 1);
+      src.connect(g).connect(panner);
+      src.start(t + 0.001);
+      return;
+    }
+    const recipe = SFX[name];
+    if (recipe) recipe(ctx, panner, t + 0.001, v);
+  }
+
   /**
    * Duck ambient + music (e.g. muffled while indoors, world paused). `factor`
    * is a 0–1 multiplier applied to the bus's base volume.

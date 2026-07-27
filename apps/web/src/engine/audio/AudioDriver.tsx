@@ -25,6 +25,10 @@ export function AudioDriver() {
     explosionAt: -1,
     foxClock: 3 + Math.random() * 4,
     ducked: false,
+    // Footstep cadence: accumulate ground distance, step once per stride length.
+    stepAccum: 0,
+    lastX: runtime.playerPos.x,
+    lastZ: runtime.playerPos.z,
   });
 
   // Discrete state → cues.
@@ -50,6 +54,10 @@ export function AudioDriver() {
   useFrame((_, rawDt) => {
     const dt = Math.min(rawDt, 1 / 30);
     const st = seen.current;
+
+    // Keep the 3D audio listener on the player (ear height ~1.5m) so positional
+    // cues — enemy fire, blasts — pan to where they actually come from.
+    audio.setListener(runtime.playerPos.x, 1.5, runtime.playerPos.z, runtime.yaw);
 
     // Player gunshot / hitmarker.
     if (runtime.fireAt !== st.fireAt) {
@@ -84,8 +92,34 @@ export function AudioDriver() {
     }
     if (newest > st.explosionAt) {
       st.explosionAt = newest;
-      const d = Math.hypot(bx - runtime.playerPos.x, bz - runtime.playerPos.z);
-      audio.play("blast", audio.distanceVolume(d, AUDIO.blastNear, AUDIO.blastFar));
+      audio.playAt("blast", bx, bz, AUDIO.blastNear, AUDIO.blastFar);
+    }
+
+    // Footsteps: step each time the player covers a stride's worth of ground.
+    // Distance-based so the cadence auto-syncs to walk vs run speed. Gated to
+    // real over-ground movement (not airborne, indoors, resting, or a respawn
+    // teleport, which would register as a huge single-frame jump).
+    const px = runtime.playerPos.x;
+    const pz = runtime.playerPos.z;
+    const moved = Math.hypot(px - st.lastX, pz - st.lastZ);
+    st.lastX = px;
+    st.lastZ = pz;
+    const canStep =
+      runtime.grounded &&
+      !runtime.sheltered &&
+      !runtime.resting &&
+      !useGame.getState().isDead &&
+      useGame.getState().roundState === "playing";
+    if (canStep && moved > 0.002 && moved < 1.5) {
+      st.stepAccum += moved;
+      const stride = runtime.running ? AUDIO.stepDistanceRun : AUDIO.stepDistanceWalk;
+      if (st.stepAccum >= stride) {
+        st.stepAccum = 0;
+        audio.play("footstep", AUDIO.stepVolume);
+      }
+    } else {
+      // Standing/airborne: prime the accumulator so the next step lands promptly.
+      st.stepAccum = AUDIO.stepDistanceWalk * 0.6;
     }
 
     // Occasional fox pant when the companion is near and settled.

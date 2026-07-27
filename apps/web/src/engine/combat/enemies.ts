@@ -31,14 +31,16 @@ function raySphere(origin: THREE.Vector3, dir: THREE.Vector3, center: THREE.Vect
 }
 
 /**
- * Hitscan a shot from the camera's forward ray. Returns true if an enemy was hit
- * (used for the hitmarker). Shots are blocked by walls between the muzzle and
- * the target.
+ * Hitscan a shot from the camera's forward ray. Applies damage to the nearest
+ * unobstructed enemy and returns whether one was hit (for the hitmarker) plus
+ * the impact `point` — the enemy, the first wall, or max range — so the ShotFX
+ * layer can draw a tracer that actually stops at what it hits.
  */
-export function fireHitscan(camera: THREE.Camera): boolean {
+export function fireHitscan(camera: THREE.Camera): { hit: boolean; point: THREE.Vector3 } {
   const origin = camera.position.clone();
   const dir = camera.getWorldDirection(new THREE.Vector3());
 
+  // Nearest enemy along the ray.
   let best: Enemy | null = null;
   let bestT = GUN_RANGE;
   for (const e of enemies) {
@@ -50,12 +52,21 @@ export function fireHitscan(camera: THREE.Camera): boolean {
       best = e;
     }
   }
-  if (!best) return false;
 
-  // Blocked by a building before reaching the enemy?
-  const hitPoint = origin.clone().addScaledVector(dir, bestT);
-  if (raycastBoxes(origin, hitPoint, BOXES3D) < 1) return false;
+  // Distance to the first wall along the ray (the tracer stops at cover, and an
+  // enemy behind a wall doesn't count).
+  const far = origin.clone().addScaledVector(dir, GUN_RANGE);
+  const tWall = raycastBoxes(origin, far, BOXES3D);
+  const wallDist = tWall < 1 ? tWall * GUN_RANGE : GUN_RANGE;
 
-  best.takeHit(GUN_DAMAGE);
-  return true;
+  let hit = false;
+  let endDist = wallDist;
+  if (best && bestT < wallDist) {
+    hit = true;
+    endDist = bestT;
+    best.takeHit(GUN_DAMAGE);
+  }
+
+  const point = origin.clone().addScaledVector(dir, endDist);
+  return { hit, point };
 }

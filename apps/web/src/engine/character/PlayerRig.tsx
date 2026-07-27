@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
@@ -68,14 +68,26 @@ const HIPS_PITCH_FIX_INV = HIPS_PITCH_FIX.clone().invert();
 
 // The rifle is driven from the right-hand bone each frame rather than PARENTED
 // into the skeleton (parenting a child corrupts the animation bind → T-pose).
-// GUN_GRIP is the gun's offset relative to the hand — tune these two if the
-// rifle sits slightly off in the grip.
-const GUN_GRIP = new THREE.Matrix4().compose(
-  new THREE.Vector3(0, 0.03, 0.02),
-  new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, Math.PI, 0)),
-  new THREE.Vector3(1, 1, 1)
-);
+//
+// VALOR'S METHOD: Valor's guns are authored to a fixed convention — barrel = +Z,
+// up = +Y, origin AT the pistol grip — so a single hand-relative GUN_GRIP socket
+// works on the shared Mixamo skeleton. Our imported rifle.glb doesn't follow that
+// convention (different axes, origin off the grip, a baked node rotation + 100×
+// scale), so we NORMALISE it to Valor's convention on load (see rifleProto) and
+// then use Valor's exact grip. Orienting to the HAND (not the rig) is what makes
+// the barrel follow the aim pose.
+const GUN_SCALE = 0.17; // counters the model's baked 100× node scale → ~0.9 m
+// GUN_GRIP, hand-relative (Valor's numbers). Live-tunable via the keys below; once
+// dialed, bake the logged values into gripTune's defaults and set GUN_TUNER=false.
+//   I/K pitch · J/L yaw · U/O roll · 4/6 x · 8/2 y · 7/9 z · -/= scale · P = log.
+const GUN_TUNER = false; // gun grip parked for now (revisit); keys freed for play
+const gripTune = { rx: Math.PI / 2, ry: 0, rz: 0, ox: 0, oy: 0.02, oz: 0.04, scale: GUN_SCALE };
 const _gunScratch = new THREE.Matrix4();
+const _gunWorld = new THREE.Matrix4();
+const _gunScaleVec = new THREE.Vector3();
+const _gunOff = new THREE.Vector3();
+const _gunEuler = new THREE.Euler();
+const _tmpQ = new THREE.Quaternion();
 
 // Held bomb: nudge it into the palm of the throwing hand during the wind-up.
 const BOMB_GRIP = new THREE.Matrix4().compose(
@@ -87,6 +99,13 @@ const BOMB_GRIP = new THREE.Matrix4().compose(
 // Recent-shot window (seconds) that keeps the standing Fire clip playing.
 const FIRE_HOLD = 0.22;
 
+// Weapon-ready pose (Marvy's call): hold the shooting clip's aim frame as a
+// STATIC additive over the lowered rifle-idle, so the character always keeps the
+// rifle up in two hands while the legs keep walking/running underneath. Camera
+// recoil (PlayerController) sells the shot, so this layer just holds the stance.
+const AIM_HOLD_TIME = 0.0; // seconds into gunplayShooting to freeze the aim pose (bump if it looks mid-recoil)
+const AIM_WEIGHT = 1.0; // additive weight of the aim-ready pose (0 = lowered idle, 1 = full aim)
+
 // Seated clips bake their hip-drop into the (stripped) Hips position track, so
 // the rig would sit at standing height = floating. Settle the whole rig down by
 // this much while seated — same code-driven trick as the death drop. Tune to the
@@ -96,9 +115,9 @@ const SIT_DROP = -0.4;
 // Settle it back to the ground (tune if he hovers / sinks while crouched).
 const CROUCH_DROP = -0.45;
 
-// Weapons are their own asset line (§14.6) and need proper per-gun sizing/grip —
-// off for now so the socketed rifle's native scale doesn't render meters-long.
-const SHOW_GUN = false;
+// Show the socketed rifle in-hand. GUN_SCALE (above) counters the model's baked
+// 100× node scale so it renders at real-rifle size; GUN_GRIP tunes the grip.
+const SHOW_GUN = true;
 
 interface PlayerRigProps {
   state: PlayerRigState;
@@ -171,16 +190,80 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
   }, [scene]);
 
   const rifleProto = useMemo(() => {
-    const clone = SkeletonUtils.clone(rifle.scene);
-    clone.traverse((c) => {
-      if (c instanceof THREE.Mesh) c.castShadow = true;
+    const src = SkeletonUtils.clone(rifle.scene);
+    src.updateMatrixWorld(true);
+    // Normalise the imported rifle to VALOR'S convention (barrel +Z, up +Y, origin
+    // at the grip) so Valor's shared hand-grip socket works:
+    //  (1) bake node transforms (incl. the baked 100× scale + internal rotation)
+    //      into geometry — the gun's frame becomes its raw geometry frame
+    //      (measured: barrel +X, up +Z, thickness +Y);
+    //  (2) remap those axes onto +Z-forward / +Y-up;
+    //  (3) recentre so the pistol grip sits at the origin (X-centre, lower, rear).
+    const REMAP = new THREE.Matrix4().makeBasis(
+      new THREE.Vector3(0, 0, 1), // barrel (+X) → +Z (firing dir)
+      new THREE.Vector3(1, 0, 0), // thickness (+Y) → +X
+      new THREE.Vector3(0, 1, 0) //  up (+Z) → +Y
+    );
+    const flat = new THREE.Group();
+    const geos: THREE.BufferGeometry[] = [];
+    src.traverse((c) => {
+      const mesh = c as THREE.Mesh;
+      if (mesh.isMesh && mesh.geometry) {
+        const g = mesh.geometry.clone();
+        g.applyMatrix4(mesh.matrixWorld); // bake node transform
+        g.applyMatrix4(REMAP); // to +Z-forward / +Y-up
+        const baked = new THREE.Mesh(g, mesh.material);
+        baked.castShadow = true;
+        flat.add(baked);
+        geos.push(g);
+      }
     });
-    return clone;
+    // Recentre: origin ≈ the pistol grip (X-centre, near the bottom, ~30% from the
+    // rear), so socketing the origin to the hand puts the grip in the palm.
+    const box = new THREE.Box3().setFromObject(flat);
+    const size = box.getSize(new THREE.Vector3());
+    const grip = new THREE.Vector3(
+      (box.min.x + box.max.x) / 2,
+      box.min.y + size.y * 0.12,
+      box.min.z + size.z * 0.3
+    );
+    for (const g of geos) g.translate(-grip.x, -grip.y, -grip.z);
+    return flat;
   }, [rifle.scene]);
 
   // Kick off the Mixamo FBX load immediately (shared across all rigs).
   useMemo(() => {
     loadMixamoAnimations();
+  }, []);
+
+  // Live grip tuner (DEV): dial the rifle into the hand in-browser, press P to log,
+  // then bake the numbers into gripTune's defaults and set GUN_TUNER = false.
+  useEffect(() => {
+    if (!GUN_TUNER) return;
+    console.log("[gripTune] I/K pitch · J/L yaw · U/O roll · 4/6 x · 8/2 y · 7/9 z · -/= scale · P log");
+    const onKey = (e: KeyboardEvent) => {
+      const R = 0.08, T = 0.02, S = 0.01;
+      switch (e.code) {
+        case "KeyI": gripTune.rx += R; break;
+        case "KeyK": gripTune.rx -= R; break;
+        case "KeyJ": gripTune.ry += R; break;
+        case "KeyL": gripTune.ry -= R; break;
+        case "KeyU": gripTune.rz += R; break;
+        case "KeyO": gripTune.rz -= R; break;
+        case "Digit6": gripTune.ox += T; break;
+        case "Digit4": gripTune.ox -= T; break;
+        case "Digit8": gripTune.oy += T; break;
+        case "Digit2": gripTune.oy -= T; break;
+        case "Digit9": gripTune.oz += T; break;
+        case "Digit7": gripTune.oz -= T; break;
+        case "Equal": gripTune.scale += S; break;
+        case "Minus": gripTune.scale = Math.max(0.01, gripTune.scale - S); break;
+        case "KeyP": console.log("[gripTune]", JSON.stringify(gripTune)); break;
+        default: return;
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
   useFrame((_, dt) => {
@@ -229,10 +312,10 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
           gunRef.current = gun;
         }
 
-        // Build the additive upper-body FIRE layer (§15.3 run-and-gun): take the
-        // shot clip, mask it to arm/torso/head tracks, and make it additive
-        // relative to the idle pose. Played on top of the base locomotion action,
-        // it raises the gun and fires while the legs keep walking/running. Legs
+        // Build the additive upper-body AIM-READY layer: take the shot clip's aim
+        // pose, mask it to arm/torso/head tracks, make it additive relative to the
+        // lowered idle, and FREEZE it on one frame. Held over the base locomotion
+        // action it keeps the rifle up in two hands while the legs walk/run. Legs
         // are untouched because the layer only carries upper-body tracks.
         if (!fireLayerBuilt.current && mixerRef.current) {
           fireLayerBuilt.current = true;
@@ -246,12 +329,14 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
             // upper-body tracks that also exist in the idle reference clip.
             upper.tracks = upper.tracks.filter((t) => isUpperBodyTrack(t.name) && idleNames.has(t.name));
             if (upper.tracks.length > 0) {
-              upper.name = "fireUpperAdditive";
+              upper.name = "aimReadyAdditive";
               THREE.AnimationUtils.makeClipAdditive(upper, 0, idle, 30);
               const action = mixer.clipAction(upper);
               action.setLoop(THREE.LoopRepeat, Infinity);
-              action.setEffectiveWeight(0);
               action.play();
+              action.paused = true; // hold a static aim frame — no shoot-loop bob
+              action.time = AIM_HOLD_TIME;
+              action.setEffectiveWeight(0); // eased up to AIM_WEIGHT below
               fireAddAction.current = action;
             }
           }
@@ -350,16 +435,18 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
       }
     }
 
-    // Additive upper-body fire weight: raise the gun and shoot over whatever the
-    // legs are doing. Suppressed while a committed full-body clip is playing.
+    // Weapon-ready aim weight: hold the rifle up over whatever the legs are doing,
+    // eased in/out. Dropped only while a committed full-body clip owns the arms
+    // (bomb throw, vault, seated rest, grab) or on death.
     if (fireAddAction.current) {
       const s = animMachine.state;
-      const allowFire =
-        firedRecently && !state.dead &&
+      const armed =
+        !state.dead &&
         s !== AnimState.Throw && s !== AnimState.Vault &&
-        s !== AnimState.Sit && s !== AnimState.Drink && s !== AnimState.Grab;
-      const target = allowFire ? 1 : 0;
-      fireWeight.current += (target - fireWeight.current) * Math.min(1, 18 * dt);
+        s !== AnimState.Sit && s !== AnimState.Drink && s !== AnimState.Grab &&
+        s !== AnimState.Death;
+      const target = armed ? AIM_WEIGHT : 0;
+      fireWeight.current += (target - fireWeight.current) * Math.min(1, 10 * dt);
       fireAddAction.current.setEffectiveWeight(fireWeight.current);
     }
 
@@ -419,11 +506,19 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
       hipsFixApplied.current = true;
     }
 
-    // Drive the rifle from the hand bone (it's a sibling, not parented in the rig).
-    if (gunRef.current && handBoneRef.current) {
-      handBoneRef.current.updateWorldMatrix(true, false);
+    // Drive the gun from the hand bone (Valor's socket): gun.matrix =
+    // groupRef⁻¹ · handBoneWorld · GUN_GRIP → renders exactly at the hand, oriented
+    // to the animated grip (which carries the aim pose). The gun mesh is normalised
+    // to +Z-forward / +Y-up with its origin at the grip, so GUN_GRIP is Valor's.
+    if (gunRef.current && handBoneRef.current && groupRef.current) {
+      handBoneRef.current.updateWorldMatrix(true, false); // refresh hand + ancestors
+      _gunWorld.compose(
+        _gunOff.set(gripTune.ox, gripTune.oy, gripTune.oz),
+        _tmpQ.setFromEuler(_gunEuler.set(gripTune.rx, gripTune.ry, gripTune.rz)),
+        _gunScaleVec.setScalar(gripTune.scale)
+      );
       _gunScratch.copy(groupRef.current.matrixWorld).invert();
-      gunRef.current.matrix.multiplyMatrices(_gunScratch, handBoneRef.current.matrixWorld).multiply(GUN_GRIP);
+      gunRef.current.matrix.multiplyMatrices(_gunScratch, handBoneRef.current.matrixWorld).multiply(_gunWorld);
     }
 
     // Held bomb + hand position — only during a throw (otherwise this per-frame

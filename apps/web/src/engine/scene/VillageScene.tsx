@@ -6,6 +6,7 @@ import { Distractors } from "@/engine/npc/Distractors";
 import { Thieves } from "@/engine/npc/ThiefWave";
 import { Environment } from "@react-three/drei";
 import { Projectiles } from "@/engine/combat/ProjectileLayer";
+import { ShotFX } from "@/engine/combat/ShotFxLayer";
 import { Bombs } from "@/engine/combat/BombLayer";
 import { Interiors } from "@/engine/world/Interiors";
 import { Props } from "@/engine/world/Props";
@@ -72,6 +73,7 @@ export function VillageScene({
         <Thieves />
       </group>
       <Projectiles />
+      <ShotFX />
       <Bombs />
       {/* Post-processing (bloom + vignette) is a heavy full-screen pass — gated
           by the quality setting (off on Low/Med, on for High). */}

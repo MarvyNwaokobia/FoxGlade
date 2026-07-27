@@ -26,7 +26,17 @@ export interface NpcRigState {
   running: boolean;
   fireAt: number; // performance.now of the last shot (-1 = unarmed)
   speed: number; // planar m/s, for foot-skate-matched cadence
+  dead?: boolean; // plays the death clip + settles the corpse (see DEATH_LINGER_MS)
+  hitAt?: number; // performance.now of the last non-lethal hit → stagger + flash punch
 }
+
+/** How long a killed NPC lies on the ground before it despawns (ms). Consumers
+ *  keep the rig mounted this long so death reads instead of a pop-out. */
+export const DEATH_LINGER_MS = 1600;
+
+// The death clip pivots at hip height (root motion stripped), so drop the whole
+// rig this far to lay the body on the ground instead of floating (cf. PlayerRig).
+const NPC_DEATH_DROP = -0.85;
 
 export type NpcModelId = "npc_blocker" | "npc_distractor" | "npc_thief";
 
@@ -58,24 +68,37 @@ export const NpcRig = memo(function NpcRig({
   const mixamoApplied = useRef(false);
   const revealed = useRef(false);
   const initTime = useRef(0);
+  const deathPlayed = useRef(false);
+  const deathDrop = useRef(0); // eased downward offset that settles the corpse
+  const lastHitAt = useRef(-1);
+  const hitPunch = useRef(0); // 1 on a fresh hit, decays → stagger + flash amount
 
   const { scene, animations } = useGLTF(MODEL_PATHS[model]);
   const animMachine = useMemo(() => new AnimationStateMachine(buildAnimMap()), []);
 
+  const materials = useRef<THREE.MeshStandardMaterial[]>([]);
   const clonedScene = useMemo(() => {
     const clone = SkeletonUtils.clone(scene);
+    const mats: THREE.MeshStandardMaterial[] = [];
     clone.traverse((child) => {
       if (child instanceof THREE.Mesh) {
         child.castShadow = false;
         child.receiveShadow = true;
         child.frustumCulled = false;
+        // Own the materials (clone) so a per-instance hit-flash doesn't flash every
+        // NPC that shares this model.
+        child.material = Array.isArray(child.material)
+          ? child.material.map((m) => m.clone())
+          : child.material.clone();
         (Array.isArray(child.material) ? child.material : [child.material]).forEach((m) => {
           const sm = m as THREE.MeshStandardMaterial;
           if ("roughness" in sm) sm.roughness = Math.max(sm.roughness ?? 1, 0.9);
           if ("metalness" in sm) sm.metalness = 0;
+          mats.push(sm);
         });
       }
     });
+    materials.current = mats;
     return clone;
   }, [scene]);
 
@@ -126,7 +149,13 @@ export const NpcRig = memo(function NpcRig({
     // (the NPC's own AI has already stopped, so its pose must stop too — else it
     // moonwalks in place). The idempotent pitch-fix still runs so it stays upright.
     const frozen = runtime.sheltered || useGame.getState().roundState !== "playing";
-    if (!frozen) {
+    if (state.dead) {
+      // Committed death one-shot (clamps + holds on the final frame).
+      if (!deathPlayed.current) {
+        deathPlayed.current = true;
+        animMachine.transition(AnimState.Death, true);
+      }
+    } else if (!frozen) {
       const firedRecently = state.fireAt > 0 && (performance.now() - state.fireAt) / 1000 < FIRE_HOLD;
       if (state.moving) {
         animMachine.transition(state.running ? AnimState.Run : AnimState.Walk);
@@ -138,9 +167,34 @@ export const NpcRig = memo(function NpcRig({
       }
     }
 
+    // Settle the corpse onto the ground (death clip pivots at hip height).
+    const dropTarget = state.dead ? NPC_DEATH_DROP : 0;
+    deathDrop.current += (dropTarget - deathDrop.current) * Math.min(1, 5 * dt);
+    groupRef.current.position.y = deathDrop.current;
+
+    // Hit-react: a fresh non-lethal hit punches hitPunch to 1; it decays fast into
+    // a brief stagger (squash + lean back) and a white impact flash. Cleared on
+    // death so the corpse reads clean. No clip → never interrupts fire/locomotion.
+    if (state.dead) {
+      hitPunch.current = 0;
+    } else if (state.hitAt && state.hitAt !== lastHitAt.current) {
+      lastHitAt.current = state.hitAt;
+      hitPunch.current = 1;
+    }
+    hitPunch.current = Math.max(0, hitPunch.current - 7 * dt);
+    const p = hitPunch.current;
+    groupRef.current.scale.set(1 + 0.05 * p, 1 - 0.1 * p, 1 + 0.05 * p);
+    groupRef.current.rotation.x = -0.14 * p; // brief lean back from the impact
+    for (const m of materials.current) {
+      m.emissive.setRGB(p, p * 0.55, p * 0.5); // hot white → red flash (p=0 → no glow)
+      m.emissiveIntensity = p * 1.6;
+    }
+
     if (hipsBoneRef.current && hipsFixApplied.current) {
       hipsBoneRef.current.quaternion.premultiply(HIPS_PITCH_FIX_INV);
     }
+    // Death animates even though the NPC's AI has stopped feeding locomotion; only
+    // the world-pause (indoors) freezes it.
     if (!frozen) animMachine.update(dt);
     if (hipsBoneRef.current) {
       hipsBoneRef.current.quaternion.premultiply(HIPS_PITCH_FIX);
