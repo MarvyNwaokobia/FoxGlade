@@ -77,7 +77,7 @@ const HIPS_PITCH_FIX_INV = HIPS_PITCH_FIX.clone().invert();
 // keys below if a nudge is needed; bake the logged values here + set GUN_TUNER=false.
 //   I/K pitch · J/L yaw · U/O roll · 4/6 x · 8/2 y · 7/9 z · -/= scale · P = log.
 const GUN_TUNER = false; // keys freed for play
-const gripTune = { rx: Math.PI / 2, ry: 0, rz: 0, ox: 0, oy: 0.02, oz: 0.04, scale: 1 };
+const gripTune = { rx: 0, ry: 0, rz: 0, ox: 0, oy: 0.02, oz: 0.04, scale: 1 };
 const _gunScratch = new THREE.Matrix4();
 const _gunWorld = new THREE.Matrix4();
 const _gunScaleVec = new THREE.Vector3();

@@ -15,6 +15,7 @@ import {
 } from "@/engine/animation";
 import { runtime } from "@/engine/runtime";
 import { useGame } from "@/engine/store";
+import { makeRifle } from "./GunMesh";
 
 /**
  * State the NPC's AI feeds the rig each frame. Position + facing are handled by
@@ -53,6 +54,16 @@ const HIPS_PITCH_FIX_INV = HIPS_PITCH_FIX.clone().invert();
 
 const FIRE_HOLD = 0.22;
 
+// Armed NPCs carry the same procedural rifle as the player, socketed to the hand
+// bone with the same Valor grip (same Mixamo skeleton). Distractors are unarmed.
+const NPC_GRIP = { rx: 0, oy: 0.02, oz: 0.04 };
+const _npcGunScratch = new THREE.Matrix4();
+const _npcGunWorld = new THREE.Matrix4();
+const _npcGunScale = new THREE.Vector3(1, 1, 1);
+const _npcGunOff = new THREE.Vector3();
+const _npcGunQ = new THREE.Quaternion();
+const _npcGunE = new THREE.Euler();
+
 export const NpcRig = memo(function NpcRig({
   model,
   state,
@@ -60,8 +71,11 @@ export const NpcRig = memo(function NpcRig({
   model: NpcModelId;
   state: NpcRigState;
 }) {
+  const armed = model !== "npc_distractor";
   const groupRef = useRef<THREE.Group>(null);
   const hipsBoneRef = useRef<THREE.Object3D | null>(null);
+  const handBoneRef = useRef<THREE.Object3D | null>(null);
+  const gunRef = useRef<THREE.Object3D | null>(null);
   const hipsFixApplied = useRef(false);
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
   const initDone = useRef(false);
@@ -116,14 +130,24 @@ export const NpcRig = memo(function NpcRig({
       animMachine.init(mixer, animations);
       let hipsBone: THREE.Object3D | null = null;
       groupRef.current.traverse((child) => {
-        if ((child as THREE.Bone).isBone && !hipsBone && /hips/i.test(child.name)) {
-          hipsBone = child;
-          hipsBoneRef.current = child;
+        if ((child as THREE.Bone).isBone) {
+          if (!hipsBone && /hips/i.test(child.name)) {
+            hipsBone = child;
+            hipsBoneRef.current = child;
+          }
+          if (armed && !handBoneRef.current && /righthand$/i.test(child.name)) handBoneRef.current = child;
         }
       });
       if (hipsBone) {
         groupRef.current.updateWorldMatrix(true, true);
         animMachine.setRigScale((hipsBone as THREE.Object3D).getWorldPosition(new THREE.Vector3()).y);
+      }
+      // Socket the rifle to the hand (armed NPCs only), driven by matrix each frame.
+      if (armed && !gunRef.current && handBoneRef.current) {
+        const gun = makeRifle();
+        gun.matrixAutoUpdate = false;
+        groupRef.current.add(gun);
+        gunRef.current = gun;
       }
     }
 
@@ -181,13 +205,13 @@ export const NpcRig = memo(function NpcRig({
       lastHitAt.current = state.hitAt;
       hitPunch.current = 1;
     }
-    hitPunch.current = Math.max(0, hitPunch.current - 6 * dt);
+    hitPunch.current = Math.max(0, hitPunch.current - 4 * dt); // ~0.25s stagger
     const p = hitPunch.current;
-    groupRef.current.scale.set(1 + 0.08 * p, 1 - 0.16 * p, 1 + 0.08 * p);
-    groupRef.current.rotation.x = -0.24 * p; // clear lean back from the impact
+    groupRef.current.scale.set(1 + 0.12 * p, 1 - 0.22 * p, 1 + 0.12 * p);
+    groupRef.current.rotation.x = -0.4 * p; // big lean back from the impact (~23°)
     for (const m of materials.current) {
       m.emissive.setRGB(p, p, p); // bright white impact flash (p=0 → no glow)
-      m.emissiveIntensity = p * 2.6;
+      m.emissiveIntensity = p * 3;
     }
 
     if (hipsBoneRef.current && hipsFixApplied.current) {
@@ -199,6 +223,15 @@ export const NpcRig = memo(function NpcRig({
     if (hipsBoneRef.current) {
       hipsBoneRef.current.quaternion.premultiply(HIPS_PITCH_FIX);
       hipsFixApplied.current = true;
+    }
+
+    // Drive the rifle from the hand bone (Valor's socket) — same as the player.
+    if (gunRef.current && handBoneRef.current) {
+      handBoneRef.current.updateWorldMatrix(true, false);
+      _npcGunE.set(NPC_GRIP.rx, 0, 0);
+      _npcGunWorld.compose(_npcGunOff.set(0, NPC_GRIP.oy, NPC_GRIP.oz), _npcGunQ.setFromEuler(_npcGunE), _npcGunScale);
+      _npcGunScratch.copy(groupRef.current.matrixWorld).invert();
+      gunRef.current.matrix.multiplyMatrices(_npcGunScratch, handBoneRef.current.matrixWorld).multiply(_npcGunWorld);
     }
   });
 
