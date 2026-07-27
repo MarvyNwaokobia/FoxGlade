@@ -5,6 +5,7 @@ import { runtime } from "@/engine/runtime";
 import { useGame } from "@/engine/store";
 import { audio } from "@/engine/audio/audio";
 import { HINTS } from "@/engine/world/hints";
+import { VILLAGE } from "@/engine/world/village";
 import { SESSION_SECONDS } from "@/engine/config/round";
 import { foxGrowthFor, foxNextThreshold } from "@/engine/config/fox";
 import { thieves, MAX_THIEVES } from "@/engine/npc/thieves";
@@ -22,6 +23,7 @@ const HINT_FAKE = "#7a4a4a"; // dim decoy
 export function Hud() {
   const arrows = useRef<(HTMLDivElement | null)[]>([]);
   const thiefBlips = useRef<(HTMLDivElement | null)[]>([]);
+  const bankBlip = useRef<HTMLDivElement>(null);
   const sniffEl = useRef<HTMLDivElement>(null);
   const promptEl = useRef<HTMLDivElement>(null);
   const timerEl = useRef<HTMLDivElement>(null);
@@ -108,6 +110,20 @@ export function Hud() {
           el.style.opacity = "1";
         } else {
           el.style.opacity = "0";
+        }
+      }
+
+      // Bank marker: points to the vault on the compass whenever you're carrying
+      // unbanked loot (bank it to grow the fox). Pulses to draw the eye.
+      if (bankBlip.current) {
+        const carrying = useGame.getState().villeCarrying;
+        if (carrying > 0 && useGame.getState().roundState === "playing") {
+          const rel = Math.atan2(VILLAGE.bank.x - runtime.playerPos.x, VILLAGE.bank.z - runtime.playerPos.z) - runtime.yaw;
+          bankBlip.current.style.left = `${C + Math.sin(rel) * R}px`;
+          bankBlip.current.style.top = `${C - Math.cos(rel) * R}px`;
+          bankBlip.current.style.opacity = String(0.55 + 0.45 * Math.sin(now / 260)); // gentle pulse
+        } else {
+          bankBlip.current.style.opacity = "0";
         }
       }
 
@@ -353,6 +369,8 @@ export function Hud() {
               style={styles.thiefDot}
             />
           ))}
+          {/* Bank marker — shows only while carrying loot (points to the vault) */}
+          <div ref={bankBlip} style={styles.bankDot} />
         </div>
         <div ref={sniffEl} style={styles.sniffPill}>
           🦊 sniff — Q
@@ -481,6 +499,19 @@ const styles: Record<string, React.CSSProperties> = {
     transform: "translate(-50%, -50%)",
     background: "#e8563f",
     boxShadow: "0 0 0 1px rgba(0,0,0,0.55), 0 0 6px rgba(232,86,63,0.8)",
+    opacity: 0,
+  },
+  bankDot: {
+    // A gold diamond (rotated square) so it reads distinctly from the round
+    // hint/thief dots. Shows only while carrying loot; the game loop pulses it.
+    position: "absolute",
+    left: "50%",
+    top: "50%",
+    width: 9,
+    height: 9,
+    transform: "translate(-50%, -50%) rotate(45deg)",
+    background: "#ffd873",
+    boxShadow: "0 0 0 1px rgba(0,0,0,0.55), 0 0 7px rgba(255,216,115,0.95)",
     opacity: 0,
   },
   timer: {
