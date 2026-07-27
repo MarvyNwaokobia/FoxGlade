@@ -44,6 +44,7 @@ export function Blocker({ position }: { position: [number, number, number] }) {
 
   useEffect(() => {
     const enemy: Enemy = {
+      kind: "blocker",
       getPosition: () => pos.current,
       hitRadius: 0.85,
       hitHeight: 1.0,

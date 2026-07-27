@@ -54,6 +54,7 @@ export function Thief({
     const ref: ThiefRef = { getPos: () => pos.current };
     thieves.add(ref);
     const enemy: Enemy = {
+      kind: "thief",
       getPosition: () => pos.current,
       hitRadius: 0.85,
       hitHeight: 0.9,

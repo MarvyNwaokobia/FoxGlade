@@ -57,6 +57,7 @@ export function Distractor({
   useEffect(() => {
     const pos = new THREE.Vector3(position[0], position[1], position[2]);
     const enemy: Enemy = {
+      kind: "distractor",
       getPosition: () => pos,
       hitRadius: 0.8,
       hitHeight: 1.0,

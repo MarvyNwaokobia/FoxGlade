@@ -41,8 +41,8 @@ const CLIP = {
 };
 
 // Fox reactions (its identity: an alive companion, not a prop).
-const ALERT_RANGE = 12; // an enemy within this of the player → the fox alerts + growls
-const GROWL_INTERVAL = 1.6; // seconds between growls while alerting
+const ALERT_RANGE = 18; // a THREAT (blocker/thief) within this of the player → alert + growl
+const GROWL_INTERVAL = 1.3; // seconds between growls while a threat stays near
 const HURT_REACT_MS = 700; // how long the fox flinches after the player takes damage
 const _enemyPos = new THREE.Vector3(); // nearest-enemy scratch
 
@@ -61,6 +61,7 @@ export function FoxCompanion() {
   const facing = useRef(0);
   const speed = useRef(0);
   const growlClock = useRef(0.4); // cadence timer for the alert growl
+  const wasAlerting = useRef(false); // edge → immediate bark when a threat first appears
   const lastDamageAt = useRef(-1); // edge-detect player hits for the flinch/whine
 
   const { scene, animations } = useGLTF(FOX_URL);
@@ -137,10 +138,12 @@ export function FoxCompanion() {
     const gs = useGame.getState();
     const active = gs.roundState === "playing" && !runtime.sheltered && !gs.isDead;
 
-    // Nearest enemy to the player (the fox's early-warning sense).
+    // Nearest THREAT (blocker/thief — not the harmless distractor) to the player:
+    // the fox's early-warning sense.
     let nearestD = Infinity;
     if (active) {
       for (const e of enemies) {
+        if (e.kind === "distractor") continue;
         const p = e.getPosition();
         const d = Math.hypot(p.x - runtime.playerPos.x, p.z - runtime.playerPos.z);
         if (d < nearestD) {
@@ -153,16 +156,16 @@ export function FoxCompanion() {
     const sniffing = active && now < runtime.revealRealUntil;
     const hurt = active && now - runtime.damageAt < HURT_REACT_MS;
 
-    // Growl on a cadence while a threat is near — you HEAR danger before you see it.
+    // Bark the instant a threat comes into range, then keep growling on a cadence
+    // while it stays near — you HEAR danger before you see it.
     if (alerting) {
       growlClock.current -= dt;
-      if (growlClock.current <= 0) {
-        growlClock.current = GROWL_INTERVAL + Math.random() * 0.6;
+      if (!wasAlerting.current || growlClock.current <= 0) {
+        growlClock.current = GROWL_INTERVAL + Math.random() * 0.5;
         audio.play("foxGrowl");
       }
-    } else {
-      growlClock.current = 0.3;
     }
+    wasAlerting.current = alerting;
     // Whimper the instant the player takes a hit (edge-detected).
     if (runtime.damageAt !== lastDamageAt.current) {
       lastDamageAt.current = runtime.damageAt;

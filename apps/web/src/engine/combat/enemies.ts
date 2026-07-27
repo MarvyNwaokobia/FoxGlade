@@ -7,7 +7,10 @@ import { GUN } from "@/engine/config/round";
  * A shootable entity. NPCs register themselves here on mount and remove
  * themselves on death/unmount, so the hitscan has one place to test against.
  */
+export type EnemyKind = "blocker" | "thief" | "distractor";
+
 export interface Enemy {
+  kind: EnemyKind; // what it is (the fox alerts to threats: blockers/thieves)
   getPosition: () => THREE.Vector3; // ground position
   hitRadius: number; // body hit sphere (generous)
   hitHeight: number; // centre of the body sphere above the ground position
