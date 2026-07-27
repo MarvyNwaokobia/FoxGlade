@@ -17,6 +17,7 @@ import {
 } from "@/engine/animation";
 import { BOMB } from "@/engine/config/round";
 import { runtime } from "@/engine/runtime";
+import { makeRifle } from "./GunMesh";
 
 /**
  * The per-frame state the rig reads to drive its animation + transform. The
@@ -56,8 +57,6 @@ const MODEL_PATHS: Record<CharacterModelId, string> = {
 // Confirmed empirically: without it the converted `man` lies flat / floats.
 const NEEDS_PITCH_FIX = new Set<CharacterModelId>(["man", "sentinel", "phantom", "berserker", "operator"]);
 
-const RIFLE_PATH = "/characters/guns/rifle.glb";
-
 // The Blender-exported GLB rigs carry a ~90° pitch offset on the root (Hips) bone
 // vs the Mixamo clips (Z-up→Y-up export), which lays the character out FLAT. The
 // clips otherwise drive the rig correctly, so we cancel it with a constant -90° X
@@ -67,21 +66,18 @@ const HIPS_PITCH_FIX = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math
 const HIPS_PITCH_FIX_INV = HIPS_PITCH_FIX.clone().invert();
 
 // The rifle is driven from the right-hand bone each frame rather than PARENTED
-// into the skeleton (parenting a child corrupts the animation bind → T-pose).
+// into the skeleton (parenting a child corrupts the animation bind → T-pose). The
+// procedural rifle (GunMesh, ported from Valor) is authored to the +Z-forward /
+// up +Y / grip-at-origin convention the socket expects, so it drops into the hand
+// with Valor's grip and no per-model fixup.
 //
-// VALOR'S METHOD: Valor's guns are authored to a fixed convention — barrel = +Z,
-// up = +Y, origin AT the pistol grip — so a single hand-relative GUN_GRIP socket
-// works on the shared Mixamo skeleton. Our imported rifle.glb doesn't follow that
-// convention (different axes, origin off the grip, a baked node rotation + 100×
-// scale), so we NORMALISE it to Valor's convention on load (see rifleProto) and
-// then use Valor's exact grip. Orienting to the HAND (not the rig) is what makes
-// the barrel follow the aim pose.
-const GUN_SCALE = 0.17; // counters the model's baked 100× node scale → ~0.9 m
-// GUN_GRIP, hand-relative (Valor's numbers). Live-tunable via the keys below; once
-// dialed, bake the logged values into gripTune's defaults and set GUN_TUNER=false.
+// GUN_GRIP, hand-relative (Valor's exact numbers). The procedural rifle (GunMesh)
+// is life-sized and already in the +Z-forward / grip-at-origin convention, so
+// scale is 1 and the grip drops in like Valor's fighters. Live-tunable via the
+// keys below if a nudge is needed; bake the logged values here + set GUN_TUNER=false.
 //   I/K pitch · J/L yaw · U/O roll · 4/6 x · 8/2 y · 7/9 z · -/= scale · P = log.
-const GUN_TUNER = false; // gun grip parked for now (revisit); keys freed for play
-const gripTune = { rx: Math.PI / 2, ry: 0, rz: 0, ox: 0, oy: 0.02, oz: 0.04, scale: GUN_SCALE };
+const GUN_TUNER = false; // keys freed for play
+const gripTune = { rx: Math.PI / 2, ry: 0, rz: 0, ox: 0, oy: 0.02, oz: 0.04, scale: 1 };
 const _gunScratch = new THREE.Matrix4();
 const _gunWorld = new THREE.Matrix4();
 const _gunScaleVec = new THREE.Vector3();
@@ -115,8 +111,7 @@ const SIT_DROP = -0.4;
 // Settle it back to the ground (tune if he hovers / sinks while crouched).
 const CROUCH_DROP = -0.45;
 
-// Show the socketed rifle in-hand. GUN_SCALE (above) counters the model's baked
-// 100× node scale so it renders at real-rifle size; GUN_GRIP tunes the grip.
+// Show the socketed rifle in-hand (the procedural GunMesh rifle).
 const SHOW_GUN = true;
 
 interface PlayerRigProps {
@@ -155,7 +150,6 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
   const heldBombRef = useRef<THREE.Mesh | null>(null); // bomb in hand during wind-up
 
   const { scene, animations } = useGLTF(MODEL_PATHS[model]);
-  const rifle = useGLTF(RIFLE_PATH);
 
   const animMachine = useMemo(() => new AnimationStateMachine(buildAnimMap()), []);
 
@@ -189,47 +183,8 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
     return clone;
   }, [scene]);
 
-  const rifleProto = useMemo(() => {
-    const src = SkeletonUtils.clone(rifle.scene);
-    src.updateMatrixWorld(true);
-    // Normalise the imported rifle to VALOR'S convention (barrel +Z, up +Y, origin
-    // at the grip) so Valor's shared hand-grip socket works:
-    //  (1) bake node transforms (incl. the baked 100× scale + internal rotation)
-    //      into geometry — the gun's frame becomes its raw geometry frame
-    //      (measured: barrel +X, up +Z, thickness +Y);
-    //  (2) remap those axes onto +Z-forward / +Y-up;
-    //  (3) recentre so the pistol grip sits at the origin (X-centre, lower, rear).
-    const REMAP = new THREE.Matrix4().makeBasis(
-      new THREE.Vector3(0, 0, 1), // barrel (+X) → +Z (firing dir)
-      new THREE.Vector3(1, 0, 0), // thickness (+Y) → +X
-      new THREE.Vector3(0, 1, 0) //  up (+Z) → +Y
-    );
-    const flat = new THREE.Group();
-    const geos: THREE.BufferGeometry[] = [];
-    src.traverse((c) => {
-      const mesh = c as THREE.Mesh;
-      if (mesh.isMesh && mesh.geometry) {
-        const g = mesh.geometry.clone();
-        g.applyMatrix4(mesh.matrixWorld); // bake node transform
-        g.applyMatrix4(REMAP); // to +Z-forward / +Y-up
-        const baked = new THREE.Mesh(g, mesh.material);
-        baked.castShadow = true;
-        flat.add(baked);
-        geos.push(g);
-      }
-    });
-    // Recentre: origin ≈ the pistol grip (X-centre, near the bottom, ~30% from the
-    // rear), so socketing the origin to the hand puts the grip in the palm.
-    const box = new THREE.Box3().setFromObject(flat);
-    const size = box.getSize(new THREE.Vector3());
-    const grip = new THREE.Vector3(
-      (box.min.x + box.max.x) / 2,
-      box.min.y + size.y * 0.12,
-      box.min.z + size.z * 0.3
-    );
-    for (const g of geos) g.translate(-grip.x, -grip.y, -grip.z);
-    return flat;
-  }, [rifle.scene]);
+  // The rifle is a procedural mesh (GunMesh), already in the socket's convention.
+  const rifleProto = useMemo(() => makeRifle(), []);
 
   // Kick off the Mixamo FBX load immediately (shared across all rigs).
   useMemo(() => {
@@ -558,4 +513,3 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
 });
 
 useGLTF.preload("/characters/glb/player_man.glb");
-useGLTF.preload(RIFLE_PATH);
