@@ -266,6 +266,27 @@ export const SFX: Record<string, (ctx: AudioContext, out: AudioNode, t0: number,
     n.stop(t0 + 0.07);
   },
 
+  // Enemy spots you — a short vocal-ish shout ("hey!"): two detuned saws swept up
+  // through a moving formant band. A placeholder for a real voice bark later (the
+  // AudioBus will override it with a sample of the same name, like the gun cues).
+  spot(ctx, out, t0, vol) {
+    for (const f0 of [172, 178]) {
+      const o = ctx.createOscillator();
+      o.type = "sawtooth";
+      o.frequency.setValueAtTime(f0 * 0.82, t0);
+      o.frequency.exponentialRampToValueAtTime(f0 * 1.35, t0 + 0.13);
+      const bp = ctx.createBiquadFilter();
+      bp.type = "bandpass";
+      bp.frequency.setValueAtTime(650, t0);
+      bp.frequency.exponentialRampToValueAtTime(1600, t0 + 0.13);
+      bp.Q.value = 5;
+      const g = env(ctx, t0, 0.5 * vol, 0.006, 0.17);
+      o.connect(bp).connect(g).connect(out);
+      o.start(t0);
+      o.stop(t0 + 0.24);
+    }
+  },
+
   // UI click for the mute button.
   ui(ctx, out, t0, vol) {
     blip(ctx, out, t0, 660, { type: "square", peak: 0.16 * vol, atk: 0.001, dec: 0.05 });

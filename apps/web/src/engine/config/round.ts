@@ -71,4 +71,11 @@ export const BLOCKER = {
   shotDamage: 9, // player health lost per hit (player has 100)
   /** Aggro/engage ranges shrink to this fraction while the player is crouched. */
   crouchDetectionMult: 0.55,
+  // --- Awareness (idle → alert → engaged) ---
+  /** Gunfire within this range wakes an idle blocker even with no line of sight. */
+  hearRange: 24,
+  /** Reaction beat between spotting you (a bark + "!") and opening fire. */
+  alertTime: 0.5,
+  /** Seconds out of sight + beyond aggro before an engaged blocker gives up → idle. */
+  loseSightTime: 3.5,
 } as const;
