@@ -97,6 +97,12 @@ export const SFX: Record<string, (ctx: AudioContext, out: AudioNode, t0: number,
     blip(ctx, out, t0, 1400, { type: "square", peak: 0.18 * vol, atk: 0.001, dec: 0.04, glideTo: 900 });
   },
 
+  // A brighter, higher double-tick for a headshot — reads as "clean hit".
+  headshot(ctx, out, t0, vol) {
+    blip(ctx, out, t0, 1900, { type: "square", peak: 0.2 * vol, atk: 0.001, dec: 0.04, glideTo: 1400 });
+    blip(ctx, out, t0 + 0.05, 2600, { type: "sine", peak: 0.16 * vol, atk: 0.001, dec: 0.06 });
+  },
+
   // Bomb throw: a short airy upward whoosh.
   bombThrow(ctx, out, t0, vol) {
     const n = noiseSource(ctx);

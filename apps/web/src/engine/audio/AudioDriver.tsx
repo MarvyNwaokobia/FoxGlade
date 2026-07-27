@@ -20,6 +20,7 @@ export function AudioDriver() {
   const seen = useRef({
     fireAt: -1,
     hitAt: -1,
+    headshotAt: -1,
     stolenAt: -1,
     sniffReadyAt: 0,
     explosionAt: -1,
@@ -67,6 +68,10 @@ export function AudioDriver() {
     if (runtime.hitAt !== st.hitAt) {
       st.hitAt = runtime.hitAt;
       if (runtime.hitAt > 0) audio.play("hit");
+    }
+    if (runtime.headshotAt !== st.headshotAt) {
+      st.headshotAt = runtime.headshotAt;
+      if (runtime.headshotAt > 0) audio.play("headshot");
     }
 
     // A thief made off with a treasure.

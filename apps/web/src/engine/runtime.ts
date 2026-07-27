@@ -50,6 +50,7 @@ export const runtime = {
   /** Timestamps (performance.now) for crosshair feedback. */
   fireAt: -1,
   hitAt: -1,
+  headshotAt: -1,
   /** Timestamp the player last took damage (for the screen flash). */
   damageAt: -1,
   /** World position of the player's right hand (published by PlayerRig each

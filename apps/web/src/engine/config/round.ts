@@ -9,6 +9,19 @@
 export const SESSION_SECONDS = 150;
 
 /**
+ * The player's rifle. Body hit = one "hit" (enemies have 2–3 health); a HEADSHOT
+ * counts double, and damage falls off with range so closing the distance matters.
+ */
+export const GUN = {
+  damage: 1, // body hit at close range
+  headshotMult: 2, // a head hit counts double — rewards aim
+  range: 70, // max hitscan reach (metres)
+  falloffStart: 16, // full damage within this range
+  falloffEnd: 46, // ...tapering to falloffMin by here
+  falloffMin: 0.5, // fraction of damage at/beyond falloffEnd
+} as const;
+
+/**
  * Thieves race the real treasure along fixed paths (~59–63 m each). A thief
  * spawns the moment its start time hits, so arrivals land at roughly
  * start + pathLength / speed. With starts of 5/10/15 at 2.2 m/s the three

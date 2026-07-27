@@ -483,6 +483,7 @@ export function PlayerController() {
       const shot = fireHitscan(camera);
       runtime.fireAt = performance.now();
       if (shot.hit) runtime.hitAt = performance.now();
+      if (shot.headshot) runtime.headshotAt = performance.now();
       // Kick the view up + a touch sideways so each shot is FELT (recovers above).
       recoilPitch.current += FEEL.recoilKickPitch;
       recoilYaw.current += (Math.random() - 0.5) * 2 * FEEL.recoilKickYaw;

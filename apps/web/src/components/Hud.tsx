@@ -207,10 +207,11 @@ export function Hud() {
       {
         const firing = now - runtime.fireAt < 90;
         const hitting = now - runtime.hitAt < 160;
+        const headshotting = now - runtime.headshotAt < 220;
         const fireAge = (now - runtime.fireAt) / 1000;
         const firePulse = fireAge >= 0 && fireAge < 0.12 ? (1 - fireAge / 0.12) * 6 : 0;
         const gap = 4 + (runtime.running ? 5 : 0) + firePulse; // px from centre to each tick
-        const col = hitting ? "#ff5a5a" : "#ffffff";
+        const col = headshotting ? "#ffd24a" : hitting ? "#ff5a5a" : "#ffffff"; // gold on a headshot
         if (crossTop.current) {
           crossTop.current.style.transform = `translate(-50%, calc(-100% - ${gap}px))`;
           crossTop.current.style.background = col;
