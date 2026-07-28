@@ -40,6 +40,9 @@ export const runtime = {
   hintSilenced: HINTS.map(() => false),
   /** Per-hint: true once a thief has made off with that (real) treasure. */
   hintStolen: HINTS.map(() => false),
+  /** Per-hint: true once the player has claimed that (real) treasure (now carrying
+   *  it — the round continues until it's banked at the vault). */
+  hintClaimed: HINTS.map(() => false),
   /** Per-hint: true once a bomb blast has cracked that (real) treasure (§13.5). */
   hintCracked: HINTS.map(() => false),
   /** Timestamps for HUD toasts: a theft / a crack just happened. */

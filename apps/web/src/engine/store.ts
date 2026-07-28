@@ -54,18 +54,19 @@ export const useGame = create<GameState>((set, get) => ({
   claimTreasure: (hintIndex) => {
     if (get().roundState !== "playing") return;
     const hint = HINTS[hintIndex];
-    if (!hint?.real || runtime.hintStolen[hintIndex]) return;
+    if (!hint?.real || runtime.hintStolen[hintIndex] || runtime.hintClaimed[hintIndex]) return;
     const rarity = hint.rarity ?? "common";
     const cracked = runtime.hintCracked[hintIndex];
     // A cracked treasure pays one tier down (§13.5).
     const value = cracked ? (rarity === "rare" ? LOOT.common : LOOT.scrap) : LOOT[rarity];
+    // Claiming does NOT end the round: you pick the treasure UP (carry it) and must
+    // get it to the bank vault to SECURE the win. The extraction is the tension.
+    runtime.hintClaimed[hintIndex] = true;
     set((s) => ({
       treasureClaimed: true,
       claimedRarity: rarity,
       treasureCracked: cracked,
       villeCarrying: s.villeCarrying + value,
-      roundState: "won",
-      roundReason: "claimed",
     }));
   },
 
@@ -74,7 +75,18 @@ export const useGame = create<GameState>((set, get) => ({
 
   villeCarrying: 0,
   villeBanked: 0,
-  depositLoot: () => set((s) => ({ villeBanked: s.villeBanked + s.villeCarrying, villeCarrying: 0 })),
+  depositLoot: () =>
+    set((s) => {
+      if (s.villeCarrying <= 0) return s;
+      // Banking a CLAIMED treasure secures it → wins the round. Banking loot carried
+      // over from a prior run (nothing claimed this run) just deposits it.
+      const secured = s.treasureClaimed && s.roundState === "playing";
+      return {
+        villeBanked: s.villeBanked + s.villeCarrying,
+        villeCarrying: 0,
+        ...(secured ? { roundState: "won" as const, roundReason: "claimed" as const } : {}),
+      };
+    }),
 
   playerHealth: MAX_PLAYER_HEALTH,
   maxPlayerHealth: MAX_PLAYER_HEALTH,
@@ -106,6 +118,7 @@ export const useGame = create<GameState>((set, get) => ({
     runtime.roundStartAt = performance.now();
     runtime.hintSilenced.fill(false);
     runtime.hintStolen.fill(false);
+    runtime.hintClaimed.fill(false);
     runtime.hintCracked.fill(false);
     runtime.treasureStolenAt = -1;
     runtime.treasureCrackedAt = -1;

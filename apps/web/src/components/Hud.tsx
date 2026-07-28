@@ -73,7 +73,6 @@ export function Hud() {
     const tick = () => {
       const now = performance.now();
       const revealed = now < runtime.revealRealUntil;
-      const isClaimed = useGame.getState().treasureClaimed;
 
       // One radar blip per hint, placed AROUND the compass ring at its bearing
       // (top = ahead). Its position around the ring shows direction; color shows
@@ -84,7 +83,7 @@ export function Hud() {
         const el = arrows.current[i];
         if (!el) continue;
         const h = HINTS[i];
-        if ((h.real && (isClaimed || runtime.hintStolen[i])) || (!h.real && runtime.hintSilenced[i])) {
+        if ((h.real && (runtime.hintClaimed[i] || runtime.hintStolen[i])) || (!h.real && runtime.hintSilenced[i])) {
           el.style.opacity = "0";
           continue;
         }
@@ -97,8 +96,9 @@ export function Hud() {
         el.style.opacity = "1";
       }
 
-      // A red blip per live thief on the compass ring.
-      const live = isClaimed ? [] : Array.from(thieves);
+      // A red blip per live thief on the compass ring (they keep racing for any
+      // treasure you haven't taken yet).
+      const live = Array.from(thieves);
       for (let i = 0; i < MAX_THIEVES; i++) {
         const el = thiefBlips.current[i];
         if (!el) continue;
@@ -154,14 +154,16 @@ export function Hud() {
         }
       }
 
-      // Proximity prompt: real → claim, fake → dud.
+      // Proximity prompt: real+unclaimed → claim (then carry to the bank); decoy → dud.
       if (promptEl.current) {
-        if (!isClaimed && runtime.nearHintIsReal) {
-          promptEl.current.innerHTML = "Treasure — press <b>E</b> to claim";
+        const idx = runtime.nearHintIndex;
+        const nearRealUnclaimed = runtime.nearHintIsReal && idx >= 0 && !runtime.hintClaimed[idx];
+        if (nearRealUnclaimed) {
+          promptEl.current.innerHTML = "Treasure — press <b>E</b> to grab · then bank it";
           promptEl.current.style.color = "#ffdf8f";
           promptEl.current.style.borderColor = "rgba(242,193,78,0.6)";
           promptEl.current.style.opacity = "1";
-        } else if (runtime.nearHintIndex >= 0) {
+        } else if (idx >= 0 && !runtime.nearHintIsReal) {
           promptEl.current.innerHTML = "False lead — nothing here";
           promptEl.current.style.color = "rgba(232,238,242,0.7)";
           promptEl.current.style.borderColor = "rgba(232,238,242,0.3)";
@@ -210,7 +212,7 @@ export function Hud() {
       if (shelterEl.current) {
         const canBank = runtime.nearBank && useGame.getState().villeCarrying > 0;
         if (canBank) {
-          shelterEl.current.innerHTML = "at the vault — press <b>E</b> to deposit your loot";
+          shelterEl.current.innerHTML = "at the vault — press <b>E</b> to bank it & grow your fox";
           shelterEl.current.style.opacity = "1";
         } else if (runtime.resting) {
           shelterEl.current.innerHTML = "resting — world paused · health recovering · <b>X</b> to stand";
@@ -329,9 +331,9 @@ export function Hud() {
             {roundState === "won"
               ? treasureCracked
                 ? claimedRarity === "rare"
-                  ? "Treasure claimed — cracked (rare → common)"
-                  : "Treasure claimed — cracked (common → scrap)"
-                : `Treasure claimed! · ${(claimedRarity ?? "common").toUpperCase()}`
+                  ? "Treasure secured — cracked (rare → common)"
+                  : "Treasure secured — cracked (common → scrap)"
+                : `Treasure secured! · ${(claimedRarity ?? "common").toUpperCase()}`
               : roundReason === "thief"
                 ? "Thieves took every treasure"
                 : "Time's up"}

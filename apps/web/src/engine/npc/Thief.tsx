@@ -111,7 +111,7 @@ export function Thief({
           // Reached its treasure: it's stolen and the thief melts away. The
           // round is lost only when no real treasure is left to claim. (If a
           // faster thief already took this one, it leaves empty-handed.)
-          if (!runtime.hintStolen[targetHint]) {
+          if (!runtime.hintStolen[targetHint] && !runtime.hintClaimed[targetHint]) {
             runtime.hintStolen[targetHint] = true;
             runtime.treasureStolenAt = performance.now();
           }

@@ -82,7 +82,7 @@ export function PlayerController() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code === "KeyE") {
-        if (runtime.nearHintIsReal && !useGame.getState().treasureClaimed) {
+        if (runtime.nearHintIsReal && runtime.nearHintIndex >= 0 && !runtime.hintClaimed[runtime.nearHintIndex]) {
           useGame.getState().claimTreasure(runtime.nearHintIndex);
         } else if (runtime.nearBank && useGame.getState().villeCarrying > 0) {
           useGame.getState().depositLoot();

@@ -8,7 +8,6 @@ import { BUILDINGS, ENTERABLES, VILLAGE, wallSegments, doorOpening, WALL_T, type
 import { HINTS } from "./hints";
 import { THEME } from "./theme";
 import { Buildings3D, BuildingModel, chooseModel } from "./Buildings3D";
-import { useGame } from "@/engine/store";
 import { runtime } from "@/engine/runtime";
 
 const HALF = VILLAGE.half;
@@ -322,14 +321,14 @@ function HintBeacon({ index }: { index: number }) {
   const pad = useRef<THREE.MeshStandardMaterial>(null);
   const pillar = useRef<THREE.MeshStandardMaterial>(null);
   const gem = useRef<THREE.Group>(null);
-  const claimed = useGame((s) => s.treasureClaimed);
 
   useFrame((_, dt) => {
-    // A decoy vanishes once its distractor is silenced; a real treasure
-    // vanishes once a thief has made off with it.
+    // A decoy vanishes once its distractor is silenced; a real treasure vanishes
+    // once a thief steals it OR the player has claimed (picked up) it.
     if (grp.current) {
       grp.current.visible =
-        !(!hint.real && runtime.hintSilenced[index]) && !(hint.real && runtime.hintStolen[index]);
+        !(!hint.real && runtime.hintSilenced[index]) &&
+        !(hint.real && (runtime.hintStolen[index] || runtime.hintClaimed[index]));
     }
     const revealed = performance.now() < runtime.revealRealUntil;
     const c = revealed ? (hint.real ? HINT_REAL : HINT_FAKE) : HINT_DEFAULT;
@@ -343,13 +342,11 @@ function HintBeacon({ index }: { index: number }) {
     }
     if (gem.current) {
       const atThisReal = runtime.nearHintIsReal && runtime.nearHintIndex === index;
-      gem.current.visible = hint.real && !claimed && (atThisReal || revealed);
+      gem.current.visible = hint.real && !runtime.hintClaimed[index] && (atThisReal || revealed);
       gem.current.rotation.y += dt * 1.2;
       gem.current.position.y = 1.6 + Math.sin(performance.now() / 600) * 0.15;
     }
   });
-
-  if (hint.real && claimed) return null; // the real treasure is gone once claimed
 
   return (
     <group ref={grp} position={[hint.pos.x, 0, hint.pos.z]}>
