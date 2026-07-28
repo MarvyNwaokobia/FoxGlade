@@ -25,7 +25,7 @@ All **CC-BY 4.0** (attribution required), via Sketchfab:
 ## Textures & HDRI (CC0 — no attribution required, credited anyway)
 - Poly Haven (https://polyhaven.com), all **CC0**:
   - HDRI: `belfast_sunset_puresky`
-  - Textures: `cobblestone_05`, `medieval_wall_01`, `thatch_roof_angled`, `brown_planks_05`, `aerial_grass_rock`
+  - Textures: `cobblestone_05`, `medieval_wall_01`, `thatch_roof_angled`, `brown_planks_05`, `aerial_grass_rock`, `dirt_floor`
 
 ## Interior prop models (CC0 — Poly Haven)
 - `treasure_chest`, `WoodenTable_01`, `WoodenChair_01`, `barrel_03`,
