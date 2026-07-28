@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { touch } from "@/engine/input/touch";
 import { useGame } from "@/engine/store";
+import { runtime } from "@/engine/runtime";
 
 // Synthesize a key event so the PlayerController's existing keydown/keyup
 // handlers drive discrete actions (crouch, sniff, claim, bomb, rest, restart).
@@ -24,6 +25,7 @@ export function MobileControls() {
   const isDead = useGame((s) => s.isDead);
   const roundState = useGame((s) => s.roundState);
 
+  const eBtn = useRef<HTMLButtonElement>(null); // context label: GRAB / BANK / CLAIM
   const knob = useRef<HTMLDivElement>(null);
   const joyId = useRef<number | null>(null);
   const joyCenter = useRef({ x: 0, y: 0 });
@@ -37,6 +39,27 @@ export function MobileControls() {
       touch.moveX = touch.moveY = touch.lookDX = touch.lookDY = 0;
       touch.run = touch.fire = touch.jump = false;
     };
+  }, []);
+
+  // The E button is contextual: GRAB a treasure, BANK it at the vault, else CLAIM.
+  // It lights up when an action is actually available so you can tell.
+  useEffect(() => {
+    let raf = 0;
+    const tick = () => {
+      const btn = eBtn.current;
+      if (btn) {
+        const idx = runtime.nearHintIndex;
+        const canGrab = runtime.nearHintIsReal && idx >= 0 && !runtime.hintClaimed[idx];
+        const canBank = runtime.nearBank && useGame.getState().villeCarrying > 0;
+        btn.textContent = canBank ? "BANK" : canGrab ? "GRAB" : "CLAIM";
+        const hot = canBank || canGrab;
+        btn.style.borderColor = hot ? "rgba(242,193,78,0.95)" : "rgba(255,255,255,0.35)";
+        btn.style.background = hot ? "rgba(242,193,78,0.42)" : "rgba(20,20,24,0.42)";
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
   }, []);
 
   // ── Left stick ──
@@ -162,7 +185,7 @@ export function MobileControls() {
           <button style={styles.btnSm} {...tap("KeyQ")}>
             SNIFF
           </button>
-          <button style={styles.btnSm} {...tap("KeyE")}>
+          <button ref={eBtn} style={styles.btnSm} {...tap("KeyE")}>
             CLAIM
           </button>
           <button style={styles.btnSm} {...bomb}>
