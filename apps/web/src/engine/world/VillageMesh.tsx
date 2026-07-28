@@ -15,7 +15,8 @@ const WALL_H = 3;
 
 /** A photographic (CC0 PBR) material shared across a surface type. */
 export interface VillageMaterials {
-  ground: THREE.MeshStandardMaterial;
+  ground: THREE.MeshStandardMaterial; // cobblestone — the walled town floor
+  grass: THREE.MeshStandardMaterial; // natural grass — the landscape outside the walls
   wall: THREE.MeshStandardMaterial;
   roof: THREE.MeshStandardMaterial;
   timber: THREE.MeshStandardMaterial;
@@ -40,6 +41,9 @@ export function useVillageMaterials(): VillageMaterials {
     timberMap: "/textures/brown_planks_05_diff.jpg",
     timberNor: "/textures/brown_planks_05_nor_gl.jpg",
     timberRough: "/textures/brown_planks_05_rough.jpg",
+    grassMap: "/textures/grass_aerial_diff.jpg",
+    grassNor: "/textures/grass_aerial_nor_gl.jpg",
+    grassRough: "/textures/grass_aerial_rough.jpg",
   });
 
   return useMemo(() => {
@@ -50,10 +54,18 @@ export function useVillageMaterials(): VillageMaterials {
       if (srgb) t.colorSpace = THREE.SRGBColorSpace;
       return t;
     };
+    // Cobblestone now floors only the walled town (~80 m), so fewer repeats keep
+    // the tile size the same as before.
     const ground = new THREE.MeshStandardMaterial({
-      map: cfg(tex.groundMap, 55, 55, true),
-      normalMap: cfg(tex.groundNor, 55, 55),
-      roughnessMap: cfg(tex.groundRough, 55, 55),
+      map: cfg(tex.groundMap, 16, 16, true),
+      normalMap: cfg(tex.groundNor, 16, 16),
+      roughnessMap: cfg(tex.groundRough, 16, 16),
+      roughness: 1,
+    });
+    const grass = new THREE.MeshStandardMaterial({
+      map: cfg(tex.grassMap, 42, 42, true),
+      normalMap: cfg(tex.grassNor, 42, 42),
+      roughnessMap: cfg(tex.grassRough, 42, 42),
       roughness: 1,
     });
     const wall = new THREE.MeshStandardMaterial({
@@ -74,7 +86,7 @@ export function useVillageMaterials(): VillageMaterials {
       roughnessMap: cfg(tex.timberRough, 1, 2),
       roughness: 1,
     });
-    return { ground, wall, roof, timber };
+    return { ground, grass, wall, roof, timber };
   }, [tex]);
 }
 
@@ -407,9 +419,14 @@ export function Village() {
   const mats = useVillageMaterials();
   return (
     <>
-      {/* Ground (extends well past the play area so its edge fades into fog) */}
-      <mesh material={mats.ground} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+      {/* Natural grass landscape stretching to the horizon (the town sits IN a
+          world now, instead of cobblestone paved to infinity). */}
+      <mesh material={mats.grass} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.03, 0]} receiveShadow>
         <planeGeometry args={[290, 290]} />
+      </mesh>
+      {/* Cobblestone floor of the walled town only (a touch past the ramparts) */}
+      <mesh material={mats.ground} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={[80, 80]} />
       </mesh>
 
       {/* Perimeter ramparts (stone) */}
