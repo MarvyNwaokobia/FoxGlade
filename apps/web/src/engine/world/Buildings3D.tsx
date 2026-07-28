@@ -21,6 +21,11 @@ Object.values(MODELS).forEach((u) => useGLTF.preload(u));
 
 export type ModelKey = keyof typeof MODELS;
 
+// Per-building colour tints so the one house model reads as many distinct houses
+// (weathering: neutral, whitewashed cream, cool grey stone, sandy timber, mossy).
+// Subtle multipliers — variation, not recolouring. Picked by the building's seed.
+const TINTS = [0xffffff, 0xe9ddc4, 0xc7cad2, 0xdcc9a6, 0xc2c8b2, 0xd6c4bd];
+
 /**
  * Uniform houses (Marvy's call): every regular house uses the one COMPLETE
  * `tavern` model. Retired: `house_timber` (open arches → read as unfinished/
@@ -57,10 +62,21 @@ export function BuildingModel({
     const center = box.getCenter(new THREE.Vector3());
     // Pre-centre horizontally and drop the base onto y=0 (so group scale keeps it grounded).
     o.position.set(-center.x, -box.min.y, -center.z);
+    const tint = new THREE.Color(TINTS[seed % TINTS.length]);
     o.traverse((n) => {
-      if ((n as THREE.Mesh).isMesh) {
-        n.castShadow = true;
-        n.receiveShadow = true;
+      const mesh = n as THREE.Mesh;
+      if (mesh.isMesh) {
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        // Own + tint the materials per instance so each building weathers uniquely
+        // (clone(true) shares materials by reference otherwise).
+        mesh.material = Array.isArray(mesh.material)
+          ? mesh.material.map((m) => m.clone())
+          : mesh.material.clone();
+        (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).forEach((m) => {
+          const sm = m as THREE.MeshStandardMaterial;
+          if (sm.color) sm.color.multiply(tint);
+        });
       }
     });
     // Align the model's longer footprint axis with the building's longer axis.
