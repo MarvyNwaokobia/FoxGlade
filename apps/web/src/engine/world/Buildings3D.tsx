@@ -16,6 +16,7 @@ import { runtime } from "@/engine/runtime";
 const MODELS = {
   tavern: "/models/buildings/tavern.glb",
   hall: "/models/buildings/stone_hall.glb",
+  stilt: "/models/buildings/stilt_house.glb",
 } as const;
 Object.values(MODELS).forEach((u) => useGLTF.preload(u));
 
@@ -27,13 +28,13 @@ export type ModelKey = keyof typeof MODELS;
 const TINTS = [0xffffff, 0xe9ddc4, 0xc7cad2, 0xdcc9a6, 0xc2c8b2, 0xd6c4bd];
 
 /**
- * Uniform houses (Marvy's call): every regular house uses the one COMPLETE
- * `tavern` model. Retired: `house_timber` (open arches → read as unfinished/
- * incomplete) and `stone_hall` as a house (a grand hall squished to house size
- * looked out of place). `stone_hall` (`hall`) is now the BANK's landmark only.
+ * House silhouette variety: most buildings use the `tavern` model, but ~1 in 3
+ * uses the `stilt_house` shape so the town isn't all one outline. Retired:
+ * `house_timber` (open arches → read as unfinished) and `stone_hall` as a house
+ * (looked out of place); `hall` stays the BANK landmark only.
  */
-export function chooseModel(_b: Building, _i: number): ModelKey {
-  return "tavern";
+export function chooseModel(_b: Building, i: number): ModelKey {
+  return i % 3 === 2 ? "stilt" : "tavern";
 }
 
 /**
