@@ -14,6 +14,7 @@ import { useGame } from "@/engine/store";
 import { HINTS } from "@/engine/world/hints";
 import { audio } from "@/engine/audio/audio";
 import { foxGrowthFor } from "@/engine/config/fox";
+import { softShadowTexture } from "@/engine/world/softShadow";
 
 /**
  * The fox companion — a real rigged, animated fox (CC-BY "Fox" by pxltiger, see
@@ -234,10 +235,11 @@ export function FoxCompanion() {
           <primitive object={model} />
         </group>
       </group>
-      {/* Contact shadow so the fox reads as grounded */}
-      <mesh ref={shadow} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
-        <circleGeometry args={[0.35, 20]} />
-        <meshBasicMaterial color="#000000" transparent opacity={0.3} depthWrite={false} />
+      {/* Soft contact shadow (raised above ground decals + renderOrder so it never
+          z-fights/shakes; soft radial texture so it's a pool, not a disc) */}
+      <mesh ref={shadow} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]} renderOrder={2}>
+        <planeGeometry args={[0.95, 0.95]} />
+        <meshBasicMaterial map={softShadowTexture()} transparent opacity={0.7} depthWrite={false} />
       </mesh>
     </>
   );

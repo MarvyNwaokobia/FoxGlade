@@ -18,6 +18,7 @@ import { foxGrowthFor } from "@/engine/config/fox";
 import { SESSION_SECONDS, REST, BOMB } from "@/engine/config/round";
 import { PlayerRig, type PlayerRigState } from "@/engine/character/PlayerRig";
 import { touch } from "@/engine/input/touch";
+import { softShadowTexture } from "@/engine/world/softShadow";
 
 const FIRE_INTERVAL = 0.16; // seconds between shots when holding fire
 
@@ -507,10 +508,12 @@ export function PlayerController() {
     <>
       {/* Animated character rig, driven by rigState each frame. */}
       <PlayerRig state={rigState.current} />
-      {/* Soft contact shadow so the player reads as grounded, never floating. */}
-      <mesh ref={shadow} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
-        <circleGeometry args={[FEEL.playerRadius * 1.5, 24]} />
-        <meshBasicMaterial color="#000000" transparent opacity={0.35} depthWrite={false} />
+      {/* Soft contact shadow so the player reads as grounded. Raised above the
+          ground decals (dirt patches/pads at ~0.02) + renderOrder so it never
+          z-fights/shakes, and a soft radial texture so it's a pool, not a disc. */}
+      <mesh ref={shadow} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.06, 0]} renderOrder={2}>
+        <planeGeometry args={[FEEL.playerRadius * 3.4, FEEL.playerRadius * 3.4]} />
+        <meshBasicMaterial map={softShadowTexture()} transparent opacity={0.8} depthWrite={false} />
       </mesh>
     </>
   );

@@ -257,68 +257,69 @@ function EnterableHouse({ b, eIndex, mats }: { b: Building; eIndex: number; mats
         <GableRoof b={b} mat={mats.roof} />
       </group>
 
-      {/* Enterable-door marker: a glowing torch-lit door FRAME (two posts + a
-          lintel) + a brighter threshold pad, so shelters read clearly from
-          across the map even though the exterior model is solid. */}
+      {/* Enterable doorway (real, not a glowing box): a timber frame + an ajar
+          plank door + warm light spilling out, plus a hung lantern so the entrance
+          is still findable from across the map. */}
       <group position={[op.cx, 0, op.cz]} rotation={[0, doorYaw, 0]}>
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, -0.5]}>
-          <planeGeometry args={[op.width + 0.5, 2.0]} />
-          <meshBasicMaterial color={DOOR_COLOR} transparent opacity={0.55} depthWrite={false} />
-        </mesh>
+        {/* Timber frame — posts + lintel (real wood) */}
         {[-1, 1].map((s) => (
-          <mesh key={s} position={[s * (op.width / 2 + 0.16), 1.3, -0.08]}>
-            <boxGeometry args={[0.13, 2.6, 0.13]} />
-            <meshStandardMaterial color={DOOR_COLOR} emissive={DOOR_COLOR} emissiveIntensity={1.4} toneMapped={false} />
+          <mesh key={s} material={mats.timber} position={[s * (op.width / 2 + 0.14), 1.35, -0.05]} castShadow receiveShadow>
+            <boxGeometry args={[0.22, 2.8, 0.32]} />
           </mesh>
         ))}
-        <mesh position={[0, 2.6, -0.08]}>
-          <boxGeometry args={[op.width + 0.45, 0.13, 0.13]} />
-          <meshStandardMaterial color={DOOR_COLOR} emissive={DOOR_COLOR} emissiveIntensity={1.4} toneMapped={false} />
+        <mesh material={mats.timber} position={[0, 2.78, -0.05]} castShadow receiveShadow>
+          <boxGeometry args={[op.width + 0.5, 0.26, 0.32]} />
         </mesh>
-        {/* A glowing pennant above the frame — a cheap 3D "flag" (no DOM/Html) that
-            catches the eye from across the map, marking this as enterable. */}
-        <mesh position={[0, b.h * 0.82 + 0.6, -0.08]}>
-          <boxGeometry args={[0.9, 0.5, 0.04]} />
-          <meshStandardMaterial color={DOOR_COLOR} emissive={DOOR_COLOR} emissiveIntensity={1.1} toneMapped={false} />
+        {/* A plank door standing ajar in the opening */}
+        <mesh material={mats.timber} position={[op.width * 0.18, 1.25, -0.18]} rotation={[0, 0.6, 0]} castShadow receiveShadow>
+          <boxGeometry args={[op.width * 0.82, 2.45, 0.09]} />
         </mesh>
+        {/* Warm light spilling from the doorway onto the threshold */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.07, -0.45]} renderOrder={1}>
+          <planeGeometry args={[op.width + 0.2, 1.7]} />
+          <meshBasicMaterial color="#ffcf8a" transparent opacity={0.3} depthWrite={false} />
+        </mesh>
+        {/* Hung lantern beside the door — a warm glow that reads real AND findable */}
+        <group position={[op.width / 2 + 0.34, 2.1, -0.02]}>
+          <mesh position={[0, 0.16, 0]}>
+            <boxGeometry args={[0.05, 0.22, 0.05]} />
+            <meshStandardMaterial color="#2e2519" roughness={1} />
+          </mesh>
+          <mesh>
+            <boxGeometry args={[0.17, 0.24, 0.17]} />
+            <meshStandardMaterial color={THEME.lantern} emissive={THEME.lantern} emissiveIntensity={1.4} toneMapped={false} />
+          </mesh>
+        </group>
       </group>
     </group>
   );
 }
 
-const DOOR_COLOR = "#ffb454"; // warm torch — distinct from cyan hints / gold treasure
-
 /**
- * Floating billboard label marking a zone. `occlude` hides it behind buildings,
- * and it fades out as the player approaches — labels are for finding a zone from
- * a distance, not for standing on top of it (no more MARKET plastered on you).
+ * A mounted wooden STOREFRONT sign identifying a building/zone (bank, market),
+ * hung at the building's front rather than floating high above it, so you can tell
+ * which building is which. `occlude` hides it behind other buildings; the zone
+ * colour is a bottom accent so bank/market stay distinguishable.
  */
 function ZoneLabel({ position, text, color }: { position: [number, number, number]; text: string; color: string }) {
-  const inner = useRef<HTMLDivElement>(null);
-  useFrame(() => {
-    if (!inner.current) return;
-    const dx = position[0] - runtime.playerPos.x;
-    const dz = position[2] - runtime.playerPos.z;
-    const dist = Math.hypot(dx, dz);
-    // Hidden within ~7m (you've arrived), full opacity beyond ~14m.
-    inner.current.style.opacity = String(THREE.MathUtils.clamp((dist - 7) / 7, 0, 1));
-  });
   return (
-    <Html position={position} center distanceFactor={34} occlude style={{ pointerEvents: "none" }}>
+    <Html position={position} center distanceFactor={26} occlude style={{ pointerEvents: "none" }}>
       <div
-        ref={inner}
         style={{
-          padding: "2px 9px",
-          borderRadius: 6,
-          background: "rgba(11,13,16,0.6)",
-          border: `1px solid ${color}`,
-          color,
-          fontSize: 15,
-          fontWeight: 600,
-          letterSpacing: 1.5,
+          padding: "6px 16px",
+          borderRadius: 4,
+          background: "linear-gradient(#6b4a2b, #513820)",
+          border: "2px solid #35251699",
+          borderBottom: `4px solid ${color}`,
+          boxShadow: "0 3px 7px rgba(0,0,0,0.55)",
+          color: "#ffe6bf",
+          fontSize: 16,
+          fontWeight: 700,
+          letterSpacing: 2.5,
           whiteSpace: "nowrap",
-          fontFamily: "ui-sans-serif, system-ui, sans-serif",
+          fontFamily: "Georgia, 'Times New Roman', ui-serif, serif",
           textTransform: "uppercase",
+          textShadow: "0 1px 1px rgba(0,0,0,0.6)",
         }}
       >
         {text}
@@ -565,7 +566,7 @@ export function Village() {
 
       {/* Market district */}
       <Zone position={[m.x, 0, m.z]} color="#4e93f2" radius={4} />
-      <ZoneLabel position={[m.x, 5.5, m.z]} text="Market" color="#8fc0ff" />
+      <ZoneLabel position={[m.x, 3.2, m.z]} text="Market" color="#8fc0ff" />
       <Stall position={[m.x - 3, 0, m.z - 1]} color="#c0553b" />
       <Stall position={[m.x + 3, 0, m.z + 1]} color="#3b7cc0" />
       <Stall position={[m.x, 0, m.z + 3]} color="#c0a13b" />
@@ -573,7 +574,7 @@ export function Village() {
       {/* Bank — the enterable house on the plaza. The real vault chest + shelves
           are furnished in <Interiors>; here we keep the glowing deposit pad and
           the label. Walk in (world pauses), stand on the pad, E deposits loot. */}
-      <ZoneLabel position={[-26, 7.5, -3]} text="Bank" color="#ffd873" />
+      <ZoneLabel position={[-26, 3.4, 0.8]} text="Bank" color="#ffd873" />
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[VILLAGE.bank.x, 0.04, VILLAGE.bank.z]}>
         <ringGeometry args={[1.1, 1.5, 32]} />
         <meshStandardMaterial color="#ffd873" emissive="#ffd873" emissiveIntensity={0.5} transparent opacity={0.6} />
