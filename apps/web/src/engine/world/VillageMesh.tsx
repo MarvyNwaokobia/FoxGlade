@@ -18,7 +18,8 @@ export interface VillageMaterials {
   ground: THREE.MeshStandardMaterial; // cobblestone — the walled town floor
   grass: THREE.MeshStandardMaterial; // natural grass — the landscape outside the walls
   dirt: THREE.MeshStandardMaterial; // packed dirt — worn patches over the cobblestone
-  wall: THREE.MeshStandardMaterial;
+  wall: THREE.MeshStandardMaterial; // building walls (small, dense tiling)
+  rampart: THREE.MeshStandardMaterial; // perimeter ramparts (same stone, tiled for 72 m)
   roof: THREE.MeshStandardMaterial;
   timber: THREE.MeshStandardMaterial;
 }
@@ -97,7 +98,20 @@ export function useVillageMaterials(): VillageMaterials {
       roughnessMap: cfg(tex.timberRough, 1, 2),
       roughness: 1,
     });
-    return { ground, grass, dirt, wall, roof, timber };
+    // Perimeter ramparts: same medieval stone, but the texture is cloned and tiled
+    // for the long 72 m walls (the building-wall repeat stretched it flat/smooth).
+    const rampMap = cfg(tex.wallMap.clone(), 24, 2, true);
+    const rampNor = cfg(tex.wallNor.clone(), 24, 2);
+    const rampRough = cfg(tex.wallRough.clone(), 24, 2);
+    rampMap.needsUpdate = rampNor.needsUpdate = rampRough.needsUpdate = true;
+    const rampart = new THREE.MeshStandardMaterial({
+      map: rampMap,
+      normalMap: rampNor,
+      roughnessMap: rampRough,
+      roughness: 1,
+    });
+
+    return { ground, grass, dirt, wall, rampart, roof, timber };
   }, [tex]);
 }
 
@@ -423,6 +437,66 @@ const DIRT_PATCHES: [number, number, number, number][] = [
   [11, 11, 3.2, 1.1],
 ];
 
+/** Battlement merlons (the tooth-like blocks) along all four rampart tops. */
+function battlements(mat: THREE.Material): React.ReactElement[] {
+  const H = VILLAGE.half;
+  const step = 3;
+  const out: React.ReactElement[] = [];
+  let k = 0;
+  for (let p = -H + 1.5; p <= H - 1.5; p += step) {
+    const spots: [number, number][] = [
+      [p, -H],
+      [p, H],
+      [-H, p],
+      [H, p],
+    ];
+    for (const [x, z] of spots) {
+      out.push(
+        <mesh key={k++} material={mat} position={[x, WALL_H + 0.35, z]} castShadow receiveShadow>
+          <boxGeometry args={[1, 0.7, 1]} />
+        </mesh>
+      );
+    }
+  }
+  return out;
+}
+
+/**
+ * The walled perimeter as proper castle ramparts: four tiled-stone walls, a run of
+ * battlement merlons along the tops, and a fortified tower at each corner. Purely
+ * visual — collision/LOS still come from the perimeter boxes in village.ts.
+ */
+function Ramparts({ mats }: { mats: VillageMaterials }) {
+  const H = VILLAGE.half;
+  const T = 0.9;
+  const corners: [number, number][] = [
+    [-H, -H],
+    [H, -H],
+    [-H, H],
+    [H, H],
+  ];
+  return (
+    <>
+      <Wall position={[0, WALL_H / 2, -H]} size={[H * 2, WALL_H, T]} mat={mats.rampart} />
+      <Wall position={[0, WALL_H / 2, H]} size={[H * 2, WALL_H, T]} mat={mats.rampart} />
+      <Wall position={[-H, WALL_H / 2, 0]} size={[T, WALL_H, H * 2]} mat={mats.rampart} />
+      <Wall position={[H, WALL_H / 2, 0]} size={[T, WALL_H, H * 2]} mat={mats.rampart} />
+      {battlements(mats.rampart)}
+      {corners.map(([x, z], i) => (
+        <group key={i} position={[x, 0, z]}>
+          <mesh material={mats.rampart} position={[0, 2.6, 0]} castShadow receiveShadow>
+            <boxGeometry args={[3.2, 5.2, 3.2]} />
+          </mesh>
+          <mesh position={[0, 6.15, 0]} castShadow>
+            <coneGeometry args={[2.7, 2, 6]} />
+            <meshStandardMaterial color="#463d33" roughness={1} />
+          </mesh>
+        </group>
+      ))}
+    </>
+  );
+}
+
 /** Flat worn dirt patches laid just over the cobblestone (visual only). */
 function GroundPatches({ mat }: { mat: THREE.Material }) {
   return (
@@ -475,11 +549,8 @@ export function Village() {
       {/* Worn dirt patches over the cobblestone (lived-in routes/plazas) */}
       <GroundPatches mat={mats.dirt} />
 
-      {/* Perimeter ramparts (stone) */}
-      <Wall position={[0, WALL_H / 2, -HALF]} size={[HALF * 2, WALL_H, 0.6]} mat={mats.wall} />
-      <Wall position={[0, WALL_H / 2, HALF]} size={[HALF * 2, WALL_H, 0.6]} mat={mats.wall} />
-      <Wall position={[-HALF, WALL_H / 2, 0]} size={[0.6, WALL_H, HALF * 2]} mat={mats.wall} />
-      <Wall position={[HALF, WALL_H / 2, 0]} size={[0.6, WALL_H, HALF * 2]} mat={mats.wall} />
+      {/* Perimeter castle ramparts (tiled stone + battlements + corner towers) */}
+      <Ramparts mats={mats} />
 
       {/* Solid buildings → realistic CC-BY models */}
       <Buildings3D
