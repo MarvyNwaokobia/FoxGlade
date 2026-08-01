@@ -576,13 +576,95 @@ function MarketStand({ position }: { position: [number, number, number] }) {
 }
 
 /**
+ * The open-air MARKETPLACE — a big walled square (from the building's wall
+ * segments, so the walls are the same impenetrable colliders movement uses),
+ * open to the sky, with a wide gate, stalls + goods inside, and the MARKET sign
+ * over the gate. Stepping through the gate puts you inside → sheltered → a
+ * no-combat safe zone (you can't shoot, the world holds).
+ */
+function MarketBuilding({ b, mats }: { b: Building; mats: VillageMaterials }) {
+  const segs = useMemo(() => wallSegments(b), [b]);
+  const door = doorOpening(b);
+  const cx = b.x;
+  const cz = b.z;
+  const gateW = b.door?.width ?? 4;
+  const alongX = !door || door.nx === 0; // gap runs along X (N/S gate) vs Z (E/W)
+  const post = (x: number, z: number, key: number) => (
+    <mesh key={key} position={[x, b.h / 2, z]} castShadow>
+      <boxGeometry args={[0.4, b.h + 0.5, 0.4]} />
+      <meshStandardMaterial color="#4a3826" roughness={0.95} />
+    </mesh>
+  );
+  return (
+    <group>
+      {/* Impenetrable stone walls (no roof — open to the sky) */}
+      {segs.map((s, i) => (
+        <mesh
+          key={i}
+          material={mats.wall}
+          position={[(s.minX + s.maxX) / 2, b.h / 2, (s.minZ + s.maxZ) / 2]}
+          castShadow
+          receiveShadow
+        >
+          <boxGeometry args={[s.maxX - s.minX, b.h, s.maxZ - s.minZ]} />
+        </mesh>
+      ))}
+      {/* Timber coping capping the wall tops (a tidy finished edge) */}
+      {segs.map((s, i) => (
+        <mesh key={`c${i}`} position={[(s.minX + s.maxX) / 2, b.h + 0.06, (s.minZ + s.maxZ) / 2]} castShadow>
+          <boxGeometry args={[s.maxX - s.minX + 0.15, 0.12, s.maxZ - s.minZ + 0.15]} />
+          <meshStandardMaterial color="#5a4632" roughness={0.9} />
+        </mesh>
+      ))}
+
+      {/* Gate: two posts flanking the opening + a lintel beam + the MARKET sign */}
+      {door && (
+        <group>
+          {alongX ? (
+            <>
+              {post(cx - gateW / 2, door.cz, 0)}
+              {post(cx + gateW / 2, door.cz, 1)}
+              <mesh position={[cx, b.h + 0.1, door.cz]} castShadow>
+                <boxGeometry args={[gateW + 0.6, 0.35, 0.5]} />
+                <meshStandardMaterial color="#4a3826" roughness={0.92} />
+              </mesh>
+            </>
+          ) : (
+            <>
+              {post(door.cx, cz - gateW / 2, 0)}
+              {post(door.cx, cz + gateW / 2, 1)}
+              <mesh position={[door.cx, b.h + 0.1, cz]} castShadow>
+                <boxGeometry args={[0.5, 0.35, gateW + 0.6]} />
+                <meshStandardMaterial color="#4a3826" roughness={0.92} />
+              </mesh>
+            </>
+          )}
+          <Signboard
+            position={[door.cx + door.nx * 0.35, b.h + 0.55, door.cz + door.nz * 0.35]}
+            rotation={Math.atan2(door.nx, door.nz)}
+            text="MARKET"
+            accent="#4e93f2"
+          />
+        </group>
+      )}
+
+      {/* Stalls + goods inside — a little bazaar. The main stand sits near the back
+          wall, on the shop trigger (VILLAGE.market), facing the gate. */}
+      <MarketStand position={[cx, 0, b.z - b.d / 2 + WALL_T + 1.7]} />
+      <Stall position={[cx - 4.6, 0, cz + 1.5]} color="#c0553b" />
+      <Stall position={[cx + 4.6, 0, cz + 0.5]} color="#c0a13b" />
+      <Stall position={[cx - 4.4, 0, cz - 2.2]} color="#3b7cc0" />
+    </group>
+  );
+}
+
+/**
  * Renders the walled village from the layout data: ground, perimeter walls,
  * buildings, zone beacons + labels, market stalls, and the treasure gem. The sky
  * + lighting come from a CC0 dusk HDRI (in VillageScene); surfaces wear real
  * CC0 PBR textures (stone / thatch / cobble / timber).
  */
 export function Village() {
-  const m = VILLAGE.market;
   const mats = useVillageMaterials();
   return (
     <>
@@ -605,19 +687,17 @@ export function Village() {
       <Buildings3D
         buildings={BUILDINGS.map((b, i) => ({ b, i })).filter(({ b }) => !b.door && b.h >= 2)}
       />
-      {/* Enterable houses → realistic exterior with swap-on-enter interior */}
-      {ENTERABLES.map((b, e) => (
-        <EnterableHouse key={`e${e}`} b={b} eIndex={e} mats={mats} />
-      ))}
+      {/* Enterable buildings: the open-air MARKET enclosure renders specially; the
+          rest are houses with a swap-on-enter interior. */}
+      {ENTERABLES.map((b, e) =>
+        b.kind === "market" ? (
+          <MarketBuilding key={`e${e}`} b={b} mats={mats} />
+        ) : (
+          <EnterableHouse key={`e${e}`} b={b} eIndex={e} mats={mats} />
+        )
+      )}
       {/* Crates → small timber boxes */}
       {BUILDINGS.map((b, i) => (!b.door && b.h < 2 ? <BuildingBlock key={`c${i}`} b={b} mats={mats} /> : null))}
-
-      {/* Market district — the merchant stand IS the marketplace (sign mounted on
-          it, sits exactly on the shop trigger at VILLAGE.market), flanked by two
-          small stalls so the plaza reads as a market square. */}
-      <MarketStand position={[m.x, 0, m.z]} />
-      <Stall position={[m.x - 4.5, 0, m.z + 2.5]} color="#c0553b" />
-      <Stall position={[m.x + 4.5, 0, m.z - 1]} color="#c0a13b" />
 
       {/* Bank — the enterable house on the plaza. The real vault chest + shelves
           are furnished in <Interiors>; here we keep the glowing deposit pad and

@@ -9,7 +9,7 @@ import { Blocker } from "./Blocker";
 const BLOCKER_SPAWNS: [number, number, number][] = [
   [3, 0, 10], // past the gate corridor (deep enough not to camp the spawn)
   [0, 0, -2], // central crossroads
-  [-20, 0, 3], // market plaza lurker
+  [-11, 0, 18], // guards the market-gate approach (outside the safe walls)
   [17.5, 0, -12], // shallow-treasure courtyard approach
   [-7, 0, -25], // deep corridor guarding the rare nook
 ];

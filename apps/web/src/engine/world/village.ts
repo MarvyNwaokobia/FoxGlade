@@ -21,6 +21,9 @@ export interface Building {
   h: number; // height
   /** A doored building is ENTERABLE: hollow, four walls with a gap (§14.2). */
   door?: Door;
+  /** "market" = the open-air marketplace enclosure (walls + gate, no roof, stalls
+   *  inside). Rendered specially and a no-combat safe zone like any interior. */
+  kind?: "market";
 }
 
 export interface Rect {
@@ -44,7 +47,7 @@ export const VILLAGE = {
   half: 36,
   spawn: new THREE.Vector3(0, 0, 30),
   spawnYaw: 0 as number, // 0 = facing north (-Z), into the village
-  market: new THREE.Vector3(-22, 0, 5),
+  market: new THREE.Vector3(-19, 0, 7), // shop trigger inside the market enclosure
   /** Vault pad inside the bank building (the enterable house on the plaza). */
   bank: new THREE.Vector3(-26, 0, -4.5),
 } as const;
@@ -64,10 +67,11 @@ export const BUILDINGS: Building[] = [
   { x: 9, z: 25, w: 12, d: 6, h: 4 },
   { x: 17, z: 15, w: 7, d: 7, h: 6 },
 
-  // West market district (plaza stays open around [-22, 5])
-  { x: -28, z: 14, w: 6, d: 10, h: 5 },
-  { x: -26, z: -3, w: 9, d: 7, h: 6, door: { side: "S" } },
-  { x: -14, z: 6, w: 7, d: 6, h: 5 },
+  // West district: the BANK (enterable) + the open-air MARKETPLACE enclosure.
+  // The market is a big walled square with a wide south gate — impenetrable walls,
+  // stalls inside, no roof — and a no-combat safe zone (interior → sheltered).
+  { x: -26, z: -3, w: 9, d: 7, h: 6, door: { side: "S" } }, // bank
+  { x: -19, z: 9, w: 15, d: 12, h: 3.4, door: { side: "S", width: 4 }, kind: "market" },
 
   // Central weave — tight alleys and a bent main route
   { x: -3, z: 12, w: 8, d: 5, h: 6 },

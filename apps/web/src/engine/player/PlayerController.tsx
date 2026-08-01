@@ -6,7 +6,7 @@ import * as THREE from "three";
 import { FEEL } from "@/engine/config/feel";
 import { runtime } from "@/engine/runtime";
 import { useKeyboard } from "@/engine/input/useKeyboard";
-import { VILLAGE, COLLIDERS, BOXES3D, interiorIndexAt } from "@/engine/world/village";
+import { VILLAGE, COLLIDERS, BOXES3D, interiorIndexAt, ENTERABLES } from "@/engine/world/village";
 import { resolveColliders, raycastBoxes } from "@/engine/world/collision";
 import { useGame } from "@/engine/store";
 import { fireHitscan, enemies } from "@/engine/combat/enemies";
@@ -204,8 +204,8 @@ export function PlayerController() {
     resting.current = false;
     // DEV-only: ?at=market drops you in front of the stall (headless view check).
     if (process.env.NODE_ENV !== "production" && new URLSearchParams(location.search).get("at") === "market") {
-      pos.current.set(VILLAGE.market.x, 0, VILLAGE.market.z + 6);
-      yaw.current = 0; // face north (-Z) toward the stand
+      pos.current.set(VILLAGE.market.x, 0, VILLAGE.market.z + 3); // inside, near the gate
+      yaw.current = 0; // face the stand at the back
     }
   }, [respawnNonce]);
 
@@ -410,8 +410,11 @@ export function PlayerController() {
     // to trigger, especially with touch movement.
     runtime.nearBank =
       Math.hypot(VILLAGE.bank.x - pos.current.x, VILLAGE.bank.z - pos.current.z) < 3.2;
-    // Market stall proximity (E / B opens the shop). Generous radius like the bank.
+    // Shop opens (E / B) anywhere INSIDE the market enclosure, or when walking up
+    // to the stall from just outside the gate.
+    const inMarket = runtime.shelterIndex >= 0 && ENTERABLES[runtime.shelterIndex]?.kind === "market";
     runtime.nearMarket =
+      inMarket ||
       Math.hypot(VILLAGE.market.x - pos.current.x, VILLAGE.market.z - pos.current.z) < 4.5;
 
     // Publish for fox + HUD.

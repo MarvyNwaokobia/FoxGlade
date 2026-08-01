@@ -131,9 +131,13 @@ export function Interiors() {
   const mats = useVillageMaterials();
   return (
     <>
-      {ENTERABLES.map((b, i) => (
-        <Interior key={i} b={b} r={INTERIORS[i]} floorMat={mats.timber} index={i} />
-      ))}
+      {ENTERABLES.map((b, i) =>
+        // The open-air market furnishes itself (stalls in VillageMesh) — no house
+        // interior (table/chairs/floor) for it.
+        b.kind === "market" ? null : (
+          <Interior key={i} b={b} r={INTERIORS[i]} floorMat={mats.timber} index={i} />
+        )
+      )}
     </>
   );
 }
