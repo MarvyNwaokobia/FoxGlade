@@ -9,7 +9,7 @@ import { HINTS } from "./hints";
 import { THEME } from "./theme";
 import { Buildings3D, BuildingModel, chooseModel, tintColor } from "./Buildings3D";
 import { runtime } from "@/engine/runtime";
-import { softShadowTexture } from "./softShadow";
+import { softShadowTexture, softCircleAlpha } from "./softShadow";
 
 const HALF = VILLAGE.half;
 const WALL_H = 3;
@@ -75,11 +75,16 @@ export function useVillageMaterials(): VillageMaterials {
       roughness: 1,
     });
     // Repeat ~1.6 across each patch's own UVs (patches are ~5–10 m → ~3–5 m tiles).
+    // The alpha mask fades each patch's rim into the cobblestone so they read as
+    // organic worn earth, not hard-edged "sandbox" circles.
     const dirt = new THREE.MeshStandardMaterial({
       map: cfg(tex.dirtMap, 1.6, 1.6, true),
       normalMap: cfg(tex.dirtNor, 1.6, 1.6),
       roughnessMap: cfg(tex.dirtRough, 1.6, 1.6),
       roughness: 1,
+      alphaMap: softCircleAlpha(),
+      transparent: true,
+      depthWrite: false,
     });
     const wall = new THREE.MeshStandardMaterial({
       map: cfg(tex.wallMap, 3, 2, true),

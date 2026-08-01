@@ -180,6 +180,9 @@ export function MobileControls() {
           <button style={styles.btn} {...tap("KeyC")}>
             CROUCH
           </button>
+          <button style={styles.btn} {...tap("KeyV")}>
+            VIEW
+          </button>
         </div>
         <div style={styles.row}>
           <button style={styles.btnSm} {...tap("KeyQ")}>
