@@ -25,7 +25,13 @@ export type ModelKey = keyof typeof MODELS;
 // Per-building colour tints so the one house model reads as many distinct houses
 // (weathering: neutral, whitewashed cream, cool grey stone, sandy timber, mossy).
 // Subtle multipliers — variation, not recolouring. Picked by the building's seed.
-const TINTS = [0xffffff, 0xe9ddc4, 0xc7cad2, 0xdcc9a6, 0xc2c8b2, 0xd6c4bd];
+export const TINTS = [0xffffff, 0xe9ddc4, 0xc7cad2, 0xdcc9a6, 0xc2c8b2, 0xd6c4bd];
+
+/** The weathering tint a building (by seed) is rendered with — so its doorway/trim
+ *  can be tinted to MATCH the building instead of clashing. */
+export function tintColor(seed: number): THREE.Color {
+  return new THREE.Color(TINTS[seed % TINTS.length]);
+}
 
 /**
  * House silhouette variety: most buildings use the `tavern` model, but ~1 in 3

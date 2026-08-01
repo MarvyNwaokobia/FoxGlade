@@ -7,7 +7,7 @@ import * as THREE from "three";
 import { BUILDINGS, ENTERABLES, VILLAGE, wallSegments, doorOpening, WALL_T, type Building } from "./village";
 import { HINTS } from "./hints";
 import { THEME } from "./theme";
-import { Buildings3D, BuildingModel, chooseModel } from "./Buildings3D";
+import { Buildings3D, BuildingModel, chooseModel, tintColor } from "./Buildings3D";
 import { runtime } from "@/engine/runtime";
 
 const HALF = VILLAGE.half;
@@ -236,6 +236,15 @@ function EnterableHouse({ b, eIndex, mats }: { b: Building; eIndex: number; mats
     VILLAGE.bank.z <= b.z + b.d / 2;
   const model = bank ? "hall" : chooseModel(b, eIndex);
 
+  // The doorway timber is tinted to MATCH this building's weathering (the same tint
+  // the model is rendered with), so the door belongs to the building rather than
+  // clashing with it.
+  const doorMat = useMemo(() => {
+    const m = (mats.timber as THREE.MeshStandardMaterial).clone();
+    m.color.multiply(tintColor(eIndex + 3));
+    return m;
+  }, [mats.timber, eIndex]);
+
   return (
     <group>
       {/* Realistic exterior (hidden while you're inside) */}
@@ -263,15 +272,15 @@ function EnterableHouse({ b, eIndex, mats }: { b: Building; eIndex: number; mats
       <group position={[op.cx, 0, op.cz]} rotation={[0, doorYaw, 0]}>
         {/* Timber frame — posts + lintel (real wood) */}
         {[-1, 1].map((s) => (
-          <mesh key={s} material={mats.timber} position={[s * (op.width / 2 + 0.14), 1.35, -0.05]} castShadow receiveShadow>
+          <mesh key={s} material={doorMat} position={[s * (op.width / 2 + 0.14), 1.35, -0.05]} castShadow receiveShadow>
             <boxGeometry args={[0.22, 2.8, 0.32]} />
           </mesh>
         ))}
-        <mesh material={mats.timber} position={[0, 2.78, -0.05]} castShadow receiveShadow>
+        <mesh material={doorMat} position={[0, 2.78, -0.05]} castShadow receiveShadow>
           <boxGeometry args={[op.width + 0.5, 0.26, 0.32]} />
         </mesh>
         {/* A plank door standing ajar in the opening */}
-        <mesh material={mats.timber} position={[op.width * 0.18, 1.25, -0.18]} rotation={[0, 0.6, 0]} castShadow receiveShadow>
+        <mesh material={doorMat} position={[op.width * 0.18, 1.25, -0.18]} rotation={[0, 0.6, 0]} castShadow receiveShadow>
           <boxGeometry args={[op.width * 0.82, 2.45, 0.09]} />
         </mesh>
         {/* Warm light spilling from the doorway onto the threshold */}
