@@ -509,6 +509,73 @@ function Stall({ position, color }: { position: [number, number, number]; color:
 }
 
 /**
+ * The MARKETPLACE stall — a proper merchant stand you walk up to (front faces
+ * south / +Z, the way you approach from spawn). A counter with goods, a striped
+ * canopy, a back shelf, and the MARKET sign mounted on the front so the whole
+ * thing reads at a glance as "this is the market" (the bank is a building, so the
+ * market needed a landmark of its own). Purely visual — the shop opens on E.
+ */
+function MarketStand({ position }: { position: [number, number, number] }) {
+  const wood = "#6b4f32";
+  const woodDark = "#4a3826";
+  const posts: [number, number][] = [
+    [-1.65, -0.7],
+    [1.65, -0.7],
+    [-1.65, 0.75],
+    [1.65, 0.75],
+  ];
+  const goods: [number, string][] = [
+    [-1.2, "#7a9a3b"],
+    [-0.4, "#b8632f"],
+    [0.4, "#8a5a3a"],
+    [1.2, "#9a7b4a"],
+  ];
+  return (
+    <group position={position}>
+      {/* Counter + overhanging top */}
+      <mesh position={[0, 0.45, 0.7]} castShadow receiveShadow>
+        <boxGeometry args={[3.4, 0.9, 0.8]} />
+        <meshStandardMaterial color={wood} roughness={0.92} />
+      </mesh>
+      <mesh position={[0, 0.93, 0.72]} castShadow>
+        <boxGeometry args={[3.7, 0.1, 1.05]} />
+        <meshStandardMaterial color={woodDark} roughness={0.85} />
+      </mesh>
+      {/* Corner posts */}
+      {posts.map(([x, z], i) => (
+        <mesh key={i} position={[x, 1.2, z]} castShadow>
+          <boxGeometry args={[0.12, 2.4, 0.12]} />
+          <meshStandardMaterial color={woodDark} roughness={0.9} />
+        </mesh>
+      ))}
+      {/* Back shelf wall */}
+      <mesh position={[0, 1.0, -0.72]} castShadow receiveShadow>
+        <boxGeometry args={[3.4, 1.9, 0.14]} />
+        <meshStandardMaterial color={wood} roughness={0.9} />
+      </mesh>
+      {/* Striped canvas canopy, sloped toward the front */}
+      <group position={[0, 2.5, 0.02]} rotation={[-0.32, 0, 0]}>
+        {Array.from({ length: 6 }).map((_, i) => (
+          <mesh key={i} position={[-1.5 + i * 0.6, 0, 0]} castShadow>
+            <boxGeometry args={[0.6, 0.08, 2.0]} />
+            <meshStandardMaterial color={i % 2 ? "#b8432f" : "#e8dcc6"} roughness={0.7} />
+          </mesh>
+        ))}
+      </group>
+      {/* Goods laid out on the counter */}
+      {goods.map(([x, c], i) => (
+        <mesh key={i} position={[x, 1.06, 0.7]} castShadow>
+          <boxGeometry args={[0.5, 0.3, 0.5]} />
+          <meshStandardMaterial color={c} roughness={0.85} />
+        </mesh>
+      ))}
+      {/* MARKET sign on the front, facing the approach */}
+      <Signboard position={[0, 2.06, 0.98]} rotation={0} text="MARKET" accent="#4e93f2" />
+    </group>
+  );
+}
+
+/**
  * Renders the walled village from the layout data: ground, perimeter walls,
  * buildings, zone beacons + labels, market stalls, and the treasure gem. The sky
  * + lighting come from a CC0 dusk HDRI (in VillageScene); surfaces wear real
@@ -545,12 +612,12 @@ export function Village() {
       {/* Crates → small timber boxes */}
       {BUILDINGS.map((b, i) => (!b.door && b.h < 2 ? <BuildingBlock key={`c${i}`} b={b} mats={mats} /> : null))}
 
-      {/* Market district — identified by the stalls + the storefront sign (the old
-          glowing blue beacon-pillar was gray-box and redundant now). */}
-      <Signboard position={[-15, 2.7, 7]} rotation={Math.PI / 2 + 0.35} text="MARKET" accent="#4e93f2" post />
-      <Stall position={[m.x - 3, 0, m.z - 1]} color="#c0553b" />
-      <Stall position={[m.x + 3, 0, m.z + 1]} color="#3b7cc0" />
-      <Stall position={[m.x, 0, m.z + 3]} color="#c0a13b" />
+      {/* Market district — the merchant stand IS the marketplace (sign mounted on
+          it, sits exactly on the shop trigger at VILLAGE.market), flanked by two
+          small stalls so the plaza reads as a market square. */}
+      <MarketStand position={[m.x, 0, m.z]} />
+      <Stall position={[m.x - 4.5, 0, m.z + 2.5]} color="#c0553b" />
+      <Stall position={[m.x + 4.5, 0, m.z - 1]} color="#c0a13b" />
 
       {/* Bank — the enterable house on the plaza. The real vault chest + shelves
           are furnished in <Interiors>; here we keep the glowing deposit pad and

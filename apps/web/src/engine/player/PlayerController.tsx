@@ -202,6 +202,11 @@ export function PlayerController() {
     vel.current.set(0, 0, 0);
     crouching.current = false;
     resting.current = false;
+    // DEV-only: ?at=market drops you in front of the stall (headless view check).
+    if (process.env.NODE_ENV !== "production" && new URLSearchParams(location.search).get("at") === "market") {
+      pos.current.set(VILLAGE.market.x, 0, VILLAGE.market.z + 6);
+      yaw.current = 0; // face north (-Z) toward the stand
+    }
   }, [respawnNonce]);
 
   // Mouse look via pointer lock; left-click fires once the mouse is captured.
