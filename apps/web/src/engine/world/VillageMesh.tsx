@@ -9,6 +9,7 @@ import { HINTS } from "./hints";
 import { THEME } from "./theme";
 import { Buildings3D, BuildingModel, chooseModel, tintColor } from "./Buildings3D";
 import { runtime } from "@/engine/runtime";
+import { softShadowTexture } from "./softShadow";
 
 const HALF = VILLAGE.half;
 const WALL_H = 3;
@@ -427,23 +428,35 @@ function Hints() {
   );
 }
 
-// Worn dirt patches over the cobblestone at high-traffic spots (gate, plaza,
-// crossroads, courtyards) — [x, z, radius, spin]. Overlapping ones read as organic
-// trodden earth rather than perfect discs, so the town looks lived-in.
+// Worn-earth PATHS + patches over the cobblestone — [x, z, radius, spin]. Chained
+// overlapping circles trace the trodden routes between the gate, plaza, crossroads
+// and courtyards (organic, not perfect discs), so the town reads as lived-in with
+// real paths rather than one uniform floor.
 const DIRT_PATCHES: [number, number, number, number][] = [
-  [0, 27, 4.2, 0.3], // gate approach
-  [1, 21, 3.4, 1.2],
-  [-20, 6, 5, 0.6], // market plaza
+  // North spine: the gate → the central crossroads
+  [0, 27, 4.2, 0.3],
+  [1, 21, 3.5, 1.2],
+  [0, 14, 3.4, 2.0],
+  [-2, 7, 3.4, 0.6],
+  [-4, 1, 3.6, 1.5], // crossroads
+  [-2, -4, 2.9, 2.6],
+  // West path → market plaza
+  [-9, 3, 3.2, 1.1],
+  [-15, 5, 3.4, 0.4],
+  [-20, 6, 4.6, 0.6], // plaza
   [-23, 10, 3.2, 2.1],
   [-17, 3, 3, 1.3],
-  [-6, 0, 4, 1.5], // central crossroads
-  [3, -6, 3.6, 0.9],
-  [-2, -4, 2.8, 2.6],
-  [22, -6, 4.2, 0.4], // east courtyard
-  [18, -12, 3, 1.9],
-  [-12, -18, 4, 1.8], // deep-north approach
+  // East path → courtyard
+  [4, -4, 3.2, 0.9],
+  [12, -5, 3.2, 1.9],
+  [22, -6, 4.2, 0.4], // courtyard
+  [18, -12, 3, 1.5],
+  // North-west path → deep-north nook
+  [-7, -9, 3.2, 2.0],
+  [-12, -18, 4, 1.8],
   [4, -25, 3.6, 2.4],
-  [-14, 14, 3, 0.7], // side streets
+  // Side streets
+  [-14, 14, 3, 0.7],
   [11, 11, 3.2, 1.1],
 ];
 
@@ -507,6 +520,25 @@ function Ramparts({ mats }: { mats: VillageMaterials }) {
   );
 }
 
+/**
+ * A soft contact-shadow / ambient-occlusion pool under each building — grounds it
+ * and, crucially, shows its FOOTPRINT (where the collision actually is), so you can
+ * tell where a building stops instead of walking into an invisible wall. Sun-angle
+ * independent, unlike the cast shadow.
+ */
+function BuildingShadows() {
+  return (
+    <>
+      {BUILDINGS.filter((b) => b.h >= 2).map((b, i) => (
+        <mesh key={i} rotation={[-Math.PI / 2, 0, 0]} position={[b.x, 0.035, b.z]} renderOrder={1}>
+          <planeGeometry args={[b.w + 0.7, b.d + 0.7]} />
+          <meshBasicMaterial map={softShadowTexture()} transparent opacity={0.45} depthWrite={false} />
+        </mesh>
+      ))}
+    </>
+  );
+}
+
 /** Flat worn dirt patches laid just over the cobblestone (visual only). */
 function GroundPatches({ mat }: { mat: THREE.Material }) {
   return (
@@ -558,6 +590,8 @@ export function Village() {
       </mesh>
       {/* Worn dirt patches over the cobblestone (lived-in routes/plazas) */}
       <GroundPatches mat={mats.dirt} />
+      {/* Soft contact shadows under buildings — grounds them + shows their footprint */}
+      <BuildingShadows />
 
       {/* Perimeter castle ramparts (tiled stone + battlements + corner towers) */}
       <Ramparts mats={mats} />
