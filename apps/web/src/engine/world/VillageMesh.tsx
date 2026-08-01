@@ -338,22 +338,6 @@ function ZoneLabel({ position, text, color }: { position: [number, number, numbe
   );
 }
 
-/** Glowing ground pad + tall light beacon marking a zone. */
-function Zone({ position, color, radius = 3 }: { position: [number, number, number]; color: string; radius?: number }) {
-  return (
-    <group position={position}>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
-        <circleGeometry args={[radius, 40]} />
-        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.6} transparent opacity={0.55} />
-      </mesh>
-      <mesh position={[0, 12, 0]}>
-        <cylinderGeometry args={[0.25, 0.25, 24, 12]} />
-        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.9} transparent opacity={0.4} />
-      </mesh>
-    </group>
-  );
-}
-
 const HINT_DEFAULT = "#8fd0e0"; // pale cyan — an unresolved "ping"
 const HINT_REAL = "#f2c14e"; // gold — revealed real
 const HINT_FAKE = "#7a4a4a"; // dim — revealed decoy
@@ -607,8 +591,8 @@ export function Village() {
       {/* Crates → small timber boxes */}
       {BUILDINGS.map((b, i) => (!b.door && b.h < 2 ? <BuildingBlock key={`c${i}`} b={b} mats={mats} /> : null))}
 
-      {/* Market district */}
-      <Zone position={[m.x, 0, m.z]} color="#4e93f2" radius={4} />
+      {/* Market district — identified by the stalls + the storefront sign (the old
+          glowing blue beacon-pillar was gray-box and redundant now). */}
       <ZoneLabel position={[m.x, 3.2, m.z]} text="Market" color="#8fc0ff" />
       <Stall position={[m.x - 3, 0, m.z - 1]} color="#c0553b" />
       <Stall position={[m.x + 3, 0, m.z + 1]} color="#3b7cc0" />

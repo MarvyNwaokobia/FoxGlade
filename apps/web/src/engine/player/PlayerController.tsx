@@ -272,7 +272,10 @@ export function PlayerController() {
     runtime.resting = resting.current;
     if (resting.current) {
       wish.set(0, 0, 0); // seated: no locomotion until you stand
-      useGame.getState().healPlayer(REST.regenPerSec * dt);
+      // Recover only up to the cap — the safe room is a breather, not a free full
+      // reset (kills the "duck inside → heal to 100 for free" exploit).
+      const g = useGame.getState();
+      if (g.playerHealth < g.maxPlayerHealth * REST.healCap) g.healPlayer(REST.regenPerSec * dt);
     }
 
     const run = k.run || touch.run;
@@ -369,9 +372,10 @@ export function PlayerController() {
       }
     }
 
-    // Bank vault proximity (deposit with E).
+    // Bank vault proximity (deposit with E). Generous radius so depositing is easy
+    // to trigger, especially with touch movement.
     runtime.nearBank =
-      Math.hypot(VILLAGE.bank.x - pos.current.x, VILLAGE.bank.z - pos.current.z) < 2.2;
+      Math.hypot(VILLAGE.bank.x - pos.current.x, VILLAGE.bank.z - pos.current.z) < 3.2;
 
     // Publish for fox + HUD.
     runtime.playerPos.copy(pos.current);

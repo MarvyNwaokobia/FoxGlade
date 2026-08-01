@@ -62,6 +62,9 @@ export const BOMB = {
  */
 export const REST = {
   regenPerSec: 7, // health recovered per second while sitting
+  /** Resting only recovers UP TO this fraction of max health — the safe room is a
+   *  breather, not a free full reset (you can't cheese damage away to 100%). */
+  healCap: 0.7,
 } as const;
 
 /** Placeholder loot values until VilleToken is live (per treasure rarity). */
