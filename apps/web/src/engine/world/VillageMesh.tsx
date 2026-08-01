@@ -9,7 +9,7 @@ import { HINTS } from "./hints";
 import { THEME } from "./theme";
 import { Buildings3D, BuildingModel, chooseModel, tintColor } from "./Buildings3D";
 import { runtime } from "@/engine/runtime";
-import { softShadowTexture, softCircleAlpha } from "./softShadow";
+import { softShadowTexture } from "./softShadow";
 
 const HALF = VILLAGE.half;
 const WALL_H = 3;
@@ -18,7 +18,6 @@ const WALL_H = 3;
 export interface VillageMaterials {
   ground: THREE.MeshStandardMaterial; // cobblestone — the walled town floor
   grass: THREE.MeshStandardMaterial; // natural grass — the landscape outside the walls
-  dirt: THREE.MeshStandardMaterial; // packed dirt — worn patches over the cobblestone
   wall: THREE.MeshStandardMaterial; // building walls (small, dense tiling)
   rampart: THREE.MeshStandardMaterial; // perimeter ramparts (same stone, tiled for 72 m)
   roof: THREE.MeshStandardMaterial;
@@ -47,9 +46,6 @@ export function useVillageMaterials(): VillageMaterials {
     grassMap: "/textures/grass_aerial_diff.jpg",
     grassNor: "/textures/grass_aerial_nor_gl.jpg",
     grassRough: "/textures/grass_aerial_rough.jpg",
-    dirtMap: "/textures/dirt_floor_diff.jpg",
-    dirtNor: "/textures/dirt_floor_nor_gl.jpg",
-    dirtRough: "/textures/dirt_floor_rough.jpg",
   });
 
   return useMemo(() => {
@@ -73,18 +69,6 @@ export function useVillageMaterials(): VillageMaterials {
       normalMap: cfg(tex.grassNor, 42, 42),
       roughnessMap: cfg(tex.grassRough, 42, 42),
       roughness: 1,
-    });
-    // Repeat ~1.6 across each patch's own UVs (patches are ~5–10 m → ~3–5 m tiles).
-    // The alpha mask fades each patch's rim into the cobblestone so they read as
-    // organic worn earth, not hard-edged "sandbox" circles.
-    const dirt = new THREE.MeshStandardMaterial({
-      map: cfg(tex.dirtMap, 1.6, 1.6, true),
-      normalMap: cfg(tex.dirtNor, 1.6, 1.6),
-      roughnessMap: cfg(tex.dirtRough, 1.6, 1.6),
-      roughness: 1,
-      alphaMap: softCircleAlpha(),
-      transparent: true,
-      depthWrite: false,
     });
     const wall = new THREE.MeshStandardMaterial({
       map: cfg(tex.wallMap, 3, 2, true),
@@ -117,7 +101,7 @@ export function useVillageMaterials(): VillageMaterials {
       roughness: 1,
     });
 
-    return { ground, grass, dirt, wall, rampart, roof, timber };
+    return { ground, grass, wall, rampart, roof, timber };
   }, [tex]);
 }
 
@@ -417,38 +401,6 @@ function Hints() {
   );
 }
 
-// Worn-earth PATHS + patches over the cobblestone — [x, z, radius, spin]. Chained
-// overlapping circles trace the trodden routes between the gate, plaza, crossroads
-// and courtyards (organic, not perfect discs), so the town reads as lived-in with
-// real paths rather than one uniform floor.
-const DIRT_PATCHES: [number, number, number, number][] = [
-  // North spine: the gate → the central crossroads
-  [0, 27, 4.2, 0.3],
-  [1, 21, 3.5, 1.2],
-  [0, 14, 3.4, 2.0],
-  [-2, 7, 3.4, 0.6],
-  [-4, 1, 3.6, 1.5], // crossroads
-  [-2, -4, 2.9, 2.6],
-  // West path → market plaza
-  [-9, 3, 3.2, 1.1],
-  [-15, 5, 3.4, 0.4],
-  [-20, 6, 4.6, 0.6], // plaza
-  [-23, 10, 3.2, 2.1],
-  [-17, 3, 3, 1.3],
-  // East path → courtyard
-  [4, -4, 3.2, 0.9],
-  [12, -5, 3.2, 1.9],
-  [22, -6, 4.2, 0.4], // courtyard
-  [18, -12, 3, 1.5],
-  // North-west path → deep-north nook
-  [-7, -9, 3.2, 2.0],
-  [-12, -18, 4, 1.8],
-  [4, -25, 3.6, 2.4],
-  // Side streets
-  [-14, 14, 3, 0.7],
-  [11, 11, 3.2, 1.1],
-];
-
 /** Battlement merlons (the tooth-like blocks) along all four rampart tops. */
 function battlements(mat: THREE.Material): React.ReactElement[] {
   const H = VILLAGE.half;
@@ -528,19 +480,6 @@ function BuildingShadows() {
   );
 }
 
-/** Flat worn dirt patches laid just over the cobblestone (visual only). */
-function GroundPatches({ mat }: { mat: THREE.Material }) {
-  return (
-    <>
-      {DIRT_PATCHES.map(([x, z, r, rot], i) => (
-        <mesh key={i} material={mat} rotation={[-Math.PI / 2, 0, rot]} position={[x, 0.02, z]} receiveShadow>
-          <circleGeometry args={[r, 28]} />
-        </mesh>
-      ))}
-    </>
-  );
-}
-
 /** A small market stall (base + coloured awning) to make the plaza read as a place. */
 function Stall({ position, color }: { position: [number, number, number]; color: string }) {
   return (
@@ -577,8 +516,6 @@ export function Village() {
       <mesh material={mats.ground} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[80, 80]} />
       </mesh>
-      {/* Worn dirt patches over the cobblestone (lived-in routes/plazas) */}
-      <GroundPatches mat={mats.dirt} />
       {/* Soft contact shadows under buildings — grounds them + shows their footprint */}
       <BuildingShadows />
 

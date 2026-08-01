@@ -16,7 +16,6 @@ import { runtime } from "@/engine/runtime";
 const MODELS = {
   tavern: "/models/buildings/tavern.glb",
   hall: "/models/buildings/stone_hall.glb",
-  stilt: "/models/buildings/stilt_house.glb",
 } as const;
 Object.values(MODELS).forEach((u) => useGLTF.preload(u));
 
@@ -34,13 +33,13 @@ export function tintColor(seed: number): THREE.Color {
 }
 
 /**
- * House silhouette variety: most buildings use the `tavern` model, but ~1 in 3
- * uses the `stilt_house` shape so the town isn't all one outline. Retired:
- * `house_timber` (open arches → read as unfinished) and `stone_hall` as a house
- * (looked out of place); `hall` stays the BANK landmark only.
+ * Every regular house uses the one complete `tavern` model (variety comes from the
+ * per-instance TINTS + rotation + footprint scale). Retired as unrealistic here:
+ * `house_timber` (open arches), `stone_hall` as a house, and `stilt_house` (raised
+ * on posts with stairs — out of place on dry ground). `hall` = the BANK landmark only.
  */
-export function chooseModel(_b: Building, i: number): ModelKey {
-  return i % 3 === 2 ? "stilt" : "tavern";
+export function chooseModel(_b: Building, _i: number): ModelKey {
+  return "tavern";
 }
 
 /**
