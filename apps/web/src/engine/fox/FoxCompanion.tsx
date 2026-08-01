@@ -144,7 +144,7 @@ export function FoxCompanion() {
 
     // Growth: the fox matures as you bank loot. Ease the render scale toward the
     // stage size, and celebrate a stage-up (once, on the edge) with a yip + toast.
-    const growth = foxGrowthFor(gs.villeBanked);
+    const growth = foxGrowthFor(gs.villeEarned);
     foxScale.current += (growth.scale - foxScale.current) * Math.min(1, 3 * dt);
     if (inner.current) inner.current.scale.setScalar(foxScale.current);
     if (lastStage.current < 0) {

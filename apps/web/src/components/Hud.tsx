@@ -50,6 +50,7 @@ export function Hud() {
   const claimedRarity = useGame((s) => s.claimedRarity);
   const villeCarrying = useGame((s) => s.villeCarrying);
   const villeBanked = useGame((s) => s.villeBanked);
+  const villeEarned = useGame((s) => s.villeEarned);
 
   // Mute toggle: reflect the persisted state, keep in sync, and bind M.
   useEffect(() => {
@@ -214,6 +215,9 @@ export function Hud() {
         if (canBank) {
           shelterEl.current.innerHTML = "at the vault — press <b>E</b> to bank it & grow your fox";
           shelterEl.current.style.opacity = "1";
+        } else if (runtime.nearMarket && !useGame.getState().shopOpen) {
+          shelterEl.current.innerHTML = "at the market — press <b>E</b> to shop";
+          shelterEl.current.style.opacity = "1";
         } else if (runtime.resting) {
           shelterEl.current.innerHTML = "resting — world paused · health recovering · <b>X</b> to stand";
           shelterEl.current.style.opacity = "1";
@@ -298,9 +302,9 @@ export function Hud() {
         <div style={styles.walletBanked}>🏦 {villeBanked} VILLE</div>
         {villeCarrying > 0 && <div style={styles.walletCarry}>◆ carrying {villeCarrying} — bank it</div>}
         <div style={styles.foxStage}>
-          🦊 {foxGrowthFor(villeBanked).name}
-          {foxNextThreshold(villeBanked) !== null && (
-            <span style={styles.foxNext}> · bank {foxNextThreshold(villeBanked)! - villeBanked} to grow</span>
+          🦊 {foxGrowthFor(villeEarned).name}
+          {foxNextThreshold(villeEarned) !== null && (
+            <span style={styles.foxNext}> · bank {foxNextThreshold(villeEarned)! - villeEarned} to grow</span>
           )}
         </div>
       </div>

@@ -16,11 +16,10 @@ import { audio } from "@/engine/audio/audio";
 import { HINTS, HINT_RADIUS, SNIFF_COOLDOWN, SNIFF_REVEAL } from "@/engine/world/hints";
 import { foxGrowthFor } from "@/engine/config/fox";
 import { SESSION_SECONDS, REST, BOMB } from "@/engine/config/round";
+import { WEAPON_STATS } from "@/engine/config/shop";
 import { PlayerRig, type PlayerRigState } from "@/engine/character/PlayerRig";
 import { touch } from "@/engine/input/touch";
 import { softShadowTexture } from "@/engine/world/softShadow";
-
-const FIRE_INTERVAL = 0.16; // seconds between shots when holding fire
 
 function lerpAngle(a: number, b: number, t: number) {
   let diff = b - a;
@@ -87,7 +86,13 @@ export function PlayerController() {
           useGame.getState().claimTreasure(runtime.nearHintIndex);
         } else if (runtime.nearBank && useGame.getState().villeCarrying > 0) {
           useGame.getState().depositLoot();
+        } else if (runtime.nearMarket) {
+          useGame.getState().openShop();
         }
+      }
+      // B also opens the market when you're at the stall (Shop closes on B/Esc).
+      if (e.code === "KeyB" && !e.repeat && runtime.nearMarket && !useGame.getState().shopOpen) {
+        useGame.getState().openShop();
       }
       if (e.code === "KeyR" && useGame.getState().isDead) {
         useGame.getState().respawn();
@@ -127,7 +132,7 @@ export function PlayerController() {
         if (now >= runtime.sniffReadyAt) {
           runtime.revealRealUntil = now + SNIFF_REVEAL * 1000;
           // A matured fox sniffs more often (DESIGN §2.5): cooldown scales with stage.
-          const mult = foxGrowthFor(useGame.getState().villeBanked).sniffCooldownMult;
+          const mult = foxGrowthFor(useGame.getState().villeEarned).sniffCooldownMult;
           runtime.sniffReadyAt = now + SNIFF_COOLDOWN * mult * 1000;
         }
       }
@@ -226,9 +231,12 @@ export function PlayerController() {
     const dt = Math.min(rawDt, 1 / 30); // clamp big frame gaps so physics stays sane
     const k = keys.current;
 
-    // Indoors the WORLD pauses (Marvy's call): hold the clock by pushing the
-    // round start forward — thieves/blockers/projectiles freeze on this flag too.
-    if (useGame.getState().roundState === "playing" && runtime.sheltered) {
+    // The WORLD pauses indoors OR while the market overlay is open (Marvy's call):
+    // NPCs/projectiles/bombs freeze on runtime.paused, and the round clock holds by
+    // pushing its start forward.
+    const shopOpen = useGame.getState().shopOpen;
+    runtime.paused = runtime.sheltered || shopOpen;
+    if (useGame.getState().roundState === "playing" && runtime.paused) {
       runtime.roundStartAt += dt * 1000;
     }
     // Round timer: end the round when it runs out; freeze play when it's over.
@@ -238,7 +246,7 @@ export function PlayerController() {
     ) {
       useGame.getState().endRound("timeout");
     }
-    const frozen = useGame.getState().isDead || useGame.getState().roundState !== "playing";
+    const frozen = useGame.getState().isDead || useGame.getState().roundState !== "playing" || shopOpen;
 
     // Mobile look: apply the accumulated touch-drag to yaw/pitch (already in
     // radians), then consume it. No pointer lock on touch, so this replaces it.
@@ -376,6 +384,9 @@ export function PlayerController() {
     // to trigger, especially with touch movement.
     runtime.nearBank =
       Math.hypot(VILLAGE.bank.x - pos.current.x, VILLAGE.bank.z - pos.current.z) < 3.2;
+    // Market stall proximity (E / B opens the shop). Generous radius like the bank.
+    runtime.nearMarket =
+      Math.hypot(VILLAGE.market.x - pos.current.x, VILLAGE.market.z - pos.current.z) < 4.5;
 
     // Publish for fox + HUD.
     runtime.playerPos.copy(pos.current);
@@ -486,17 +497,23 @@ export function PlayerController() {
       (document.pointerLockElement || touch.enabled) &&
       !frozen &&
       !resting.current &&
-      !runtime.sheltered &&
+      !runtime.paused &&
       fireCd.current <= 0
     ) {
-      fireCd.current = FIRE_INTERVAL;
-      const shot = fireHitscan(camera);
+      // Equipped weapon (bought in the market) drives cadence + damage; the
+      // foregrip attachment speeds any gun up.
+      const gs = useGame.getState();
+      const w = WEAPON_STATS[gs.equippedWeapon];
+      fireCd.current = w.fireInterval * (gs.owned.includes("a_grip") ? 0.8 : 1);
+      const shot = fireHitscan(camera, w.damage);
       runtime.fireAt = performance.now();
       if (shot.hit) runtime.hitAt = performance.now();
       if (shot.headshot) runtime.headshotAt = performance.now();
       // Kick the view up + a touch sideways so each shot is FELT (recovers above).
-      recoilPitch.current += FEEL.recoilKickPitch;
-      recoilYaw.current += (Math.random() - 0.5) * 2 * FEEL.recoilKickYaw;
+      // The Reflex Sight attachment steadies the aim (less kick).
+      const kick = gs.owned.includes("a_sight") ? 0.6 : 1;
+      recoilPitch.current += FEEL.recoilKickPitch * kick;
+      recoilYaw.current += (Math.random() - 0.5) * 2 * FEEL.recoilKickYaw * kick;
       // Cosmetic tracer + muzzle flash, launched from a shouldered-rifle muzzle
       // offset (not the camera) so the streak reads as leaving the gun.
       const muzzle = head

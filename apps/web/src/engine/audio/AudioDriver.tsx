@@ -38,7 +38,7 @@ export function AudioDriver() {
       if (s.treasureClaimed && !prev.treasureClaimed) {
         audio.play(s.treasureCracked ? "claimCracked" : "claim");
       }
-      if (s.villeBanked > prev.villeBanked) audio.play("deposit");
+      if (s.villeEarned > prev.villeEarned) audio.play("deposit");
       // (the bomb-throw whoosh now plays at the hand-release point, fired from
       // PlayerController in sync with the throw animation — not on the count drop)
       if (s.isDead && !prev.isDead) audio.play("death");

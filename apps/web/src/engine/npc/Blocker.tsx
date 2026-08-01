@@ -75,7 +75,7 @@ export function Blocker({ position }: { position: [number, number, number] }) {
   // Engage: pursue toward a fighting range, strafe, and fire when LOS is clear.
   useFrame((_, rawDt) => {
     if (dead || useGame.getState().roundState !== "playing") return;
-    if (runtime.sheltered) return; // player indoors: the world is paused
+    if (runtime.paused) return; // player indoors or shopping: the world is paused
     const dt = Math.min(rawDt, 1 / 30);
     cooldown.current -= dt;
     strafeTimer.current -= dt;

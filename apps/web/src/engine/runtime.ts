@@ -24,6 +24,11 @@ export const runtime = {
   resting: false,
   /** True while standing at the bank's vault pad (E deposits carried loot). */
   nearBank: false,
+  /** True while standing at the market stall (E opens the shop). */
+  nearMarket: false,
+  /** True while the world is paused — indoors OR the shop overlay is open. NPCs,
+   *  projectiles, bombs and the round clock all freeze on this. */
+  paused: false,
   /** Index of the hint zone the player is standing in (-1 = none). */
   nearHintIndex: -1,
   /** Whether that hint is the real one. */

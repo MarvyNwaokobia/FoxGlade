@@ -51,8 +51,9 @@ export function MobileControls() {
         const idx = runtime.nearHintIndex;
         const canGrab = runtime.nearHintIsReal && idx >= 0 && !runtime.hintClaimed[idx];
         const canBank = runtime.nearBank && useGame.getState().villeCarrying > 0;
-        btn.textContent = canBank ? "BANK" : canGrab ? "GRAB" : "CLAIM";
-        const hot = canBank || canGrab;
+        const canShop = runtime.nearMarket;
+        btn.textContent = canBank ? "BANK" : canGrab ? "GRAB" : canShop ? "SHOP" : "CLAIM";
+        const hot = canBank || canGrab || canShop;
         btn.style.borderColor = hot ? "rgba(242,193,78,0.95)" : "rgba(255,255,255,0.35)";
         btn.style.background = hot ? "rgba(242,193,78,0.42)" : "rgba(20,20,24,0.42)";
       }

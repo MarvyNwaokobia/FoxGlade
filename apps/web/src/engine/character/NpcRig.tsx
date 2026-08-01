@@ -172,7 +172,7 @@ export const NpcRig = memo(function NpcRig({
     // Freeze with the rest of the world while the player is sheltered indoors
     // (the NPC's own AI has already stopped, so its pose must stop too — else it
     // moonwalks in place). The idempotent pitch-fix still runs so it stays upright.
-    const frozen = runtime.sheltered || useGame.getState().roundState !== "playing";
+    const frozen = runtime.paused || useGame.getState().roundState !== "playing";
     if (state.dead) {
       // Committed death one-shot (clamps + holds on the final frame).
       if (!deathPlayed.current) {

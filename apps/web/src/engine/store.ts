@@ -1,13 +1,31 @@
 import { create } from "zustand";
 import { runtime } from "@/engine/runtime";
-import { BOMB, LOOT } from "@/engine/config/round";
+import { LOOT } from "@/engine/config/round";
 import { HINTS, type Rarity } from "@/engine/world/hints";
+import {
+  SHOP_ITEMS,
+  DEFAULT_WEAPON,
+  BAG_CAP,
+  BOMB_CAP,
+  type WeaponId,
+} from "@/engine/config/shop";
 
 /**
  * Reactive game state (as opposed to per-frame `runtime` data). Kept small — only
  * things the React UI needs to re-render on.
  */
 const MAX_PLAYER_HEALTH = 100;
+
+/** Bombs you carry per run — 4 with the Bomb Satchel, else 2. */
+export function bombCapacity(owned: string[]): number {
+  return owned.includes("b_satchel") ? BOMB_CAP.upgraded : BOMB_CAP.base;
+}
+/** Max unbanked VILLE you can hold — rises with the bag you own. */
+export function carryCap(owned: string[]): number {
+  if (owned.includes("g_rucksack")) return BAG_CAP.g_rucksack;
+  if (owned.includes("g_satchel")) return BAG_CAP.g_satchel;
+  return BAG_CAP.none;
+}
 
 export type RoundState = "playing" | "won" | "lost";
 export type RoundReason = "claimed" | "timeout" | "thief" | null;
@@ -23,11 +41,23 @@ interface GameState {
   bombsLeft: number;
   throwBomb: () => void;
 
-  /** Loot on you (from claims, not yet banked) and safely in the vault.
-      Placeholder for VilleToken until the chain is wired. Survives restarts. */
+  /** Loot on you (from claims, not yet banked) and your spendable bank balance.
+      Placeholder for VilleToken until the chain is wired. Survives restarts.
+      `villeEarned` is the lifetime total banked — it only ever grows and drives the
+      fox — so spending in the market never shrinks your companion. */
   villeCarrying: number;
   villeBanked: number;
+  villeEarned: number;
   depositLoot: () => void;
+
+  /** Marketplace: items you own, the gun you have equipped, and the shop overlay. */
+  owned: string[];
+  equippedWeapon: WeaponId;
+  shopOpen: boolean;
+  openShop: () => void;
+  closeShop: () => void;
+  buyItem: (id: string) => void;
+  equipWeapon: (gunId: WeaponId) => void;
 
   playerHealth: number;
   maxPlayerHealth: number;
@@ -62,19 +92,22 @@ export const useGame = create<GameState>((set, get) => ({
     // Claiming does NOT end the round: you pick the treasure UP (carry it) and must
     // get it to the bank vault to SECURE the win. The extraction is the tension.
     runtime.hintClaimed[hintIndex] = true;
+    // Your bag caps how much loot you can hold before a bank run (§ bags).
+    const cap = carryCap(get().owned);
     set((s) => ({
       treasureClaimed: true,
       claimedRarity: rarity,
       treasureCracked: cracked,
-      villeCarrying: s.villeCarrying + value,
+      villeCarrying: Math.min(cap, s.villeCarrying + value),
     }));
   },
 
-  bombsLeft: BOMB.perRound,
+  bombsLeft: BOMB_CAP.base,
   throwBomb: () => set((s) => ({ bombsLeft: Math.max(0, s.bombsLeft - 1) })),
 
   villeCarrying: 0,
   villeBanked: 0,
+  villeEarned: 0,
   depositLoot: () =>
     set((s) => {
       if (s.villeCarrying <= 0) return s;
@@ -82,10 +115,35 @@ export const useGame = create<GameState>((set, get) => ({
       // over from a prior run (nothing claimed this run) just deposits it.
       const secured = s.treasureClaimed && s.roundState === "playing";
       return {
-        villeBanked: s.villeBanked + s.villeCarrying,
+        villeBanked: s.villeBanked + s.villeCarrying, // spendable wallet
+        villeEarned: s.villeEarned + s.villeCarrying, // lifetime — drives the fox
         villeCarrying: 0,
         ...(secured ? { roundState: "won" as const, roundReason: "claimed" as const } : {}),
       };
+    }),
+
+  owned: ["w_rifle"], // the starter assault rifle is owned from the start
+  equippedWeapon: DEFAULT_WEAPON,
+  shopOpen: false,
+  openShop: () => set((s) => (s.roundState === "playing" && !s.isDead ? { shopOpen: true } : s)),
+  closeShop: () => set({ shopOpen: false }),
+  buyItem: (id) =>
+    set((s) => {
+      const item = SHOP_ITEMS.find((i) => i.id === id);
+      if (!item || s.owned.includes(id) || s.villeBanked < item.price) return s;
+      const owned = [...s.owned, id];
+      return {
+        villeBanked: s.villeBanked - item.price,
+        owned,
+        // Buying a weapon equips it; the satchel tops your bombs to the new cap now.
+        ...(item.category === "weapon" && item.gunId ? { equippedWeapon: item.gunId } : {}),
+        ...(id === "b_satchel" ? { bombsLeft: bombCapacity(owned) } : {}),
+      };
+    }),
+  equipWeapon: (gunId) =>
+    set((s) => {
+      const item = SHOP_ITEMS.find((i) => i.gunId === gunId);
+      return item && s.owned.includes(item.id) ? { equippedWeapon: gunId } : s;
     }),
 
   playerHealth: MAX_PLAYER_HEALTH,
@@ -128,7 +186,7 @@ export const useGame = create<GameState>((set, get) => ({
       treasureClaimed: false,
       claimedRarity: null,
       treasureCracked: false,
-      bombsLeft: BOMB.perRound,
+      bombsLeft: bombCapacity(s.owned),
       playerHealth: MAX_PLAYER_HEALTH,
       isDead: false,
       roundState: "playing",

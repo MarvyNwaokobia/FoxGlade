@@ -15,8 +15,8 @@ export function Projectiles() {
 
   useFrame((_, rawDt) => {
     const dt = Math.min(rawDt, 1 / 30);
-    if (!runtime.sheltered) {
-      // (Player indoors = world paused; shots hang mid-air until they step out.)
+    if (!runtime.paused) {
+      // (Player indoors / shopping = world paused; shots hang mid-air until back.)
       stepProjectiles(dt, () => {
         if (useGame.getState().isDead) return;
         useGame.getState().damagePlayer(BLOCKER.shotDamage);

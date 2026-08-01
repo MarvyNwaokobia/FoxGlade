@@ -48,7 +48,10 @@ function rangeFalloff(dist: number): number {
  * (enemy / first wall / max range) so the ShotFX layer draws a tracer that stops
  * at what it hits.
  */
-export function fireHitscan(camera: THREE.Camera): { hit: boolean; point: THREE.Vector3; headshot: boolean } {
+export function fireHitscan(
+  camera: THREE.Camera,
+  damageMult = 1,
+): { hit: boolean; point: THREE.Vector3; headshot: boolean } {
   const origin = camera.position.clone();
   const dir = camera.getWorldDirection(new THREE.Vector3());
 
@@ -88,7 +91,7 @@ export function fireHitscan(camera: THREE.Camera): { hit: boolean; point: THREE.
     hit = true;
     headshot = bestHead;
     endDist = bestT;
-    const dmg = GUN.damage * (bestHead ? GUN.headshotMult : 1) * rangeFalloff(bestT);
+    const dmg = GUN.damage * damageMult * (bestHead ? GUN.headshotMult : 1) * rangeFalloff(bestT);
     best.takeHit(dmg);
   }
 
