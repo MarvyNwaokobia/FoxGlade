@@ -50,6 +50,7 @@ export interface PlayerRigState {
   dead: boolean;
   fireAt: number; // performance.now of the last shot
   throwAt: number; // performance.now of the last bomb lob (drives the throw clip)
+  grabAt: number; // performance.now of the last interact (drives the pick-up clip)
   resting: boolean; // seated indoors (drives the sit clip)
   visible: boolean; // false only when fully faded (camera extremely close)
   opacity: number; // 0..1 — fades as the camera closes in, so he never hard-vanishes
@@ -166,6 +167,7 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
   const fireWeight = useRef(0);
   // Edge trackers for the one-shot / stateful movement clips.
   const lastThrowAt = useRef(state.throwAt);
+  const lastGrabAt = useRef(state.grabAt);
   const prevGrounded = useRef(true);
   const wasResting = useRef(false);
   const sipClock = useRef(4); // seconds until the next seated sip while resting
@@ -365,6 +367,11 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
       if (state.throwAt !== lastThrowAt.current) {
         lastThrowAt.current = state.throwAt;
         if (state.throwAt > 0) animMachine.transition(AnimState.Throw, true);
+      }
+      // Interact gesture (claim a treasure / bank at the vault / shop at the stall).
+      if (state.grabAt !== lastGrabAt.current) {
+        lastGrabAt.current = state.grabAt;
+        if (state.grabAt > 0) animMachine.transition(AnimState.Grab, true);
       }
       if (prevGrounded.current && !state.grounded) {
         // A running jump reads as a hurdle/vault; a standing jump is a plain jump.

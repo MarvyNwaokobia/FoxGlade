@@ -50,7 +50,7 @@ const ALL_ANIMS: Record<string, string> = {
   [CLIP_NAMES.jump]: "/characters/raw/Jump.fbx",
   [CLIP_NAMES.sit]: "/characters/raw/Sitting.fbx",
   [CLIP_NAMES.drink]: "/characters/raw/Drinking.fbx",
-  [CLIP_NAMES.grab]: "/characters/raw/Picking Up.fbx",
+  [CLIP_NAMES.grab]: "/characters/raw/Market Pick.fbx",
   [CLIP_NAMES.crouchIdle]: "/characters/raw/Crouch Idle.fbx",
   [CLIP_NAMES.crouchWalk]: "/characters/raw/Crouch Walking.fbx",
   [CLIP_NAMES.crouchStrafe]: "/characters/raw/Walk Crouching Right.fbx",

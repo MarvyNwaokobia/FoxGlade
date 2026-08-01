@@ -51,6 +51,7 @@ export function PlayerController() {
     dead: false,
     fireAt: -1,
     throwAt: -1,
+    grabAt: -1,
     resting: false,
     visible: true,
     opacity: 1,
@@ -84,10 +85,13 @@ export function PlayerController() {
       if (e.code === "KeyE") {
         if (runtime.nearHintIsReal && runtime.nearHintIndex >= 0 && !runtime.hintClaimed[runtime.nearHintIndex]) {
           useGame.getState().claimTreasure(runtime.nearHintIndex);
+          rigState.current.grabAt = performance.now(); // reach-out pick-up gesture
         } else if (runtime.nearBank && useGame.getState().villeCarrying > 0) {
           useGame.getState().depositLoot();
+          rigState.current.grabAt = performance.now(); // deposit gesture at the vault
         } else if (runtime.nearMarket) {
           useGame.getState().openShop();
+          rigState.current.grabAt = performance.now(); // reach toward the stall
         }
       }
       // B also opens the market when you're at the stall (Shop closes on B/Esc).
