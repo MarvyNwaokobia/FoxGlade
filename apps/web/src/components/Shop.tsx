@@ -9,6 +9,7 @@ import {
   WEAPON_STATS,
   type ShopCategory,
   type ShopItem,
+  type WeaponId,
 } from "@/engine/config/shop";
 
 /**
@@ -34,15 +35,14 @@ export function Shop() {
     if (shopOpen && document.pointerLockElement) document.exitPointerLock();
   }, [shopOpen]);
 
-  // DEV-only: ?shop=1 force-opens the stall (headless UI checks); never in prod.
+  // DEV-only: ?shop=1 force-opens the stall, ?weapon=<id> force-equips a gun
+  // (headless UI / in-hand checks); never in prod.
   useEffect(() => {
-    if (
-      process.env.NODE_ENV !== "production" &&
-      typeof window !== "undefined" &&
-      new URLSearchParams(location.search).get("shop") === "1"
-    ) {
-      useGame.getState().openShop();
-    }
+    if (process.env.NODE_ENV === "production" || typeof window === "undefined") return;
+    const q = new URLSearchParams(location.search);
+    if (q.get("shop") === "1") useGame.getState().openShop();
+    const w = q.get("weapon") as WeaponId | null;
+    if (w) useGame.setState({ equippedWeapon: w });
   }, []);
 
   // Esc or B closes the stall.

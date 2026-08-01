@@ -17,7 +17,20 @@ import {
 } from "@/engine/animation";
 import { BOMB } from "@/engine/config/round";
 import { runtime } from "@/engine/runtime";
-import { makeRifle } from "./GunMesh";
+import { useGame } from "@/engine/store";
+import type { WeaponId } from "@/engine/config/shop";
+import { makeGunMesh } from "./GunMesh";
+
+/** Free a swapped-out procedural gun's geometry + materials (no leaks on re-equip). */
+function disposeGroup(obj: THREE.Object3D) {
+  obj.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (m.isMesh) {
+      m.geometry?.dispose();
+      (Array.isArray(m.material) ? m.material : [m.material]).forEach((mat) => mat?.dispose());
+    }
+  });
+}
 
 /**
  * The per-frame state the rig reads to drive its animation + transform. The
@@ -194,8 +207,9 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
     return clone;
   }, [scene]);
 
-  // The rifle is a procedural mesh (GunMesh), already in the socket's convention.
-  const rifleProto = useMemo(() => makeRifle(), []);
+  // The in-hand gun is a procedural mesh (GunMesh) matching the equipped weapon;
+  // we rebuild it whenever the player equips a different one in the market.
+  const currentGunId = useRef<WeaponId | null>(null);
 
   // Kick off the Mixamo FBX load immediately (shared across all rigs).
   useMemo(() => {
@@ -273,10 +287,12 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
 
         // Socket the rifle as a SIBLING, driven from the hand bone each frame.
         if (SHOW_GUN && !gunRef.current) {
-          const gun = rifleProto.clone(true);
+          const id = useGame.getState().equippedWeapon;
+          const gun = makeGunMesh(id);
           gun.matrixAutoUpdate = false;
           groupRef.current.add(gun);
           gunRef.current = gun;
+          currentGunId.current = id;
         }
 
         // Build the additive upper-body AIM-READY layer: take the shot clip's aim
@@ -491,6 +507,22 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
     // groupRef⁻¹ · handBoneWorld · GUN_GRIP → renders exactly at the hand, oriented
     // to the animated grip (which carries the aim pose). The gun mesh is normalised
     // to +Z-forward / +Y-up with its origin at the grip, so GUN_GRIP is Valor's.
+    // Swap the in-hand model when a new weapon is equipped in the market. Same
+    // socket convention (origin at grip, +Z forward), so the hand-follow below is
+    // unchanged — only the mesh differs.
+    if (SHOW_GUN && gunRef.current && groupRef.current) {
+      const id = useGame.getState().equippedWeapon;
+      if (id !== currentGunId.current) {
+        groupRef.current.remove(gunRef.current);
+        disposeGroup(gunRef.current);
+        const gun = makeGunMesh(id);
+        gun.matrixAutoUpdate = false;
+        groupRef.current.add(gun);
+        gunRef.current = gun;
+        currentGunId.current = id;
+      }
+    }
+
     if (gunRef.current && handBoneRef.current && groupRef.current) {
       handBoneRef.current.updateWorldMatrix(true, false); // refresh hand + ancestors
       _gunWorld.compose(
