@@ -2,7 +2,7 @@
 
 import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
-import { Html, useTexture } from "@react-three/drei";
+import { useTexture, Text } from "@react-three/drei";
 import * as THREE from "three";
 import { BUILDINGS, ENTERABLES, VILLAGE, wallSegments, doorOpening, WALL_T, type Building } from "./village";
 import { HINTS } from "./hints";
@@ -295,35 +295,47 @@ function EnterableHouse({ b, eIndex, mats }: { b: Building; eIndex: number; mats
 }
 
 /**
- * A mounted wooden STOREFRONT sign identifying a building/zone (bank, market),
- * hung at the building's front rather than floating high above it, so you can tell
- * which building is which. `occlude` hides it behind other buildings; the zone
- * colour is a bottom accent so bank/market stay distinguishable.
+ * A real 3D wooden STOREFRONT sign — a carved board with raised text, fixed to the
+ * building/plaza and facing a set direction. Unlike the old Html billboard it does
+ * NOT reorient to the camera, so it stays put on the building instead of floating
+ * around the scene. `post` adds a freestanding signpost (for the open market).
  */
-function ZoneLabel({ position, text, color }: { position: [number, number, number]; text: string; color: string }) {
+function Signboard({
+  position,
+  rotation = 0,
+  text,
+  accent,
+  post = false,
+}: {
+  position: [number, number, number];
+  rotation?: number;
+  text: string;
+  accent: string;
+  post?: boolean;
+}) {
+  const w = text.length * 0.36 + 0.6;
   return (
-    <Html position={position} center distanceFactor={26} occlude style={{ pointerEvents: "none" }}>
-      <div
-        style={{
-          padding: "6px 16px",
-          borderRadius: 4,
-          background: "linear-gradient(#6b4a2b, #513820)",
-          border: "2px solid #35251699",
-          borderBottom: `4px solid ${color}`,
-          boxShadow: "0 3px 7px rgba(0,0,0,0.55)",
-          color: "#ffe6bf",
-          fontSize: 16,
-          fontWeight: 700,
-          letterSpacing: 2.5,
-          whiteSpace: "nowrap",
-          fontFamily: "Georgia, 'Times New Roman', ui-serif, serif",
-          textTransform: "uppercase",
-          textShadow: "0 1px 1px rgba(0,0,0,0.6)",
-        }}
-      >
+    <group position={position} rotation={[0, rotation, 0]}>
+      {post && (
+        <mesh position={[0, -position[1] / 2 + 0.05, -0.04]} castShadow>
+          <boxGeometry args={[0.16, position[1], 0.16]} />
+          <meshStandardMaterial color="#4a3826" roughness={1} />
+        </mesh>
+      )}
+      {/* Carved board */}
+      <mesh castShadow receiveShadow>
+        <boxGeometry args={[w, 0.72, 0.08]} />
+        <meshStandardMaterial color="#5a3d22" roughness={0.9} />
+      </mesh>
+      {/* Colour accent strip (bank gold / market blue) */}
+      <mesh position={[0, -0.32, 0.045]}>
+        <boxGeometry args={[w, 0.07, 0.02]} />
+        <meshStandardMaterial color={accent} emissive={accent} emissiveIntensity={0.35} toneMapped={false} />
+      </mesh>
+      <Text position={[0, 0.02, 0.055]} fontSize={0.42} letterSpacing={0.06} color="#ffe6bf" anchorX="center" anchorY="middle" outlineWidth={0.008} outlineColor="#241608">
         {text}
-      </div>
-    </Html>
+      </Text>
+    </group>
   );
 }
 
@@ -535,7 +547,7 @@ export function Village() {
 
       {/* Market district — identified by the stalls + the storefront sign (the old
           glowing blue beacon-pillar was gray-box and redundant now). */}
-      <ZoneLabel position={[m.x, 3.2, m.z]} text="Market" color="#8fc0ff" />
+      <Signboard position={[-15, 2.7, 7]} rotation={Math.PI / 2 + 0.35} text="MARKET" accent="#4e93f2" post />
       <Stall position={[m.x - 3, 0, m.z - 1]} color="#c0553b" />
       <Stall position={[m.x + 3, 0, m.z + 1]} color="#3b7cc0" />
       <Stall position={[m.x, 0, m.z + 3]} color="#c0a13b" />
@@ -543,7 +555,7 @@ export function Village() {
       {/* Bank — the enterable house on the plaza. The real vault chest + shelves
           are furnished in <Interiors>; here we keep the glowing deposit pad and
           the label. Walk in (world pauses), stand on the pad, E deposits loot. */}
-      <ZoneLabel position={[-26, 3.4, 0.8]} text="Bank" color="#ffd873" />
+      <Signboard position={[-26, 3.3, 0.9]} rotation={0} text="BANK" accent="#ffd873" />
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[VILLAGE.bank.x, 0.04, VILLAGE.bank.z]}>
         <ringGeometry args={[1.1, 1.5, 32]} />
         <meshStandardMaterial color="#ffd873" emissive="#ffd873" emissiveIntensity={0.5} transparent opacity={0.6} />
