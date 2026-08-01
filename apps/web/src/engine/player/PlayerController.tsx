@@ -62,6 +62,10 @@ export function PlayerController() {
   const yaw = useRef(VILLAGE.spawnYaw); // camera/heading yaw
   const pitch = useRef(0.35);
   const bodyRot = useRef(VILLAGE.spawnYaw);
+  // During an interact gesture, turn the body to FACE the target (vault / stall /
+  // treasure) so the pick-up reads as a real act, not a shrug at thin air.
+  const grabTarget = useRef(new THREE.Vector3());
+  const grabFaceUntil = useRef(0);
   const grounded = useRef(true);
   const fireHeld = useRef(false);
   const fireCd = useRef(0);
@@ -81,17 +85,23 @@ export function PlayerController() {
   }, []);
 
   useEffect(() => {
+    // Fire the pick-up gesture and turn to face the interaction target for ~1s.
+    const faceAndGrab = (target: THREE.Vector3) => {
+      rigState.current.grabAt = performance.now();
+      grabTarget.current.copy(target);
+      grabFaceUntil.current = performance.now() + 950;
+    };
     const onKey = (e: KeyboardEvent) => {
       if (e.code === "KeyE") {
         if (runtime.nearHintIsReal && runtime.nearHintIndex >= 0 && !runtime.hintClaimed[runtime.nearHintIndex]) {
           useGame.getState().claimTreasure(runtime.nearHintIndex);
-          rigState.current.grabAt = performance.now(); // reach-out pick-up gesture
+          faceAndGrab(HINTS[runtime.nearHintIndex].pos); // reach-out pick-up gesture
         } else if (runtime.nearBank && useGame.getState().villeCarrying > 0) {
           useGame.getState().depositLoot();
-          rigState.current.grabAt = performance.now(); // deposit gesture at the vault
+          faceAndGrab(VILLAGE.bank); // deposit gesture at the vault
         } else if (runtime.nearMarket) {
           useGame.getState().openShop();
-          rigState.current.grabAt = performance.now(); // reach toward the stall
+          faceAndGrab(VILLAGE.market); // reach toward the stall
         }
       }
       // B also opens the market when you're at the stall (Shop closes on B/Esc).
@@ -357,6 +367,13 @@ export function PlayerController() {
     rs.position.copy(pos.current);
     const planarSpeed = Math.hypot(vel.current.x, vel.current.z);
     rs.rotation = planarSpeed > 0.5 && !frozen ? bodyRot.current : yaw.current + Math.PI;
+    // Interact gesture: override facing to point the body at the target (vault /
+    // stall / treasure), easing quickly so the pick-up lands square on it.
+    if (performance.now() < grabFaceUntil.current) {
+      const fy = Math.atan2(grabTarget.current.x - pos.current.x, grabTarget.current.z - pos.current.z);
+      bodyRot.current = lerpAngle(bodyRot.current, fy, Math.min(1, 14 * dt));
+      rs.rotation = bodyRot.current;
+    }
     rs.velocity.set(vel.current.x, 0, vel.current.z);
     rs.moving = planarSpeed > 0.5 && !frozen && !resting.current;
     rs.running = runtime.running;

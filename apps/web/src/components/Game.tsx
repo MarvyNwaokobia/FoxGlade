@@ -11,6 +11,7 @@ import { AudioDriver } from "@/engine/audio/AudioDriver";
 import { audio } from "@/engine/audio/audio";
 import { Hud } from "@/components/Hud";
 import { Shop } from "@/components/Shop";
+import { Minimap } from "@/components/Minimap";
 import { MobileControls } from "@/components/MobileControls";
 import { isTouchDevice } from "@/engine/input/touch";
 
@@ -87,6 +88,7 @@ export default function Game() {
         <Stats />
       </Canvas>
       <Hud />
+      <Minimap />
       <Shop />
       {mobile && <MobileControls />}
       {/* DOM loading screen with a progress bar until assets are ready. */}
