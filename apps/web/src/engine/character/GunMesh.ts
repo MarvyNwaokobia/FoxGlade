@@ -1,4 +1,74 @@
 import * as THREE from "three";
+
+/**
+ * DEV: `?griprx=&gripry=&griprz=` (radians) override the hand-grip rotation, so a
+ * headless screenshot sweep can find the right axis empirically instead of by
+ * guesswork — which is how the +90° X correction below was actually found.
+ * Parsed ONCE at module load; this is read inside the per-frame render loop.
+ */
+const GRIP_OVERRIDES: Partial<Record<"rx" | "ry" | "rz", number>> = (() => {
+  if (process.env.NODE_ENV === "production" || typeof location === "undefined") return {};
+  const q = new URLSearchParams(location.search);
+  const out: Partial<Record<"rx" | "ry" | "rz", number>> = {};
+  for (const a of ["rx", "ry", "rz"] as const) {
+    const v = q.get("grip" + a);
+    if (v !== null) out[a] = Number(v);
+  }
+  return out;
+})();
+
+export function gripOverride(axis: "rx" | "ry" | "rz"): number | undefined {
+  return GRIP_OVERRIDES[axis];
+}
+
+// ── Aiming a socketed weapon ────────────────────────────────────────────────
+//
+// Letting the animation decide where the barrel points does not work. A clip is
+// authored for a generic "holding a rifle" pose, not for the direction you happen
+// to be looking, so the muzzle ends up tens of degrees off the crosshair — and
+// worse, it MOVES during the fire clip, so shots visibly leave in a direction you
+// didn't choose. Nudging the spine gets it close and no closer.
+//
+// So the weapon is aimed directly: it takes its POSITION from the hand bone (it
+// stays in the grip, and the arms still carry it through every animation) and its
+// ORIENTATION from the aim vector. That's how third-person shooters do it, and
+// it's what makes the muzzle, the tracer and the hit all agree.
+const _aimZ = new THREE.Vector3();
+const _aimX = new THREE.Vector3();
+const _aimY = new THREE.Vector3();
+const _worldUp = new THREE.Vector3(0, 1, 0);
+const _fallbackUp = new THREE.Vector3(0, 0, 1);
+
+/**
+ * Write a world matrix into `out` that puts a gun at `handPos` with its barrel
+ * (local +Z) along `aimDir` and its top (local +Y) as close to world-up as the
+ * aim allows.
+ */
+export function aimGunWorldMatrix(
+  out: THREE.Matrix4,
+  handPos: THREE.Vector3,
+  aimDir: THREE.Vector3
+): THREE.Matrix4 {
+  _aimZ.copy(aimDir).normalize();
+  // Straight up/down would make the cross product degenerate; swap the reference.
+  const up = Math.abs(_aimZ.y) > 0.999 ? _fallbackUp : _worldUp;
+  _aimX.crossVectors(up, _aimZ).normalize();
+  _aimY.crossVectors(_aimZ, _aimX).normalize();
+  out.makeBasis(_aimX, _aimY, _aimZ);
+  out.setPosition(handPos);
+  return out;
+}
+
+/** World position of a gun group's `muzzle` anchor, given its world matrix. */
+export function muzzleWorldPos(
+  out: THREE.Vector3,
+  gun: THREE.Object3D,
+  gunWorld: THREE.Matrix4
+): THREE.Vector3 {
+  const anchor = gun.getObjectByName("muzzle");
+  if (!anchor) return out.setFromMatrixPosition(gunWorld);
+  return out.copy(anchor.position).applyMatrix4(gunWorld);
+}
 import type { WeaponId } from "@/engine/config/shop";
 
 /**

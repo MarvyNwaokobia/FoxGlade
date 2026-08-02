@@ -5,48 +5,57 @@ import { useFrame } from "@react-three/fiber";
 import { useGLTF, useAnimations } from "@react-three/drei";
 import * as THREE from "three";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
-import { FEEL } from "@/engine/config/feel";
 import { runtime } from "@/engine/runtime";
-import { COLLIDERS } from "@/engine/world/village";
-import { resolveColliders } from "@/engine/world/collision";
-import { enemies } from "@/engine/combat/enemies";
+import { enemies, type Enemy } from "@/engine/combat/enemies";
 import { useGame } from "@/engine/store";
-import { HINTS } from "@/engine/world/hints";
 import { audio } from "@/engine/audio/audio";
-import { foxGrowthFor } from "@/engine/config/fox";
+import { FOX, foxGrowthFor } from "@/engine/config/fox";
 import { softShadowTexture } from "@/engine/world/softShadow";
+import { findPath } from "@/engine/world/navgrid";
+import {
+  applyLunge,
+  findAttackTarget,
+  findScoutTarget,
+  pruneStagger,
+  steerTowards,
+  type FoxState,
+} from "./foxBrain";
 
 /**
  * The fox companion — a real rigged, animated fox (CC-BY "Fox" by pxltiger, see
- * public/CREDITS.md). It trails beside/ahead of the player so it's always on
- * screen, and plays idle / walk / run from its own clip set based on how fast
- * it's actually moving. The "_InPlace" clips have no root motion, so code moves
- * the body (same pattern as the human rigs) and the feet stay planted.
+ * public/CREDITS.md), now with an actual brain (see foxBrain.ts).
+ *
+ * It keeps LOOSE station beside and slightly ahead of you rather than being
+ * welded to an offset, so it lags, cuts corners and catches up like an animal.
+ * It can be SENT: to scout out the real treasure (and it genuinely runs there, so
+ * you follow it) or to jump a threat (staggering a blocker, slowing a thief). And
+ * it can be shot — it never dies, but it goes down and you lose it for a while,
+ * which is what makes any of the above feel like it costs something.
  */
 const FOX_URL = "/models/fox/fox.glb";
-// Fixed scale — this rigged model already renders ~fox-sized at scale 1; a
-// bounding-box auto-scale is unreliable for skinned meshes (geometry bounds ≠
-// skinned size). Tune FOX_SCALE / FOX_LIFT by eye.
 const FOX_SCALE = 1.0;
-const FOX_LIFT = 0; // vertical offset (m) if it floats/buries
-const WALK_ABOVE = 0.4; // fox planar speed (m/s) above which it walks
+const WALK_ABOVE = 0.4; // planar speed (m/s) above which it walks
 const RUN_ABOVE = 4.5; // …above which it runs
-// This realistic fox's own clip names (AnimalMesh3D). Locomotion clips carry root
-// motion on RigRoot_01 — stripped below so code drives the follow, legs in place.
+
 const CLIP = {
   idle: "A3_Stand_Idle_01",
   walk: "Loco_Walk",
   run: "Run",
-  angry: "A5_StandAngry_Breathing_01", // alert/growl at a nearby threat
-  hit: "Hit_Stand_R01", // flinch when the player is hurt
-  sniff: "A2_Stand_Eating_01", // nose-down, reads as tracking a scent
+  angry: "A5_StandAngry_Breathing_01", // alert / lunge
+  hit: "Hit_Stand_R01", // flinch, and the downed pose
+  sniff: "A2_Stand_Eating_01", // nose-down: scenting, and digging at a find
 };
 
-// Fox reactions (its identity: an alive companion, not a prop).
-const ALERT_RANGE = 18; // a THREAT (blocker/thief) within this of the player → alert + growl
-const GROWL_INTERVAL = 1.3; // seconds between growls while a threat stays near
-const HURT_REACT_MS = 700; // how long the fox flinches after the player takes damage
-const _enemyPos = new THREE.Vector3(); // nearest-enemy scratch
+const ALERT_RANGE = 18; // a threat this close to the player → growl
+const GROWL_INTERVAL = 1.3;
+const _enemyPos = new THREE.Vector3();
+const _target = new THREE.Vector3();
+// Separate scratch for the previous position + the frame's travel delta. These
+// MUST NOT share storage with _target: copying into a shared vector makes "prev"
+// an alias of the follow target, so the moment the target is recomputed the
+// previous position changes too and the measured speed goes to nonsense.
+const _prev = new THREE.Vector3();
+const _delta = new THREE.Vector3();
 
 function lerpAngle(a: number, b: number, t: number) {
   let d = b - a;
@@ -57,35 +66,46 @@ function lerpAngle(a: number, b: number, t: number) {
 
 export function FoxCompanion() {
   const group = useRef<THREE.Group>(null);
-  const inner = useRef<THREE.Group>(null); // holds the scaled model (mixer target)
+  const inner = useRef<THREE.Group>(null);
   const shadow = useRef<THREE.Mesh>(null);
   const foxPos = useRef(new THREE.Vector3(1, 0, 3));
   const facing = useRef(0);
   const speed = useRef(0);
-  const growlClock = useRef(0.4); // cadence timer for the alert growl
-  const wasAlerting = useRef(false); // edge → immediate bark when a threat first appears
-  const lastDamageAt = useRef(-1); // edge-detect player hits for the flinch/whine
-  const foxScale = useRef(0.6); // eased render scale (grows with maturity)
-  const lastStage = useRef(-1); // edge-detect a stage-up → grow toast + happy yip
+  const growlClock = useRef(0.4);
+  const wasAlerting = useRef(false);
+  const lastDamageAt = useRef(-1);
+  const foxScale = useRef(0.6);
+  const lastStage = useRef(-1);
+
+  // Brain state.
+  const state = useRef<FoxState>("heel");
+  const scoutTarget = useRef<THREE.Vector3 | null>(null);
+  const scoutClock = useRef(0); // counts up while scouting (timeout guard)
+  const holdClock = useRef(0); // waiting at the find, barking
+  const attackTarget = useRef<Enemy | null>(null);
+  const idleClock = useRef(0); // how long the player has been still
+  const wanderTarget = useRef<THREE.Vector3 | null>(null);
+  // A* route while travelling anywhere far (scout / attack / catching up). Local
+  // steering handles the metre-to-metre; this guarantees the route exists at all.
+  const path = useRef<THREE.Vector3[]>([]);
+  const repathClock = useRef(0);
 
   const { scene, animations } = useGLTF(FOX_URL);
   const model = useMemo(() => {
     const clone = SkeletonUtils.clone(scene);
     clone.scale.setScalar(FOX_SCALE);
-    clone.position.y = FOX_LIFT;
     clone.traverse((o) => {
       if ((o as THREE.Mesh).isMesh) {
-        o.castShadow = false;
+        o.castShadow = true;
         o.receiveShadow = true;
         const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial;
-        if (m && "roughness" in m) m.roughness = 1; // matte, no shine
+        if (m && "roughness" in m) m.roughness = 1;
       }
     });
     return clone;
   }, [scene]);
 
-  // Strip root motion (RigRoot_01 translation) so the fox animates in place and
-  // code moves it along the follow path — no forward drift / foot-skate compounding.
+  // Strip root motion so code drives the body and the feet stay planted.
   const clips = useMemo(
     () =>
       animations.map((c) => {
@@ -98,7 +118,6 @@ export function FoxCompanion() {
   const { actions } = useAnimations(clips, inner);
   const current = useRef<string>("");
 
-  // Crossfade to a clip by name (idempotent if already playing it).
   const play = (name: string) => {
     if (current.current === name || !actions[name]) return;
     const next = actions[name]!;
@@ -113,42 +132,74 @@ export function FoxCompanion() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actions]);
 
+  // Commands come from the controller as a window event so the fox can be sent
+  // from anywhere (keyboard, touch button) without threading props through.
+  useEffect(() => {
+    const onCommand = () => {
+      const now = performance.now();
+      const gs = useGame.getState();
+      if (state.current === "down" || now < runtime.foxReadyAt) return;
+      if (gs.isDead || gs.roundState !== "playing") return;
+
+      // ONE contextual command: a threat nearby means "go get it", otherwise
+      // "go find the treasure". One button that always does the sensible thing
+      // beats two buttons the player has to choose between mid-fight.
+      const threat = findAttackTarget();
+      const mult = foxGrowthFor(gs.villeEarned).sniffCooldownMult;
+      if (threat) {
+        attackTarget.current = threat;
+        state.current = "attack";
+        audio.play("foxGrowl");
+      } else {
+        const t = findScoutTarget();
+        if (!t) return;
+        scoutTarget.current = t;
+        scoutClock.current = 0;
+        state.current = "scout";
+        runtime.foxFoundTreasure = false;
+        audio.play("foxYip");
+      }
+      runtime.foxReadyAt = now + FOX.commandCooldown * mult * 1000;
+    };
+    window.addEventListener("foxcommand", onCommand);
+    return () => window.removeEventListener("foxcommand", onCommand);
+  }, []);
+
+  /**
+   * Travel toward a distant goal using an A* route, re-planning periodically.
+   * Returns metres covered this frame.
+   */
+  const travelTo = (goal: THREE.Vector3, spd: number, dt: number): number => {
+    repathClock.current -= dt;
+    const needPath =
+      path.current.length === 0 ||
+      repathClock.current <= 0 ||
+      goal.distanceToSquared(path.current[path.current.length - 1]) > 4;
+    if (needPath) {
+      repathClock.current = 0.75;
+      path.current = findPath(foxPos.current, goal) ?? [];
+    }
+    // Pop waypoints we've reached.
+    while (path.current.length && path.current[0].distanceTo(foxPos.current) < 0.9) {
+      path.current.shift();
+    }
+    const next = path.current[0] ?? goal;
+    return steerTowards(foxPos.current, next, spd, dt);
+  };
+
   useFrame((_, rawDt) => {
     const dt = Math.min(rawDt, 1 / 30);
-
-    // Target: BESIDE and slightly AHEAD of the player (camera-relative) so the
-    // fox is always on-screen, never lost behind you.
-    const yaw = runtime.yaw;
-    const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
-    const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
-    const target = runtime.playerPos
-      .clone()
-      .addScaledVector(forward, FEEL.foxForwardOffset)
-      .addScaledVector(right, FEEL.foxSideOffset * FEEL.foxSide);
-
-    const prev = foxPos.current.clone();
-    foxPos.current.lerp(target, Math.min(1, FEEL.foxSpeed * dt));
-    resolveColliders(foxPos.current, 0.25, COLLIDERS);
-
-    // Measured planar speed → drives idle/walk/run.
-    const delta = foxPos.current.clone().sub(prev);
-    delta.y = 0;
-    const inst = delta.length() / dt;
-    speed.current += (inst - speed.current) * Math.min(1, 10 * dt); // smoothed
-    const s = speed.current;
-
-    // ── Reactions: the fox reads the world and responds (companion, not prop) ──
     const now = performance.now();
     const gs = useGame.getState();
-    const active = gs.roundState === "playing" && !runtime.sheltered && !gs.isDead;
+    const active = gs.roundState === "playing" && !gs.isDead;
+    pruneStagger();
 
-    // Growth: the fox matures as you bank loot. Ease the render scale toward the
-    // stage size, and celebrate a stage-up (once, on the edge) with a yip + toast.
+    // ── Growth (unchanged): the fox matures as you bank loot ──
     const growth = foxGrowthFor(gs.villeEarned);
     foxScale.current += (growth.scale - foxScale.current) * Math.min(1, 3 * dt);
     if (inner.current) inner.current.scale.setScalar(foxScale.current);
     if (lastStage.current < 0) {
-      lastStage.current = growth.stage; // init: no toast at start
+      lastStage.current = growth.stage;
     } else if (growth.stage > lastStage.current) {
       lastStage.current = growth.stage;
       runtime.foxGrewAt = now;
@@ -156,10 +207,139 @@ export function FoxCompanion() {
       audio.play("foxYip");
     }
 
-    // Nearest THREAT (blocker/thief — not the harmless distractor) to the player:
-    // the fox's early-warning sense.
+    // ── Downed: it stays put until it recovers ──
+    if (state.current === "down" && now >= runtime.foxDownUntil) {
+      state.current = "heel";
+      runtime.foxDownUntil = -1;
+      audio.play("foxYip");
+    }
+
+    _prev.copy(foxPos.current);
+    let moveSpeed = 0;
+
+    if (state.current === "down") {
+      // Lies where it fell.
+    } else if (state.current === "attack") {
+      const t = attackTarget.current;
+      if (!t || !enemies.has(t) || !active) {
+        attackTarget.current = null;
+        state.current = "heel";
+      } else {
+        const tp = t.getPosition();
+        _enemyPos.set(tp.x, 0, tp.z);
+        const d = Math.hypot(tp.x - foxPos.current.x, tp.z - foxPos.current.z);
+        if (d <= FOX.attackReachDist) {
+          applyLunge(t);
+          audio.playAt("foxGrowl", foxPos.current.x, foxPos.current.z, 6, 40);
+          attackTarget.current = null;
+          path.current.length = 0;
+          state.current = "heel";
+        } else {
+          moveSpeed = travelTo(_enemyPos, FOX.attackSpeed, dt);
+        }
+      }
+    } else if (state.current === "scout") {
+      scoutClock.current += dt;
+      const t = scoutTarget.current;
+      if (!t || !active || scoutClock.current > FOX.scoutTimeout) {
+        scoutTarget.current = null;
+        path.current.length = 0;
+        state.current = "heel";
+      } else {
+        const d = Math.hypot(t.x - foxPos.current.x, t.z - foxPos.current.z);
+        if (d <= FOX.scoutArriveDist) {
+          // Found it. Hold position, bark, dig — this is the fox telling you
+          // something true, and it's the only thing in the game that can't lie.
+          if (!runtime.foxFoundTreasure) {
+            runtime.foxFoundTreasure = true;
+            runtime.foxFoundAt = now;
+            holdClock.current = FOX.scoutHoldTime;
+            audio.playAt("foxYip", foxPos.current.x, foxPos.current.z, 8, 50);
+          }
+          holdClock.current -= dt;
+          if (holdClock.current <= 0) {
+            scoutTarget.current = null;
+            path.current.length = 0;
+            state.current = "heel";
+          }
+        } else {
+          moveSpeed = travelTo(t, FOX.scoutSpeed, dt);
+        }
+      }
+    } else {
+      // ── HEEL: loose station-keeping, not a weld ──
+      const yaw = runtime.yaw;
+      const fx = -Math.sin(yaw);
+      const fz = -Math.cos(yaw);
+      const rx = Math.cos(yaw);
+      const rz = -Math.sin(yaw);
+      _target.set(
+        runtime.playerPos.x + fx * FOX.leadOffset + rx * FOX.sideOffset,
+        0,
+        runtime.playerPos.z + fz * FOX.leadOffset + rz * FOX.sideOffset
+      );
+
+      idleClock.current = runtime.playerMoving ? 0 : idleClock.current + dt;
+
+      const gap = Math.hypot(_target.x - foxPos.current.x, _target.z - foxPos.current.z);
+      const leash = Math.hypot(
+        runtime.playerPos.x - foxPos.current.x,
+        runtime.playerPos.z - foxPos.current.z
+      );
+
+      if (leash > FOX.leashRadius) {
+        foxPos.current.set(_target.x, 0, _target.z); // hopelessly lost — snap back
+      } else if (idleClock.current > FOX.idleWanderAfter) {
+        // You've stopped; it goes and noses at something nearby, then comes back.
+        if (!wanderTarget.current) {
+          const a = Math.random() * Math.PI * 2;
+          const r = 1.5 + Math.random() * FOX.idleWanderRadius;
+          wanderTarget.current = new THREE.Vector3(
+            runtime.playerPos.x + Math.cos(a) * r,
+            0,
+            runtime.playerPos.z + Math.sin(a) * r
+          );
+        }
+        const wd = Math.hypot(
+          wanderTarget.current.x - foxPos.current.x,
+          wanderTarget.current.z - foxPos.current.z
+        );
+        if (wd < 0.6) {
+          wanderTarget.current = null;
+          idleClock.current = FOX.idleWanderAfter * 0.35; // pause before the next
+        } else {
+          moveSpeed = steerTowards(foxPos.current, wanderTarget.current, FOX.walkSpeed, dt);
+        }
+      } else {
+        wanderTarget.current = null;
+        // Inside the radius it doesn't bother chasing — that slack is the whole
+        // difference between a companion and a tethered prop.
+        if (gap > FOX.followRadius) {
+          const sprint = gap > FOX.sprintRadius;
+          const spd = sprint ? FOX.runSpeed : FOX.walkSpeed;
+          // Close by, steer directly (cheap, and it keeps the follow supple).
+          // Far off — round a building, say — plan a route instead, or it gets
+          // stuck on the far side of a wall exactly like the scout used to.
+          moveSpeed =
+            gap > FOX.sprintRadius
+              ? travelTo(_target, spd, dt)
+              : steerTowards(foxPos.current, _target, spd, dt);
+        }
+      }
+    }
+
+    // Measured speed → drives idle/walk/run.
+    const inst = moveSpeed / dt;
+    speed.current += (inst - speed.current) * Math.min(1, 10 * dt);
+    const s = speed.current;
+    _delta.set(foxPos.current.x - _prev.x, 0, foxPos.current.z - _prev.z);
+
+    runtime.foxPos.copy(foxPos.current);
+    runtime.foxState = state.current;
+
+    // ── Reactions ──
     let nearestD = Infinity;
-    if (active) {
+    if (active && state.current !== "down") {
       for (const e of enemies) {
         if (e.kind === "distractor") continue;
         const p = e.getPosition();
@@ -170,12 +350,7 @@ export function FoxCompanion() {
         }
       }
     }
-    const alerting = active && nearestD < ALERT_RANGE;
-    const sniffing = active && now < runtime.revealRealUntil;
-    const hurt = active && now - runtime.damageAt < HURT_REACT_MS;
-
-    // Bark the instant a threat comes into range, then keep growling on a cadence
-    // while it stays near — you HEAR danger before you see it.
+    const alerting = active && nearestD < ALERT_RANGE && state.current === "heel";
     if (alerting) {
       growlClock.current -= dt;
       if (!wasAlerting.current || growlClock.current <= 0) {
@@ -184,46 +359,36 @@ export function FoxCompanion() {
       }
     }
     wasAlerting.current = alerting;
-    // Whimper the instant the player takes a hit (edge-detected).
     if (runtime.damageAt !== lastDamageAt.current) {
       lastDamageAt.current = runtime.damageAt;
-      if (hurt) audio.play("foxWhine");
+      if (active) audio.play("foxWhine");
     }
 
-    // On a sniff, look toward the real, unclaimed treasure — a subtle guide.
-    let faceTarget: THREE.Vector3 | null = null;
-    if (sniffing && !gs.treasureClaimed) {
-      for (let i = 0; i < HINTS.length; i++) {
-        if (HINTS[i].real && !runtime.hintStolen[i]) {
-          faceTarget = HINTS[i].pos;
-          break;
-        }
-      }
-    }
-
+    // ── Facing + clip ──
     const moving = s > WALK_ABOVE;
-    // Facing: travel while moving; toward the threat while alerting; toward the
-    // treasure while sniffing; otherwise beside the player looking ahead.
     let targetFace: number;
-    if (moving) targetFace = Math.atan2(delta.x, delta.z);
+    if (moving) targetFace = Math.atan2(_delta.x, _delta.z);
+    else if (state.current === "scout" && runtime.foxFoundTreasure)
+      targetFace = Math.atan2(runtime.playerPos.x - foxPos.current.x, runtime.playerPos.z - foxPos.current.z);
     else if (alerting) targetFace = Math.atan2(_enemyPos.x - foxPos.current.x, _enemyPos.z - foxPos.current.z);
-    else if (faceTarget) targetFace = Math.atan2(faceTarget.x - foxPos.current.x, faceTarget.z - foxPos.current.z);
-    else targetFace = yaw + Math.PI;
+    else targetFace = runtime.yaw + Math.PI;
     facing.current = lerpAngle(facing.current, targetFace, Math.min(1, 9 * dt));
 
-    // Clip: locomotion while moving; otherwise the strongest reaction wins.
     let clip: string;
-    if (moving) clip = s > RUN_ABOVE ? CLIP.run : CLIP.walk;
+    if (state.current === "down") clip = CLIP.hit;
+    else if (state.current === "attack") clip = moving ? CLIP.run : CLIP.angry;
+    else if (state.current === "scout")
+      clip = runtime.foxFoundTreasure && !moving ? CLIP.sniff : moving ? CLIP.run : CLIP.walk;
+    else if (moving) clip = s > RUN_ABOVE ? CLIP.run : CLIP.walk;
     else if (alerting) clip = CLIP.angry;
-    else if (hurt) clip = CLIP.hit;
-    else if (faceTarget) clip = CLIP.sniff;
     else clip = CLIP.idle;
     play(clip);
 
     if (group.current) {
-      group.current.position.set(foxPos.current.x, foxPos.current.y, foxPos.current.z);
+      group.current.position.copy(foxPos.current);
       group.current.rotation.y = facing.current;
-
+      // Downed: roll onto its side so it reads as hurt, not just standing still.
+      group.current.rotation.z = state.current === "down" ? Math.PI * 0.42 : 0;
     }
     if (shadow.current) shadow.current.position.set(foxPos.current.x, 0.02, foxPos.current.z);
   });
@@ -235,11 +400,9 @@ export function FoxCompanion() {
           <primitive object={model} />
         </group>
       </group>
-      {/* Soft contact shadow (raised above ground decals + renderOrder so it never
-          z-fights/shakes; soft radial texture so it's a pool, not a disc) */}
       <mesh ref={shadow} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]} renderOrder={2}>
         <planeGeometry args={[0.95, 0.95]} />
-        <meshBasicMaterial map={softShadowTexture()} transparent opacity={0.7} depthWrite={false} />
+        <meshBasicMaterial map={softShadowTexture()} transparent opacity={0.32} depthWrite={false} />
       </mesh>
     </>
   );

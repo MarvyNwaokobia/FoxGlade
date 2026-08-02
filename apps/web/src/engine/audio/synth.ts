@@ -63,7 +63,95 @@ function blip(
 const A3 = 220;
 const semis = (n: number) => A3 * Math.pow(2, n / 12);
 
+
+/**
+ * A short speech-like utterance: a buzzing source shaped by two vowel formants,
+ * gated into syllables with a pitch contour. Crude, but unmistakably "a person
+ * said something", which is what the distractors need in order to lie out loud.
+ */
+function voiceLine(
+  ctx: AudioContext,
+  out: AudioNode,
+  t0: number,
+  vol: number,
+  { syllables = 4, base = 150, rise = false }: { syllables?: number; base?: number; rise?: boolean } = {}
+) {
+  const osc = ctx.createOscillator();
+  osc.type = "sawtooth";
+  const gate = ctx.createGain();
+  gate.gain.setValueAtTime(0, t0);
+
+  // Two formants → a vowel-ish colour that shifts per syllable.
+  const f1 = ctx.createBiquadFilter();
+  f1.type = "bandpass";
+  f1.Q.value = 6;
+  const f2 = ctx.createBiquadFilter();
+  f2.type = "bandpass";
+  f2.Q.value = 8;
+  const outGain = ctx.createGain();
+  outGain.gain.value = vol * 0.5;
+
+  osc.connect(gate).connect(f1).connect(f2).connect(outGain).connect(out);
+
+  const SYL = 0.15;
+  let t = t0;
+  osc.frequency.setValueAtTime(base, t0);
+  for (let i = 0; i < syllables; i++) {
+    const open = t + 0.015;
+    const close = t + SYL * 0.72;
+    gate.gain.linearRampToValueAtTime(0.55, open);
+    gate.gain.linearRampToValueAtTime(0.0, close);
+    // Vowel wander: /a/-ish → /i/-ish → /o/-ish
+    const v = i % 3;
+    f1.frequency.setValueAtTime(v === 0 ? 700 : v === 1 ? 350 : 480, t);
+    f2.frequency.setValueAtTime(v === 0 ? 1150 : v === 1 ? 2200 : 900, t);
+    // Pitch contour — a hail rises, a statement settles.
+    const p = base * (rise ? 1 + i * 0.09 : 1 - i * 0.035);
+    osc.frequency.setValueAtTime(p, t);
+    t += SYL;
+  }
+  osc.start(t0);
+  osc.stop(t + 0.08);
+}
+
 /** Named one-shot recipes. `vol` is the pre-attenuated 0–1 loudness. */
+/** Shared shape behind every footstep surface: a pitched body thump plus a
+ *  filtered-noise scuff. Only the numbers change between surfaces. */
+function step(
+  ctx: AudioContext,
+  out: AudioNode,
+  t0: number,
+  vol: number,
+  s: {
+    thump: number;
+    thumpTo: number;
+    thumpPeak: number;
+    scuffHz: number;
+    scuffQ: number;
+    scuffPeak: number;
+    scuffDec: number;
+  }
+) {
+  const o = ctx.createOscillator();
+  o.type = "sine";
+  o.frequency.setValueAtTime(s.thump, t0);
+  o.frequency.exponentialRampToValueAtTime(s.thumpTo, t0 + 0.08);
+  const og = env(ctx, t0, s.thumpPeak * vol, 0.002, 0.07);
+  o.connect(og).connect(out);
+  o.start(t0);
+  o.stop(t0 + 0.1);
+
+  const n = noiseSource(ctx);
+  const bp = ctx.createBiquadFilter();
+  bp.type = "bandpass";
+  bp.frequency.value = s.scuffHz * (0.9 + Math.random() * 0.2); // no two steps identical
+  bp.Q.value = s.scuffQ;
+  const g = env(ctx, t0, s.scuffPeak * vol, 0.001, s.scuffDec);
+  n.connect(bp).connect(g).connect(out);
+  n.start(t0);
+  n.stop(t0 + s.scuffDec + 0.03);
+}
+
 export const SFX: Record<string, (ctx: AudioContext, out: AudioNode, t0: number, vol: number) => void> = {
   // Player rifle: bright noise crack + a short low body thump.
   gunshot(ctx, out, t0, vol) {
@@ -306,24 +394,26 @@ export const SFX: Record<string, (ctx: AudioContext, out: AudioNode, t0: number,
 
   // Footfall: a short low thump + a dusty noise scuff. Quiet by design — it's a
   // texture under movement, not an event, so it never competes with gunfire.
+  // Footsteps, per surface.
+  //
+  // There used to be exactly one step sound, so cobblestone, a wooden floor and
+  // open grass all landed identically — and the surface under your feet is one of
+  // the cheapest, strongest signals a game has for "you have moved somewhere
+  // else". Each recipe is the same two-part shape (a body thump plus a scuff)
+  // with the weight, pitch and brightness moved: stone is hard and bright, wood
+  // is hollow and boxy, grass is soft and almost all scuff.
   footstep(ctx, out, t0, vol) {
-    const o = ctx.createOscillator();
-    o.type = "sine";
-    o.frequency.setValueAtTime(92, t0);
-    o.frequency.exponentialRampToValueAtTime(52, t0 + 0.08);
-    const og = env(ctx, t0, 0.28 * vol, 0.002, 0.07);
-    o.connect(og).connect(out);
-    o.start(t0);
-    o.stop(t0 + 0.1);
-    const n = noiseSource(ctx);
-    const bp = ctx.createBiquadFilter();
-    bp.type = "bandpass";
-    bp.frequency.value = 2400 + Math.random() * 500; // slight scuff variation
-    bp.Q.value = 0.8;
-    const g = env(ctx, t0, 0.12 * vol, 0.001, 0.05);
-    n.connect(bp).connect(g).connect(out);
-    n.start(t0);
-    n.stop(t0 + 0.07);
+    step(ctx, out, t0, vol, { thump: 92, thumpTo: 52, thumpPeak: 0.28, scuffHz: 2400, scuffQ: 0.8, scuffPeak: 0.12, scuffDec: 0.05 });
+  },
+  footstepStone(ctx, out, t0, vol) {
+    step(ctx, out, t0, vol, { thump: 104, thumpTo: 58, thumpPeak: 0.26, scuffHz: 3100, scuffQ: 1.1, scuffPeak: 0.16, scuffDec: 0.045 });
+  },
+  footstepWood(ctx, out, t0, vol) {
+    // A boxy resonance instead of a bright scuff — a floorboard, not a flagstone.
+    step(ctx, out, t0, vol, { thump: 128, thumpTo: 74, thumpPeak: 0.32, scuffHz: 620, scuffQ: 3.4, scuffPeak: 0.14, scuffDec: 0.09 });
+  },
+  footstepGrass(ctx, out, t0, vol) {
+    step(ctx, out, t0, vol, { thump: 74, thumpTo: 46, thumpPeak: 0.11, scuffHz: 1750, scuffQ: 0.5, scuffPeak: 0.17, scuffDec: 0.085 });
   },
 
   // Enemy spots you — a short vocal-ish shout ("hey!"): two detuned saws swept up
@@ -348,6 +438,60 @@ export const SFX: Record<string, (ctx: AudioContext, out: AudioNode, t0: number,
   },
 
   // UI click for the mute button.
+
+  // ── Village voices ────────────────────────────────────────────────────────
+  //
+  // The distractors' whole mechanic is that they LIE to you, and until now they
+  // did it in silent CSS text — the deception was the quietest thing in the game.
+  // These are "programmer voice": a couple of bandpass formants over a buzzing
+  // saw, gated into syllables, with a pitch contour. It is not language, but the
+  // ear reads it as a person calling out, which is all it has to do until real
+  // recordings land.
+  villagerHail(ctx, out, t0, vol) {
+    voiceLine(ctx, out, t0, vol, { syllables: 2, base: 165, rise: true });
+  },
+  villagerLine(ctx, out, t0, vol) {
+    voiceLine(ctx, out, t0, vol, { syllables: 4 + Math.floor(Math.random() * 3), base: 150 });
+  },
+  merchantGreet(ctx, out, t0, vol) {
+    voiceLine(ctx, out, t0, vol, { syllables: 3, base: 120, rise: true });
+  },
+
+  // ── Village life: it should sound inhabited, not abandoned ────────────────
+  hammer(ctx, out, t0, vol) {
+    for (let i = 0; i < 3; i++) {
+      const t = t0 + i * 0.42;
+      const n = noiseSource(ctx);
+      const bp = ctx.createBiquadFilter();
+      bp.type = "bandpass";
+      bp.frequency.value = 2400;
+      bp.Q.value = 2;
+      const g = env(ctx, t, 0.32 * vol, 0.001, 0.07);
+      n.connect(bp).connect(g).connect(out);
+      n.start(t);
+      n.stop(t + 0.1);
+      blip(ctx, out, t, 320, { type: "triangle", peak: 0.16 * vol, atk: 0.001, dec: 0.06, glideTo: 180 });
+    }
+  },
+  dogBark(ctx, out, t0, vol) {
+    for (let i = 0; i < 2; i++) {
+      const t = t0 + i * 0.28;
+      blip(ctx, out, t, 300, { type: "sawtooth", peak: 0.3 * vol, atk: 0.004, dec: 0.14, glideTo: 150 });
+      const n = noiseSource(ctx);
+      const bp = ctx.createBiquadFilter();
+      bp.type = "bandpass";
+      bp.frequency.value = 900;
+      const g = env(ctx, t, 0.18 * vol, 0.004, 0.12);
+      n.connect(bp).connect(g).connect(out);
+      n.start(t);
+      n.stop(t + 0.18);
+    }
+  },
+  chatter(ctx, out, t0, vol) {
+    // Two voices overlapping at low level — the murmur of a street you can't see.
+    voiceLine(ctx, out, t0, vol * 0.5, { syllables: 5, base: 140 });
+    voiceLine(ctx, out, t0 + 0.35, vol * 0.4, { syllables: 4, base: 190 });
+  },
   ui(ctx, out, t0, vol) {
     blip(ctx, out, t0, 660, { type: "square", peak: 0.16 * vol, atk: 0.001, dec: 0.05 });
   },

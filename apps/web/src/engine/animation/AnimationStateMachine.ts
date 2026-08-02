@@ -305,7 +305,13 @@ export class AnimationStateMachine {
     const stride = getClipStride(this.activeAction.getClip().name);
     if (stride && stride.groundSpeed > MIN_BAKED_STRIDE) {
       const bakedWorldSpeed = (stride.groundSpeed / MIXAMO_UNITS_PER_METER) * this.rigScale;
-      this.activeAction.timeScale = sign * Math.min(1.7, Math.max(0.55, worldSpeed / bakedWorldSpeed));
+      // Clamp widened from [0.55, 1.7]. The floor was the foot-skate culprit: any
+      // time you moved slower than ~55% of the clip's baked pace — creeping, easing
+      // out of a stop, walking while aiming, or nudging an analog stick — the legs
+      // kept cycling at 0.55 while the body crawled, and the character visibly slid
+      // across the ground. 0.25 lets the cadence actually follow the body down to a
+      // crawl. The ceiling goes up to match sprint-strafing off the walk clips.
+      this.activeAction.timeScale = sign * Math.min(2.1, Math.max(0.25, worldSpeed / bakedWorldSpeed));
     } else {
       this.activeAction.timeScale = sign * (this.animMap[s]?.speed ?? 1);
     }

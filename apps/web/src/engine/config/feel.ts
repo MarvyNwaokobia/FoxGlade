@@ -34,27 +34,78 @@ export const FEEL = {
   gravity: -26,
   jumpForce: 6.5,
 
-  // --- Camera (third-person orbit follow) ---
+  // --- Camera (third-person over-the-shoulder: pivot + convergence) ---
+  //
+  // The rig orbits a PIVOT offset from the head (out to the shoulder, up by the
+  // headroom) and looks at a CONVERGENCE point far along the aim line. That's
+  // what pushes the character into a screen quadrant instead of sitting on the
+  // crosshair: the pivot is beside him, so he renders down-and-left while the
+  // reticle stays in clear air. (The old rig looked *along* aim from behind his
+  // head, which put him dead centre over the aim point.)
   mouseSensitivity: 0.0024,
-  pitchMin: -0.55, // radians (look down)
-  pitchMax: 0.95, // radians (look up)
-  cameraDistance: 3.4, // pulled in tighter (was 4.8) — more grounded, less "orbiting the town"
+  // Resting pitch is LEVEL, not 20° up. The old +0.35 start / +0.95 ceiling meant
+  // the horizon sat in the bottom third and the crosshair pointed over the
+  // rooftops — you could not see the enemies shooting you. You need to look DOWN
+  // more than up here: the treasure, the fox and the NPCs are all at ground level.
+  startPitch: -0.06, // radians the view rests at (slightly below level)
+  pitchMin: -0.72, // radians (look down)
+  pitchMax: 0.62, // radians (look up)
+  /** Soft deadzone: mouse deltas under this many px are damped (not zeroed), so
+   *  hand jitter stops swimming the camera without adding any input latency. */
+  aimDeadzonePx: 1.2,
+  aimDeadzoneDamp: 0.35, // how much of a sub-deadzone delta still gets through
+  cameraDistance: 2.4, // hip-fire orbit distance
   cameraHeight: 2.6, // (unused by the shoulder cam; kept for reference)
-  cameraShoulder: 0.75, // over-the-shoulder side offset, so the player isn't on the crosshair
+  cameraShoulder: 0.62, // over-the-shoulder side offset of the PIVOT (frames him left of centre)
+  cameraHeadroom: 0.28, // pivot lift above the eye — drops him below the reticle
+  cameraConverge: 25, // metres out along the aim line the camera converges on
   cameraMinHeight: 0.7, // camera never dips below this, so you can't see under the world
   cameraMinDistance: 1.2, // closest the camera pulls in on collision (kept back so the character stays framed, not slammed against his back)
+
+  // --- Aim-down-sights (hold right-mouse / AIM on touch) ---
+  // Replaces the old V first-person toggle, which put the camera at the eyes with
+  // no arms, no hands and no weapon (the gun is a child of the faded body, so it
+  // vanished too) — a floating camera, not a viewpoint. ADS gets the precision
+  // without ever hiding the character or the fox.
+  adsDistance: 1.75,
+  adsShoulder: 0.34,
+  adsFov: 48, // narrower lens while aiming
+  adsSensitivityMult: 0.62, // slower look while aiming — steadier
+  adsSpeedMult: 0.6, // you walk while aiming, you don't sprint
+  adsLerp: 14, // how fast the rig eases between hip and aim
   // Instead of hard-hiding the character when the camera is close (which read as
   // "vanishing"), fade him out: fully visible past fadeStart, gone by fadeEnd.
   cameraFadeStart: 1.5, // distance (m) below which the character starts fading
   cameraFadeEnd: 0.6, // distance (m) at which he's fully transparent (true near-first-person indoors)
   cameraCollisionBuffer: 0.35, // gap kept in front of a wall the camera pulls up to
 
-  // --- Damage feedback (screen shake + stagger tilt) ---
-  shakeDuration: 0.35, // seconds a hit-shake lasts
-  shakePosAmp: 0.16, // positional jitter (metres) at full strength
-  shakeRollAmp: 0.05, // camera roll (radians) at full strength — the "stagger"
-  /** Camera position smoothing (higher = tighter follow, lower = floatier). */
-  cameraLerp: 12,
+  // --- Damage feedback (screen shake + directional stagger) ---
+  // Punchier than before across the board: a hit used to be a small symmetric
+  // jitter you could easily miss in a firefight. Now it kicks, it rolls, and the
+  // kick is DIRECTIONAL — the view lurches away from whoever shot you, so the
+  // stagger itself tells you where the fire is coming from.
+  shakeDuration: 0.45, // seconds a hit-shake lasts
+  shakePosAmp: 0.26, // positional jitter (metres) at full strength
+  shakeRollAmp: 0.11, // camera roll (radians) at full strength — the "stagger"
+  /** Directional shove (metres) away from the shooter on a hit. */
+  hitPushAmp: 0.42,
+  /** Extra pitch kick (radians) on a hit — the head snapping back. */
+  hitPitchKick: 0.055,
+  /** A hit taking at least this fraction of max health staggers harder (×2). */
+  heavyHitFraction: 0.15,
+
+  // --- Low health ---
+  // Below this fraction the frame reads as "you are about to die": a pulsing red
+  // edge and a heartbeat drift on the camera. Health bars are easy to not look at
+  // during a fight; the whole screen is not.
+  lowHealthFraction: 0.3,
+  lowHealthPulseHz: 1.35, // heartbeat rate of the vignette pulse
+  lowHealthSwayAmp: 0.012, // radians of slow camera sway while critical
+  /** Camera position smoothing (higher = tighter follow, lower = floatier).
+   *  Raised from 12: the old rig lerped position slowly while snapping rotation
+   *  instantly, which is the classic "swimmy" combination. Converging on a distant
+   *  point already stabilises the framing, so the follow can afford to be tight. */
+  cameraLerp: 16,
   /** Height on the player the camera aims at. */
   lookAtHeight: 1.4,
   /** Eye/aim height while crouched (camera + throws lower with you). */

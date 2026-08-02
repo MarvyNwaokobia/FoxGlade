@@ -238,3 +238,87 @@ export const BOXES3D: Box3[] = [
   { minX: -H - 0.3, maxX: -H + 0.3, minY: 0, maxY: WALL_H, minZ: -H, maxZ: H },
   { minX: H - 0.3, maxX: H + 0.3, minY: 0, maxY: WALL_H, minZ: -H, maxZ: H },
 ];
+
+/** Anything shorter than this is chest-high cover: vaultable, and invisible to
+ *  the camera's collision ray. */
+export const LOW_COVER_H = 1.8;
+
+/**
+ * Boxes the CAMERA collides with — the same world MINUS chest-high cover.
+ *
+ * The camera used to test against every box, so backing up to a 1.5 m crate
+ * pulled the lens right against its face and a bright plank slab filled a third
+ * of the screen. A camera at eye height has no business being stopped by
+ * something it can see over; it rides above the cover instead. Shots, sightlines
+ * and movement all still use the full BOXES3D, so cover is still cover.
+ */
+export const CAMERA_BOXES: Box3[] = BOXES3D.filter((b) => b.maxY >= LOW_COVER_H);
+
+/** Chest-high cover blocks, as footprints — the things you can vault. */
+export const LOW_COVER: Building[] = SOLIDS.filter((b) => b.h < LOW_COVER_H);
+
+export interface VaultTarget {
+  /** Where the player lands, clear of the far side. */
+  landX: number;
+  landZ: number;
+  /** Apex height of the hurdle arc. */
+  peakY: number;
+}
+
+/**
+ * Is there chest-high cover close enough ahead to hurdle? Returns where you'd
+ * land, or null.
+ *
+ * The obstacle has to be genuinely in front (within a ~50° cone of travel) and
+ * within reach, and the landing spot has to be clear — vaulting into a wall, or
+ * onto another crate, would be worse than being stopped by it.
+ */
+export function vaultTarget(
+  x: number,
+  z: number,
+  dirX: number,
+  dirZ: number,
+  radius: number,
+  reach = 1.15
+): VaultTarget | null {
+  const len = Math.hypot(dirX, dirZ);
+  if (len < 1e-4) return null;
+  const nx = dirX / len;
+  const nz = dirZ / len;
+
+  for (const b of LOW_COVER) {
+    const halfW = b.w / 2;
+    const halfD = b.d / 2;
+    // Closest point on the footprint to the player.
+    const cx = Math.max(b.x - halfW, Math.min(x, b.x + halfW));
+    const cz = Math.max(b.z - halfD, Math.min(z, b.z + halfD));
+    const dx = cx - x;
+    const dz = cz - z;
+    const dist = Math.hypot(dx, dz);
+    if (dist > reach + radius) continue;
+    // Must be ahead of us, not beside or behind.
+    if (dist > 1e-4 && (dx / dist) * nx + (dz / dist) * nz < 0.64) continue;
+
+    // Carry on through the box and out the far side, plus clearance.
+    const span = Math.abs(nx) * b.w + Math.abs(nz) * b.d;
+    const landX = x + nx * (dist + span + radius + 0.35);
+    const landZ = z + nz * (dist + span + radius + 0.35);
+    if (Math.abs(landX) > H - radius || Math.abs(landZ) > H - radius) continue;
+    // Don't hurdle into something solid.
+    let blocked = false;
+    for (const c of COLLIDERS) {
+      if (
+        landX > c.minX - radius &&
+        landX < c.maxX + radius &&
+        landZ > c.minZ - radius &&
+        landZ < c.maxZ + radius
+      ) {
+        blocked = true;
+        break;
+      }
+    }
+    if (blocked) continue;
+    return { landX, landZ, peakY: b.h + 0.35 };
+  }
+  return null;
+}

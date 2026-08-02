@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { runtime } from "@/engine/runtime";
 import { VILLAGE, BUILDINGS } from "@/engine/world/village";
 import { useGame } from "@/engine/store";
@@ -27,6 +27,17 @@ function mz(z: number) {
 export function Minimap() {
   const canvas = useRef<HTMLCanvasElement>(null);
   const shopOpen = useGame((s) => s.shopOpen);
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const measure = () => setNarrow(window.innerWidth < 520);
+    measure();
+    window.addEventListener("resize", measure);
+    window.addEventListener("orientationchange", measure);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("orientationchange", measure);
+    };
+  }, []);
 
   useEffect(() => {
     const cvs = canvas.current;
@@ -92,7 +103,17 @@ export function Minimap() {
   }, []);
 
   return (
-    <div style={{ ...styles.wrap, opacity: shopOpen ? 0 : 1 }}>
+    <div
+      style={{
+        ...styles.wrap,
+        opacity: shopOpen ? 0 : 1,
+        // 158px is 40% of a portrait phone's width, and it was reaching far
+        // enough left to clip the fox pill in half. Scaled down rather than
+        // re-laid-out, so the canvas keeps its full drawing resolution.
+        transform: narrow ? "scale(0.72)" : undefined,
+        transformOrigin: "top right",
+      }}
+    >
       <canvas ref={canvas} style={{ width: SIZE, height: SIZE, display: "block" }} />
     </div>
   );

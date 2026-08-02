@@ -29,6 +29,20 @@ const SAMPLE_GAIN: Record<string, number> = { hurt: 2.2 };
 
 type BusName = "sfx" | "ambient" | "music";
 
+/**
+ * How wet, and how bright, each place in the village is. `wet` is the level fed
+ * into the convolver; `tone` is the low-pass on the tail (a small stone room
+ * keeps more high end than a long street does).
+ */
+export const SPACES = {
+  /** Between buildings — the default. A real slapback off the walls. */
+  street: { wet: 0.3, tone: 3200 },
+  /** Inside a house or the vault: shorter, brighter, more of it. */
+  room: { wet: 0.46, tone: 4200 },
+  /** Outside the ramparts — grass to the horizon, almost nothing comes back. */
+  open: { wet: 0.09, tone: 2400 },
+} as const;
+
 class AudioBus {
   private ctx: AudioContext | null = null;
   private master!: GainNode;
@@ -38,6 +52,9 @@ class AudioBus {
   private samples: Record<string, AudioBuffer> = {};
   private _muted = false;
   private windGain: GainNode | null = null;
+  private reverbSend: GainNode | null = null;
+  private reverbTone: BiquadFilterNode | null = null;
+  private space: keyof typeof SPACES = "street";
   private birdTimer: number | null = null;
   private musicTimer: number | null = null;
   private listeners = new Set<(muted: boolean) => void>();
@@ -63,8 +80,82 @@ class AudioBus {
       g.connect(this.master);
       this.buses[b] = g;
     });
+    this.buildReverb(ctx);
     this.ctx = ctx;
     return ctx;
+  }
+
+  /**
+   * A convolution reverb the SFX bus feeds in parallel.
+   *
+   * Everything in the game was bone dry. A rifle going off between two stone
+   * houses sounded exactly like a rifle going off in an open field, which is why
+   * the village never sounded like a physical place no matter how much ambience
+   * was layered on top of it — reverb is the cue that tells you a space HAS
+   * walls, and there wasn't any.
+   *
+   * The impulse response is synthesized rather than loaded: exponentially
+   * decaying noise with a few discrete early reflections punched into the head
+   * of it (the reflections are what make it read as a street rather than a
+   * generic wash). Costs one buffer at startup and ships no audio files.
+   */
+  private buildReverb(ctx: AudioContext) {
+    const seconds = 1.9;
+    const len = Math.floor(ctx.sampleRate * seconds);
+    const ir = ctx.createBuffer(2, len, ctx.sampleRate);
+    // Early reflections: delay in seconds, amplitude. Roughly a 6–14 m street.
+    const early: [number, number][] = [
+      [0.011, 0.72], [0.019, 0.55], [0.027, 0.62], [0.041, 0.4],
+      [0.053, 0.34], [0.071, 0.28], [0.089, 0.22],
+    ];
+    for (let c = 0; c < 2; c++) {
+      const d = ir.getChannelData(c);
+      for (let i = 0; i < len; i++) {
+        const t = i / len;
+        // Late tail: noise under an exponential decay, with the first ~20 ms
+        // rolled off so the tail arrives after the reflections, not with them.
+        const decay = Math.pow(1 - t, 2.6);
+        const onset = Math.min(1, i / (ctx.sampleRate * 0.02));
+        d[i] = (Math.random() * 2 - 1) * decay * onset * 0.55;
+      }
+      for (const [delay, amp] of early) {
+        // Decorrelate the two channels a touch so the space has width.
+        const idx = Math.floor((delay + (c ? 0.0017 : 0)) * ctx.sampleRate);
+        if (idx < len) d[idx] += amp * (c ? -1 : 1);
+      }
+    }
+    const convolver = ctx.createConvolver();
+    convolver.buffer = ir;
+    // Roll the top off the tail — stone absorbs high frequencies, and an
+    // unfiltered noise convolution hisses.
+    const tone = ctx.createBiquadFilter();
+    tone.type = "lowpass";
+    tone.frequency.value = 3200;
+
+    const send = ctx.createGain();
+    send.gain.value = SPACES.street.wet;
+    const wet = ctx.createGain();
+    wet.gain.value = 1;
+
+    this.buses.sfx.connect(send);
+    send.connect(convolver).connect(tone).connect(wet).connect(this.master);
+    this.reverbSend = send;
+    this.reverbTone = tone;
+  }
+
+  /**
+   * Move the player between acoustic spaces. Called each frame by the driver —
+   * a stone room should ring, the open ground outside the walls should not.
+   */
+  setSpace(space: keyof typeof SPACES) {
+    const ctx = this.ctx;
+    if (!ctx || !this.reverbSend || !this.reverbTone) return;
+    const s = SPACES[space];
+    if (space === this.space) return;
+    this.space = space;
+    // Crossfade, don't cut — a hard switch on a doorway is very audible.
+    this.reverbSend.gain.setTargetAtTime(s.wet, ctx.currentTime, 0.35);
+    this.reverbTone.frequency.setTargetAtTime(s.tone, ctx.currentTime, 0.35);
   }
 
   /** Resume the context and start the ambient beds. Safe to call repeatedly. */

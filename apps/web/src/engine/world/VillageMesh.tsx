@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
-import { useTexture, Text } from "@react-three/drei";
+import { useTexture, useGLTF, Text } from "@react-three/drei";
 import * as THREE from "three";
 import { BUILDINGS, ENTERABLES, VILLAGE, wallSegments, doorOpening, WALL_T, type Building } from "./village";
 import { HINTS } from "./hints";
@@ -10,9 +10,14 @@ import { THEME } from "./theme";
 import { Buildings3D, BuildingModel, chooseModel, tintColor } from "./Buildings3D";
 import { runtime } from "@/engine/runtime";
 import { softShadowTexture } from "./softShadow";
+import { perfOff } from "@/engine/scene/perf";
 
 const HALF = VILLAGE.half;
 const WALL_H = 3;
+
+/** The CC0 crate the chest-high cover blocks are built from. */
+const CRATE_MODEL = "/models/props/wooden_crate_01/wooden_crate_01_1k.gltf";
+useGLTF.preload(CRATE_MODEL);
 
 /** A photographic (CC0 PBR) material shared across a surface type. */
 export interface VillageMaterials {
@@ -145,8 +150,58 @@ function Wall({ position, size, mat }: { position: [number, number, number]; siz
  * enterable ones render their wall strips — the same boxes the collision and
  * LOS systems use — plus the roof, so you can walk in through the gap.
  */
+/**
+ * A block of chest-high cover, as a stack of real crates.
+ *
+ * These were a single `boxGeometry` wearing the plank texture at its building
+ * repeat — one 2 m board stretched across the whole face, which under a bright
+ * sky rendered as a flat near-white slab. Walking up to one filled a third of
+ * the screen with what looked like untextured placeholder geometry. Same
+ * footprint, same collision, but built from the CC0 crate model at its own
+ * scale, so the planks read as planks and the stack reads as cargo.
+ */
+function CoverStack({ b }: { b: Building }) {
+  const { scene } = useGLTF(CRATE_MODEL);
+  const crates = useMemo(() => {
+    const src = new THREE.Box3().setFromObject(scene);
+    const size = src.getSize(new THREE.Vector3());
+    const centre = src.getCenter(new THREE.Vector3());
+    // Two crates side by side, one on top, jostled — cargo nobody stacked neatly.
+    const layout: [number, number, number, number][] = [
+      [-b.w * 0.22, 0, -b.d * 0.18, 0.18],
+      [b.w * 0.24, 0, b.d * 0.2, -0.32],
+      [b.w * 0.02, b.h * 0.5, -b.d * 0.02, 0.62],
+    ];
+    // Each crate is half the block's height so a stack of two fills it.
+    const s = (b.h * 0.52) / Math.max(size.y, 0.001);
+    return layout.map(([dx, dy, dz, ry]) => {
+      const o = scene.clone(true);
+      o.position.set(-centre.x, -src.min.y, -centre.z);
+      o.traverse((n) => {
+        const m = n as THREE.Mesh;
+        if (m.isMesh) {
+          m.castShadow = true;
+          m.receiveShadow = true;
+        }
+      });
+      return { obj: o, dx, dy, dz, ry, s };
+    });
+  }, [scene, b.w, b.d, b.h]);
+
+  return (
+    <group position={[b.x, 0, b.z]}>
+      {crates.map((c, i) => (
+        <group key={i} position={[c.dx, c.dy, c.dz]} rotation={[0, c.ry, 0]} scale={c.s}>
+          <primitive object={c.obj} />
+        </group>
+      ))}
+    </group>
+  );
+}
+
 function BuildingBlock({ b, mats }: { b: Building; mats: VillageMaterials }) {
   const isCrate = b.h < 2;
+  if (isCrate) return <CoverStack b={b} />;
   if (b.door) {
     const op = doorOpening(b)!;
     const doorYaw = Math.atan2(op.nx, op.nz); // group's local +Z points out the door
@@ -344,9 +399,15 @@ const HINT_REAL = "#f2c14e"; // gold — revealed real
 const HINT_FAKE = "#7a4a4a"; // dim — revealed decoy
 
 /**
- * One hint beacon. All hints look identical (cyan pings) until the fox's sniff
- * reveals them — then the real one glows gold and decoys dim. The treasure gem
- * lives only under the real hint and appears when you reach it or it's revealed.
+ * One hint beacon: a candidate spot, indistinguishable from every other.
+ *
+ * Two things changed here. The pings no longer recolour to reveal the real one —
+ * that was the old "sniff", and the fox physically running to the treasure
+ * replaced it (Phase 3). And the marker is now a WAIST-HIGH glow rather than a
+ * 24-metre pillar through the skybox: with the board reseeding each chapter, a
+ * beacon visible from anywhere in the village meant you could see every
+ * candidate from the spawn gate and simply walk to one. There was nothing to
+ * find. Now you have to get close enough to spot it, or follow the fox.
  */
 function HintBeacon({ index }: { index: number }) {
   const hint = HINTS[index];
@@ -359,37 +420,39 @@ function HintBeacon({ index }: { index: number }) {
     // A decoy vanishes once its distractor is silenced; a real treasure vanishes
     // once a thief steals it OR the player has claimed (picked up) it.
     if (grp.current) {
+      grp.current.position.set(hint.pos.x, 0, hint.pos.z); // the board reseeds
       grp.current.visible =
         !(!hint.real && runtime.hintSilenced[index]) &&
         !(hint.real && (runtime.hintStolen[index] || runtime.hintClaimed[index]));
     }
-    const revealed = performance.now() < runtime.revealRealUntil;
-    const c = revealed ? (hint.real ? HINT_REAL : HINT_FAKE) : HINT_DEFAULT;
+    // Every candidate looks the same, always — the fox is the only tell.
     if (pad.current) {
-      pad.current.color.set(c);
-      pad.current.emissive.set(c);
+      pad.current.color.set(HINT_DEFAULT);
+      pad.current.emissive.set(HINT_DEFAULT);
     }
     if (pillar.current) {
-      pillar.current.color.set(c);
-      pillar.current.emissive.set(c);
+      pillar.current.color.set(HINT_DEFAULT);
+      pillar.current.emissive.set(HINT_DEFAULT);
     }
     if (gem.current) {
       const atThisReal = runtime.nearHintIsReal && runtime.nearHintIndex === index;
-      gem.current.visible = hint.real && !runtime.hintClaimed[index] && (atThisReal || revealed);
+      gem.current.visible = hint.real && !runtime.hintClaimed[index] && atThisReal;
       gem.current.rotation.y += dt * 1.2;
       gem.current.position.y = 1.6 + Math.sin(performance.now() / 600) * 0.15;
     }
   });
 
   return (
-    <group ref={grp} position={[hint.pos.x, 0, hint.pos.z]}>
+    <group ref={grp}>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
         <circleGeometry args={[3, 40]} />
         <meshStandardMaterial ref={pad} color={HINT_DEFAULT} emissive={HINT_DEFAULT} emissiveIntensity={0.6} transparent opacity={0.5} />
       </mesh>
-      <mesh position={[0, 12, 0]}>
-        <cylinderGeometry args={[0.25, 0.25, 24, 12]} />
-        <meshStandardMaterial ref={pillar} color={HINT_DEFAULT} emissive={HINT_DEFAULT} emissiveIntensity={0.9} transparent opacity={0.4} />
+      {/* Waist-high, not a searchlight — it should read from down the street, not
+          from the far wall of the village. */}
+      <mesh position={[0, 1.1, 0]}>
+        <cylinderGeometry args={[0.16, 0.16, 2.2, 10]} />
+        <meshStandardMaterial ref={pillar} color={HINT_DEFAULT} emissive={HINT_DEFAULT} emissiveIntensity={0.9} transparent opacity={0.45} />
       </mesh>
       {hint.real && (
         <group ref={gem} position={[0, 1.6, 0]}>
@@ -413,28 +476,48 @@ function Hints() {
   );
 }
 
-/** Battlement merlons (the tooth-like blocks) along all four rampart tops. */
-function battlements(mat: THREE.Material): React.ReactElement[] {
-  const H = VILLAGE.half;
-  const step = 3;
-  const out: React.ReactElement[] = [];
-  let k = 0;
-  for (let p = -H + 1.5; p <= H - 1.5; p += step) {
-    const spots: [number, number][] = [
-      [p, -H],
-      [p, H],
-      [-H, p],
-      [H, p],
-    ];
-    for (const [x, z] of spots) {
-      out.push(
-        <mesh key={k++} material={mat} position={[x, WALL_H + 0.35, z]} castShadow receiveShadow>
-          <boxGeometry args={[1, 0.7, 1]} />
-        </mesh>
-      );
+/**
+ * Battlement merlons (the tooth-like blocks) along all four rampart tops, as ONE
+ * instanced mesh.
+ *
+ * These were ~92 individual meshes — a fifth of the scene's entire draw-call
+ * budget spent on identical decorative blocks that never move. Profiling put the
+ * baseline at 454 calls, and this was the single biggest avoidable chunk.
+ */
+function Battlements({ mat }: { mat: THREE.Material }) {
+  const ref = useRef<THREE.InstancedMesh>(null);
+  const spots = useMemo(() => {
+    const H = VILLAGE.half;
+    const out: [number, number][] = [];
+    for (let p = -H + 1.5; p <= H - 1.5; p += 3) {
+      out.push([p, -H], [p, H], [-H, p], [H, p]);
     }
-  }
-  return out;
+    return out;
+  }, []);
+
+  useEffect(() => {
+    const mesh = ref.current;
+    if (!mesh) return;
+    const m = new THREE.Matrix4();
+    spots.forEach(([x, z], i) => {
+      m.makeTranslation(x, WALL_H + 0.35, z);
+      mesh.setMatrixAt(i, m);
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.computeBoundingSphere();
+  }, [spots]);
+
+  return (
+    <instancedMesh
+      ref={ref}
+      args={[undefined, undefined, spots.length]}
+      material={mat}
+      castShadow
+      receiveShadow
+    >
+      <boxGeometry args={[1, 0.7, 1]} />
+    </instancedMesh>
+  );
 }
 
 /**
@@ -457,7 +540,7 @@ function Ramparts({ mats }: { mats: VillageMaterials }) {
       <Wall position={[0, WALL_H / 2, H]} size={[H * 2, WALL_H, T]} mat={mats.rampart} />
       <Wall position={[-H, WALL_H / 2, 0]} size={[T, WALL_H, H * 2]} mat={mats.rampart} />
       <Wall position={[H, WALL_H / 2, 0]} size={[T, WALL_H, H * 2]} mat={mats.rampart} />
-      {battlements(mats.rampart)}
+      <Battlements mat={mats.rampart} />
       {corners.map(([x, z], i) => (
         <group key={i} position={[x, 0, z]}>
           <mesh material={mats.rampart} position={[0, 2.6, 0]} castShadow receiveShadow>
@@ -480,15 +563,33 @@ function Ramparts({ mats }: { mats: VillageMaterials }) {
  * independent, unlike the cast shadow.
  */
 function BuildingShadows() {
+  const ref = useRef<THREE.InstancedMesh>(null);
+  const list = useMemo(() => BUILDINGS.filter((b) => b.h >= 2), []);
+
+  // One instanced quad per building instead of ~20 separate transparent meshes.
+  // Transparent draws are the expensive kind (no early-Z, strict sort order), so
+  // collapsing them was worth more than the raw call count suggests.
+  useEffect(() => {
+    const mesh = ref.current;
+    if (!mesh) return;
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
+    const s = new THREE.Vector3();
+    const p = new THREE.Vector3();
+    list.forEach((b, i) => {
+      // Unit plane scaled per building — one shared geometry for all of them.
+      m.compose(p.set(b.x, 0.035, b.z), q, s.set(b.w + 0.7, b.d + 0.7, 1));
+      mesh.setMatrixAt(i, m);
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.computeBoundingSphere();
+  }, [list]);
+
   return (
-    <>
-      {BUILDINGS.filter((b) => b.h >= 2).map((b, i) => (
-        <mesh key={i} rotation={[-Math.PI / 2, 0, 0]} position={[b.x, 0.035, b.z]} renderOrder={1}>
-          <planeGeometry args={[b.w + 0.7, b.d + 0.7]} />
-          <meshBasicMaterial map={softShadowTexture()} transparent opacity={0.45} depthWrite={false} />
-        </mesh>
-      ))}
-    </>
+    <instancedMesh ref={ref} args={[undefined, undefined, list.length]} renderOrder={1}>
+      <planeGeometry args={[1, 1]} />
+      <meshBasicMaterial map={softShadowTexture()} transparent opacity={0.45} depthWrite={false} />
+    </instancedMesh>
   );
 }
 
@@ -684,9 +785,11 @@ export function Village() {
       <Ramparts mats={mats} />
 
       {/* Solid buildings → realistic CC-BY models */}
-      <Buildings3D
-        buildings={BUILDINGS.map((b, i) => ({ b, i })).filter(({ b }) => !b.door && b.h >= 2)}
-      />
+      {!perfOff("noBuildings") && (
+        <Buildings3D
+          buildings={BUILDINGS.map((b, i) => ({ b, i })).filter(({ b }) => !b.door && b.h >= 2)}
+        />
+      )}
       {/* Enterable buildings: the open-air MARKET enclosure renders specially; the
           rest are houses with a swap-on-enter interior. */}
       {ENTERABLES.map((b, e) =>

@@ -5,6 +5,7 @@ import { useFrame } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
+import { dressCharacterMaterial } from "./materials";
 import {
   AnimationStateMachine,
   AnimState,
@@ -15,7 +16,8 @@ import {
 } from "@/engine/animation";
 import { runtime } from "@/engine/runtime";
 import { useGame } from "@/engine/store";
-import { makeRifle } from "./GunMesh";
+import { makeRifle, aimGunWorldMatrix, muzzleWorldPos } from "./GunMesh";
+import { buildArchetypeKit, type Archetype, type KitPiece } from "./ArchetypeKit";
 
 /**
  * State the NPC's AI feeds the rig each frame. Position + facing are handled by
@@ -29,22 +31,48 @@ export interface NpcRigState {
   speed: number; // planar m/s, for foot-skate-matched cadence
   dead?: boolean; // plays the death clip + settles the corpse (see DEATH_LINGER_MS)
   hitAt?: number; // performance.now of the last non-lethal hit → stagger + flash punch
+  /** Travel direction relative to the NPC's facing (it faces the player), so a
+   *  sideways step plays a strafe clip instead of a forward walk that slides. */
+  moveFwd?: number;
+  moveRight?: number;
+  /** Where this NPC is pointing its weapon (world direction). The rig aims the
+   *  gun along it, exactly like the player's — so an enemy visibly levels its
+   *  rifle at you instead of carrying it in a fixed pose while rounds appear. */
+  aimDir?: THREE.Vector3;
+  /** OUT: world position of this NPC's barrel tip, written by the rig each frame.
+   *  The AI spawns its rounds and its muzzle flash from here, so gunfire leaves
+   *  the gun rather than the middle of the chest. */
+  muzzleOut?: THREE.Vector3;
 }
 
 /** How long a killed NPC lies on the ground before it despawns (ms). Consumers
  *  keep the rig mounted this long so death reads instead of a pop-out. */
 export const DEATH_LINGER_MS = 1600;
 
-// The death clip pivots at hip height (root motion stripped), so drop the whole
-// rig this far to lay the body on the ground instead of floating (cf. PlayerRig).
-const NPC_DEATH_DROP = -0.85;
+// Settling the corpse.
+//
+// The death clip lays the body horizontal but pivots at hip height (the Hips
+// position track is stripped), so the rig has to be lowered or the body floats.
+// The drop itself was about right — what looked like "sinking into the ground"
+// was the TIMING: it eased down on its own 5/s spring, independent of the clip,
+// so the body finished falling over and *then* kept gliding downward through the
+// floor for another second.
+//
+// Now the drop is driven by the death clip's own progress, so the body descends
+// exactly as it collapses and is fully settled the moment the animation lands.
+const DEATH_DROP = -0.8; // metres, at full clip progress
+/** Seconds the corpse spends fading out before it unmounts (no more hard pop). */
+const DEATH_FADE_SEC = 0.5;
 
-export type NpcModelId = "npc_blocker" | "npc_distractor" | "npc_thief";
+export type NpcModelId = "npc_blocker" | "npc_distractor" | "npc_thief" | "guardian";
 
 const MODEL_PATHS: Record<NpcModelId, string> = {
   npc_blocker: "/characters/glb/npc_blocker.glb",
   npc_distractor: "/characters/glb/npc_distractor.glb",
   npc_thief: "/characters/glb/npc_thief.glb",
+  // The guardian gets its own silhouette — it must be unmistakable at a glance,
+  // because the whole mechanic rests on you knowing which voice to trust.
+  guardian: "/characters/glb/sentinel.glb",
 };
 
 // Our FBX→GLB conversions carry the ~90° Z-up→Y-up root-pitch offset the mixer
@@ -56,13 +84,39 @@ const FIRE_HOLD = 0.22;
 
 // Armed NPCs carry the same procedural rifle as the player, socketed to the hand
 // bone with the same Valor grip (same Mixamo skeleton). Distractors are unarmed.
-const NPC_GRIP = { rx: 0, oy: 0.02, oz: 0.04 };
+// rx = -90° for the same reason as the player's grip (see PlayerRig for how the
+// axis and sign were established): the hand bone's local frame puts the gun's
+// authored +Z-forward along world -X, so armed NPCs were carrying their rifles
+// jutting out sideways too.
+// rz is the barrel roll — same measured -105.2° correction as the player's grip,
+// or armed NPCs carry their rifles on their side with the sights facing left.
+const NPC_GRIP = { rx: -Math.PI / 2, rz: -1.8368, oy: 0.02, oz: 0.04 };
 const _npcGunScratch = new THREE.Matrix4();
 const _npcGunWorld = new THREE.Matrix4();
 const _npcGunScale = new THREE.Vector3(1, 1, 1);
 const _npcGunOff = new THREE.Vector3();
 const _npcGunQ = new THREE.Quaternion();
 const _npcGunE = new THREE.Euler();
+const _npcHandPos = new THREE.Vector3();
+const _npcAim = new THREE.Vector3();
+// Scratch for the archetype kit sockets.
+const _kitLocal = new THREE.Matrix4();
+const _kitWorld = new THREE.Matrix4();
+const _kitInv = new THREE.Matrix4();
+const _kitQ = new THREE.Quaternion();
+const _kitBoneQ = new THREE.Quaternion();
+const _kitPos = new THREE.Vector3();
+const _kitScale = new THREE.Vector3();
+const _kitUnit = new THREE.Vector3();
+const _kitUp = new THREE.Vector3(0, 1, 0);
+
+/** Which silhouette kit each model wears (see ArchetypeKit.ts). */
+const MODEL_ROLE: Record<NpcModelId, Archetype> = {
+  npc_blocker: "blocker",
+  npc_distractor: "villager",
+  npc_thief: "thief",
+  guardian: "guardian",
+};
 
 export const NpcRig = memo(function NpcRig({
   model,
@@ -71,10 +125,17 @@ export const NpcRig = memo(function NpcRig({
   model: NpcModelId;
   state: NpcRigState;
 }) {
-  const armed = model !== "npc_distractor";
+  const armed = model === "npc_blocker" || model === "npc_thief";
   const groupRef = useRef<THREE.Group>(null);
   const hipsBoneRef = useRef<THREE.Object3D | null>(null);
   const handBoneRef = useRef<THREE.Object3D | null>(null);
+  // Silhouette kit: the shape that tells you what this NPC is before you're
+  // close enough to read its texture. Sockets to head / spine / hand bones.
+  const kitBones = useRef<{ head: THREE.Object3D | null; spine: THREE.Object3D | null }>({
+    head: null,
+    spine: null,
+  });
+  const kitRef = useRef<{ piece: KitPiece; node: THREE.Object3D }[]>([]);
   const gunRef = useRef<THREE.Object3D | null>(null);
   const hipsFixApplied = useRef(false);
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
@@ -85,6 +146,7 @@ export const NpcRig = memo(function NpcRig({
   const deathPlayed = useRef(false);
   const deathDrop = useRef(0); // eased downward offset that settles the corpse
   const lastHitAt = useRef(-1);
+  const deathAt = useRef(-1); // when the death fade started
   const hitPunch = useRef(0); // 1 on a fresh hit, decays → stagger + flash amount
 
   const { scene, animations } = useGLTF(MODEL_PATHS[model]);
@@ -96,7 +158,7 @@ export const NpcRig = memo(function NpcRig({
     const mats: THREE.MeshStandardMaterial[] = [];
     clone.traverse((child) => {
       if (child instanceof THREE.Mesh) {
-        child.castShadow = false;
+        child.castShadow = true;
         child.receiveShadow = true;
         child.frustumCulled = false;
         // Own the materials (clone) so a per-instance hit-flash doesn't flash every
@@ -105,10 +167,8 @@ export const NpcRig = memo(function NpcRig({
           ? child.material.map((m) => m.clone())
           : child.material.clone();
         (Array.isArray(child.material) ? child.material : [child.material]).forEach((m) => {
-          const sm = m as THREE.MeshStandardMaterial;
-          if ("roughness" in sm) sm.roughness = Math.max(sm.roughness ?? 1, 0.9);
-          if ("metalness" in sm) sm.metalness = 0;
-          mats.push(sm);
+          dressCharacterMaterial(m);
+          mats.push(m as THREE.MeshStandardMaterial);
         });
       }
     });
@@ -135,9 +195,36 @@ export const NpcRig = memo(function NpcRig({
             hipsBone = child;
             hipsBoneRef.current = child;
           }
-          if (armed && !handBoneRef.current && /righthand$/i.test(child.name)) handBoneRef.current = child;
+          if (!handBoneRef.current && /righthand$/i.test(child.name)) handBoneRef.current = child;
+          if (!kitBones.current.head && /head$/i.test(child.name)) kitBones.current.head = child;
+          if (!kitBones.current.spine && /spine2$/i.test(child.name)) kitBones.current.spine = child;
         }
       });
+      // Fall back to the base spine if the rig has no Spine2.
+      if (!kitBones.current.spine) {
+        groupRef.current.traverse((child) => {
+          if ((child as THREE.Bone).isBone && !kitBones.current.spine && /spine1?$/i.test(child.name)) {
+            kitBones.current.spine = child;
+          }
+        });
+      }
+      // Attach the archetype kit. Matrix-driven per frame like the rifle, so it
+      // rides the animation instead of floating in the rig's local space.
+      if (kitRef.current.length === 0) {
+        for (const piece of buildArchetypeKit(MODEL_ROLE[model])) {
+          piece.object.matrixAutoUpdate = false;
+          piece.object.traverse((n) => {
+            const m = n as THREE.Mesh;
+            if (m.isMesh) {
+              m.castShadow = true;
+              m.receiveShadow = true;
+              m.frustumCulled = false;
+            }
+          });
+          groupRef.current.add(piece.object);
+          kitRef.current.push({ piece, node: piece.object });
+        }
+      }
       if (hipsBone) {
         groupRef.current.updateWorldMatrix(true, true);
         animMachine.setRigScale((hipsBone as THREE.Object3D).getWorldPosition(new THREE.Vector3()).y);
@@ -181,37 +268,68 @@ export const NpcRig = memo(function NpcRig({
       }
     } else if (!frozen) {
       const firedRecently = state.fireAt > 0 && (performance.now() - state.fireAt) / 1000 < FIRE_HOLD;
-      if (state.moving) {
+      // FIRING WINS over locomotion. This was the other way round, and since
+      // blockers now advance on you they are moving almost the whole engagement —
+      // so the Fire clip never once got a look-in and their shots appeared as
+      // projectiles popping out of a walking body with no gesture at all. Planting
+      // for a third of a second to shoot also reads better than firing on the move.
+      if (firedRecently) {
+        animMachine.transition(AnimState.Fire);
+      } else if (state.moving) {
+        // Pick the clip by travel direction first — otherwise a blocker sliding
+        // sideways around you plays a forward walk cycle and its feet skate.
+        if (state.moveFwd !== undefined && state.moveRight !== undefined) {
+          animMachine.setMoveDirection(state.moveFwd, state.moveRight);
+        }
         animMachine.transition(state.running ? AnimState.Run : AnimState.Walk);
         animMachine.matchLocomotionSpeed(state.speed);
-      } else if (firedRecently) {
-        animMachine.transition(AnimState.Fire);
       } else {
         animMachine.transition(AnimState.Idle);
       }
     }
 
-    // Settle the corpse onto the ground (death clip pivots at hip height).
-    const dropTarget = state.dead ? NPC_DEATH_DROP : 0;
-    deathDrop.current += (dropTarget - deathDrop.current) * Math.min(1, 5 * dt);
+    // Settle the corpse IN TIME WITH the death clip — the body lowers as it falls
+    // and is done the instant the animation is, instead of continuing to glide
+    // downward through the floor afterwards.
+    deathDrop.current = state.dead ? DEATH_DROP * animMachine.getActiveProgress() : 0;
     groupRef.current.position.y = deathDrop.current;
 
-    // Hit-react: a fresh non-lethal hit punches hitPunch to 1; it decays fast into
-    // a brief stagger (squash + lean back) and a white impact flash. Cleared on
-    // death so the corpse reads clean. No clip → never interrupts fire/locomotion.
+    // Fade the body out over its last half-second instead of vanishing mid-frame.
+    if (state.dead) {
+      if (deathAt.current < 0) deathAt.current = performance.now();
+      const elapsed = (performance.now() - deathAt.current) / 1000;
+      const fadeStart = DEATH_LINGER_MS / 1000 - DEATH_FADE_SEC;
+      const fade = THREE.MathUtils.clamp(1 - (elapsed - fadeStart) / DEATH_FADE_SEC, 0, 1);
+      for (const m of materials.current) {
+        m.transparent = fade < 0.99;
+        m.opacity = fade;
+        m.depthWrite = fade >= 0.99;
+      }
+      if (gunRef.current) gunRef.current.visible = fade > 0.05;
+    }
+
+    // Hit-react: play the REAL flinch clip.
+    //
+    // This used to be a procedural cartoon squash — scale to 1.12/0.78/1.12 plus a
+    // 23° backward lean plus a full-white emissive flash. On a realistic soldier
+    // that reads as a rendering glitch rather than an impact, and because it never
+    // touched the animation state the NPC kept walking and shooting straight
+    // through it, so shots landed with no consequence you could see. Now a hit
+    // interrupts with `hitReaction` (the Blocker also pushes its fire cooldown out,
+    // so a stagger genuinely buys you time) and the flash is a restrained impact
+    // pop rather than a white-out.
     if (state.dead) {
       hitPunch.current = 0;
     } else if (state.hitAt && state.hitAt !== lastHitAt.current) {
       lastHitAt.current = state.hitAt;
       hitPunch.current = 1;
+      if (!frozen) animMachine.transition(AnimState.HitLight, true);
     }
-    hitPunch.current = Math.max(0, hitPunch.current - 4 * dt); // ~0.25s stagger
+    hitPunch.current = Math.max(0, hitPunch.current - 5 * dt);
     const p = hitPunch.current;
-    groupRef.current.scale.set(1 + 0.12 * p, 1 - 0.22 * p, 1 + 0.12 * p);
-    groupRef.current.rotation.x = -0.4 * p; // big lean back from the impact (~23°)
     for (const m of materials.current) {
-      m.emissive.setRGB(p, p, p); // bright white impact flash (p=0 → no glow)
-      m.emissiveIntensity = p * 3;
+      m.emissive.setRGB(p * 0.9, p * 0.35, p * 0.25); // hot impact pop, not a white-out
+      m.emissiveIntensity = p * 1.6;
     }
 
     if (hipsBoneRef.current && hipsFixApplied.current) {
@@ -225,13 +343,56 @@ export const NpcRig = memo(function NpcRig({
       hipsFixApplied.current = true;
     }
 
+    // Drive the silhouette kit off its bones, after the mixer has posed them.
+    for (const { piece, node } of kitRef.current) {
+      const bone =
+        piece.bone === "head"
+          ? kitBones.current.head
+          : piece.bone === "spine"
+            ? kitBones.current.spine
+            : handBoneRef.current;
+      if (!bone) continue;
+      bone.updateWorldMatrix(true, false);
+      // Take the bone's world POSITION and ROTATION, and throw its scale away.
+      //
+      // These GLBs are Mixamo conversions whose skeletons carry a large baked
+      // scale, so multiplying straight through the bone's world matrix shrank
+      // every piece of kit by that factor — the guardian's two-metre staff came
+      // out a couple of centimetres long, present in the scene graph and
+      // invisible on screen. The kit is authored in real metres and should stay
+      // that way whatever the rig underneath is doing.
+      bone.matrixWorld.decompose(_kitPos, _kitBoneQ, _kitScale);
+      if (piece.upright) {
+        // Track the hand, but stay vertical and only inherit the NPC's facing.
+        _kitBoneQ.setFromAxisAngle(_kitUp, groupRef.current.rotation.y);
+      }
+      _kitWorld.compose(_kitPos, _kitBoneQ, _kitUnit.setScalar(piece.scale));
+      _kitLocal.compose(
+        piece.offset,
+        _kitQ.setFromEuler(piece.euler),
+        _kitUnit.setScalar(1)
+      );
+      _kitWorld.multiply(_kitLocal);
+      _kitInv.copy(groupRef.current.matrixWorld).invert();
+      node.matrix.multiplyMatrices(_kitInv, _kitWorld);
+      // A dying NPC's kit fades with the body rather than hanging in the air.
+      node.visible = !state.dead || deathAt.current < 0 || performance.now() - deathAt.current < DEATH_LINGER_MS - 100;
+    }
+
     // Drive the rifle from the hand bone (Valor's socket) — same as the player.
     if (gunRef.current && handBoneRef.current) {
       handBoneRef.current.updateWorldMatrix(true, false);
-      _npcGunE.set(NPC_GRIP.rx, 0, 0);
-      _npcGunWorld.compose(_npcGunOff.set(0, NPC_GRIP.oy, NPC_GRIP.oz), _npcGunQ.setFromEuler(_npcGunE), _npcGunScale);
+      _npcHandPos.setFromMatrixPosition(handBoneRef.current.matrixWorld);
+      // Fall back to the body's forward if the AI hasn't supplied an aim yet.
+      if (state.aimDir && state.aimDir.lengthSq() > 1e-6) {
+        _npcAim.copy(state.aimDir);
+      } else {
+        _npcAim.set(0, 0, 1).applyQuaternion(groupRef.current.getWorldQuaternion(_npcGunQ));
+      }
+      aimGunWorldMatrix(_npcGunWorld, _npcHandPos, _npcAim);
+      if (state.muzzleOut) muzzleWorldPos(state.muzzleOut, gunRef.current, _npcGunWorld);
       _npcGunScratch.copy(groupRef.current.matrixWorld).invert();
-      gunRef.current.matrix.multiplyMatrices(_npcGunScratch, handBoneRef.current.matrixWorld).multiply(_npcGunWorld);
+      gunRef.current.matrix.multiplyMatrices(_npcGunScratch, _npcGunWorld);
     }
   });
 
@@ -245,3 +406,4 @@ export const NpcRig = memo(function NpcRig({
 useGLTF.preload("/characters/glb/npc_blocker.glb");
 useGLTF.preload("/characters/glb/npc_distractor.glb");
 useGLTF.preload("/characters/glb/npc_thief.glb");
+useGLTF.preload("/characters/glb/sentinel.glb");

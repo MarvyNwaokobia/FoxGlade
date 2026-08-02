@@ -4,6 +4,9 @@ import { Village } from "@/engine/world/VillageMesh";
 import { Blockers } from "@/engine/npc/Blockers";
 import { Distractors } from "@/engine/npc/Distractors";
 import { Thieves } from "@/engine/npc/ThiefWave";
+import { Merchant } from "@/engine/npc/Merchant";
+import { Guardian } from "@/engine/npc/Guardian";
+import { VillageAmbience } from "@/engine/audio/VillageAmbience";
 import { Environment } from "@react-three/drei";
 import { Projectiles } from "@/engine/combat/ProjectileLayer";
 import { ShotFX } from "@/engine/combat/ShotFxLayer";
@@ -13,6 +16,10 @@ import { Props } from "@/engine/world/Props";
 import { Atmosphere } from "@/engine/world/Atmosphere";
 import { PostFX } from "@/engine/scene/PostFX";
 import { useGame } from "@/engine/store";
+import { Daylight } from "@/engine/world/Daylight";
+import { SkyDome } from "@/engine/world/SkyDome";
+import { Horizon } from "@/engine/world/Horizon";
+import { perfOff } from "@/engine/scene/perf";
 
 /**
  * Lighting rig + the village. Kept separate from the world geometry so the
@@ -33,45 +40,36 @@ export function VillageScene({
   const roundNonce = useGame((s) => s.roundNonce);
   return (
     <>
-      {/* Real CC0 daytime sky (partly cloudy) as the BACKGROUND — realistic
-          clouds, no fake sun disc. environmentIntensity kept low so surfaces get
-          a little sky fill but DON'T turn shiny (that was the old problem). */}
-      <Environment
-        files="/env/day_clouds_2k.hdr"
-        background
-        backgroundIntensity={1.0}
-        environmentIntensity={0.3}
-      />
-      {/* Light daytime haze so far buildings melt into the horizon */}
-      <fog attach="fog" args={["#c3ccd6", 55, 175]} />
-      {/* Bright sky/ground fill so characters aren't murky in the shade */}
-      <ambientLight intensity={0.45} />
-      <hemisphereLight color="#cfe0f2" groundColor="#6a5b48" intensity={1.0} />
-      {/* Daytime sun casting the shadows */}
-      <directionalLight
-        position={[38, 26, 14]}
-        color="#fff4e0"
-        intensity={2.4}
-        castShadow={shadows && !degraded}
-        shadow-mapSize={[shadowSize, shadowSize]}
-        shadow-camera-left={-40}
-        shadow-camera-right={40}
-        shadow-camera-top={40}
-        shadow-camera-bottom={-40}
-        shadow-camera-near={1}
-        shadow-camera-far={120}
-        shadow-bias={-0.0004}
-      />
+      {/* Image-based lighting only — the day HDRI gives surfaces a little sky
+          fill (kept low so they DON'T turn shiny). The visible sky is no longer
+          `background`: it's <SkyDome>, which cross-fades a real day, dusk and
+          night sky so nightfall actually reads overhead. */}
+      <Environment files="/env/day_clouds_2k.hdr" environmentIntensity={0.3} />
+      <SkyDome />
+      {/* Sun, sky, fog and ambient — all driven by the day clock (Daylight). */}
+      <Daylight shadows={shadows && !degraded} shadowSize={shadowSize} />
       <Village />
+      {/* Hills, treeline and a ruined tower past the walls — so the world doesn't
+          stop at a flat band of grass. Instanced; four draw calls all in. */}
+      {!perfOff("noProps") && <Horizon />}
       <Interiors />
       {/* Set-dressing props are cut on struggling machines (Valor's approach). */}
-      {!degraded && <Props />}
+      {!degraded && !perfOff("noProps") && <Props />}
       <Atmosphere />
-      <group key={roundNonce}>
-        <Blockers />
-        <Distractors />
-        <Thieves />
-      </group>
+      {!perfOff("noNpc") && (
+        <group key={roundNonce}>
+          <Blockers />
+          <Distractors />
+          <Thieves />
+        </group>
+      )}
+      {/* The trader lives outside the round group — he isn't part of a wave and
+          shouldn't respawn when the round restarts. */}
+      {!perfOff("noNpc") && <Merchant />}
+      {/* One trusted voice per chapter. Outside the round group: it manages its
+          own lifecycle off the chapter, not off NPC respawns. */}
+      {!perfOff("noNpc") && <Guardian />}
+      <VillageAmbience />
       <Projectiles />
       <ShotFX />
       <Bombs />

@@ -2,51 +2,41 @@
 
 import { Thief } from "./Thief";
 import { THIEF } from "@/engine/config/round";
+import { useGame } from "@/engine/store";
+import { CHAPTERS } from "@/engine/config/day";
 
 /**
- * Three thieves with staggered starts (THIEF.starts in config/round.ts), each
- * racing ONE specific treasure through the organic layout: one runs the east
- * wall for the shallow common treasure, two converge on the deep rare nook
- * from the west wall and up the centre. Waypoints thread the streets.
+ * The thieves that contest the treasure with you.
+ *
+ * These used to be handed hardcoded waypoint lists ending at the old fixed hint
+ * coordinates — which Phase 5's reseeding board silently invalidated, so they'd
+ * been racing to empty ground. They now only need to be told WHERE THEY COME IN;
+ * each one finds the real treasure and routes to it on its own.
+ *
+ * Entries are spread around the wall so the threat doesn't always arrive from
+ * the same direction, and each gets a different stagger — the first blip on your
+ * compass is the alarm, and the later ones are the punishment for dawdling.
  */
-const EAST_TO_COMMON: [number, number, number][] = [
-  [33, 0, 30],
-  [33, 0, -2],
-  [29, 0, -9],
-  [23, 0, -11.5],
-  [21.5, 0, -15],
-];
-const WEST_TO_RARE: [number, number, number][] = [
-  [-33, 0, 28],
-  [-33, 0, -10],
-  [-28, 0, -20],
-  [-27, 0, -33],
-  [-14, 0, -34],
-  [-9, 0, -31],
-];
-const CENTER_TO_RARE: [number, number, number][] = [
-  [2, 0, 32],
-  [2, 0, 16],
-  [2, 0, 7],
-  [0, 0, -3],
-  [-3, 0, -12],
-  [-6, 0, -22],
-  [-9, 0, -31],
-];
-
-const RUNS: { path: [number, number, number][]; targetHint: number }[] = [
-  { path: EAST_TO_COMMON, targetHint: 1 },
-  { path: WEST_TO_RARE, targetHint: 0 },
-  { path: CENTER_TO_RARE, targetHint: 0 },
+// Verified clear of every building footprint — one of these was previously
+// sitting INSIDE the deep-north building, so that thief spawned in a wall and
+// stood there for the whole chapter.
+const ENTRIES: [number, number][] = [
+  [33, 30], // south-east, by the gate road
+  [-33, 26], // south-west corner
+  [-13, -34], // over the north wall, behind you
+  [34, -6], // east lane
 ];
 
 export function Thieves() {
+  const chapter = useGame((s) => s.chapter);
+  // Thieves are the last system to arrive — the race only starts once you know
+  // the map well enough for losing a treasure to feel like a loss.
+  if (!CHAPTERS[chapter]?.thieves) return null;
   return (
     <>
-      {THIEF.starts.map((start, i) => {
-        const run = RUNS[i % RUNS.length];
-        return <Thief key={i} path={run.path} targetHint={run.targetHint} startDelay={start} />;
-      })}
+      {THIEF.starts.map((start, i) => (
+        <Thief key={i} entry={ENTRIES[i % ENTRIES.length]} startDelay={start} />
+      ))}
     </>
   );
 }

@@ -21,6 +21,8 @@ export const MAX_PROJECTILES = 96;
 const RADIUS = 0.14;
 const PLAYER_HIT_RADIUS = 0.55;
 const PLAYER_CHEST = 1.0;
+/** The fox is low and small — a generous but believable body radius. */
+const FOX_HIT_RADIUS = 0.42;
 
 export const projectilePool: Projectile[] = Array.from({ length: MAX_PROJECTILES }, () => ({
   x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, ttl: 0, active: false,
@@ -43,10 +45,16 @@ function pointInBoxes(x: number, y: number, z: number): boolean {
 }
 
 /**
- * Advance all active projectiles. Calls `onPlayerHit` when one reaches the
- * player. Projectiles die on hitting a wall, the ground, the player, or expiry.
+ * Advance all active projectiles. Calls `onPlayerHit` with the projectile that
+ * connected (so the caller can work out which direction the shot came from for
+ * the flinch + damage indicator). Projectiles die on hitting a wall, the ground,
+ * the player, or expiry.
  */
-export function stepProjectiles(dt: number, onPlayerHit: () => void) {
+export function stepProjectiles(
+  dt: number,
+  onPlayerHit: (p: Projectile) => void,
+  onFoxHit?: (p: Projectile) => void
+) {
   const px = runtime.playerPos.x;
   const py = runtime.playerPos.y + (runtime.crouching ? 0.6 : PLAYER_CHEST); // duck under shots
   const pz = runtime.playerPos.z;
@@ -66,7 +74,20 @@ export function stepProjectiles(dt: number, onPlayerHit: () => void) {
     const dx = p.x - px, dy = p.y - py, dz = p.z - pz;
     if (dx * dx + dy * dy + dz * dz < hitR * hitR) {
       p.active = false;
-      onPlayerHit();
+      onPlayerHit(p);
+      continue;
+    }
+    // The fox is in the firefight too. It can't die, but it CAN be put down —
+    // which is what gives sending it into a fight a real cost.
+    if (onFoxHit && runtime.foxState !== "down") {
+      const fx = p.x - runtime.foxPos.x;
+      const fy = p.y - (runtime.foxPos.y + 0.35);
+      const fz = p.z - runtime.foxPos.z;
+      const fr = RADIUS + FOX_HIT_RADIUS;
+      if (fx * fx + fy * fy + fz * fz < fr * fr) {
+        p.active = false;
+        onFoxHit(p);
+      }
     }
   }
 }

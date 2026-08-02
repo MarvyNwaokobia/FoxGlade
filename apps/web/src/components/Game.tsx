@@ -13,7 +13,12 @@ import { Hud } from "@/components/Hud";
 import { Shop } from "@/components/Shop";
 import { Minimap } from "@/components/Minimap";
 import { MobileControls } from "@/components/MobileControls";
+import { MapScreen } from "@/components/MapScreen";
+import { Tutorial } from "@/components/Tutorial";
 import { isTouchDevice } from "@/engine/input/touch";
+import { PerfProbe } from "@/engine/scene/PerfProbe";
+import { ShaderWarmup } from "@/engine/scene/ShaderWarmup";
+import { perfOff } from "@/engine/scene/perf";
 
 // Locked to HIGH — graphics quality is core to the game (Marvy's call). The
 // render-resolution ceiling stays capped (dpr 2 on fullscreen retina is ~27M px
@@ -32,8 +37,10 @@ export default function Game() {
   // drops resolution, latch "degraded" (shadows + bloom off). Capable machines
   // never trip it and keep the full HIGH look.
   const [degraded, setDegraded] = useState(false);
+  const [debugStats, setDebugStats] = useState(false);
   useEffect(() => {
     setMobile(isTouchDevice());
+    setDebugStats(new URLSearchParams(window.location.search).has("stats"));
   }, []);
 
   // Browsers hold the AudioContext suspended until a user gesture — resume it
@@ -68,13 +75,15 @@ export default function Game() {
             black-and-unlit during the download. */}
         <Suspense fallback={null}>
           <VillageScene
-            bloom={q.bloom && !degraded}
-            shadows={!degraded}
+            bloom={q.bloom && !degraded && !perfOff("noBloom")}
+            shadows={!degraded && !perfOff("noShadows")}
             shadowSize={q.shadow}
             degraded={degraded}
           />
           <PlayerController />
-          <FoxCompanion />
+          {!perfOff("noFox") && <FoxCompanion />}
+          {/* Link shaders while the map is up, not mid-firefight. */}
+          <ShaderWarmup />
         </Suspense>
         {/* Reads game state → schedules audio cues (outside Suspense so it runs
             even while assets stream in). */}
@@ -84,13 +93,20 @@ export default function Game() {
             PerformanceMonitor.onDecline latches degraded mode (shadows + bloom off). */}
         <PerformanceMonitor onDecline={() => setDegraded(true)} />
         <AdaptiveDpr pixelated />
-        {/* Perf readout (FPS/ms) — temporary, to gauge game vs hardware. */}
-        <Stats />
+        {/* Perf readout (FPS/ms). Opt-in via ?stats — it was shipping on by
+            default, a cyan dev graph pinned over the fox status in the corner of
+            every screenshot and every player's first impression. */}
+        {debugStats && <Stats />}
+        <PerfProbe />
       </Canvas>
       <Hud />
+      <Tutorial />
       <Minimap />
       <Shop />
       {mobile && <MobileControls />}
+      {/* Opening map + first-run teaching. Last in the tree so it sits above the
+          HUD and the touch controls. */}
+      <MapScreen />
       {/* DOM loading screen with a progress bar until assets are ready. */}
       <Loader
         containerStyles={{ background: "#1a140f" }}

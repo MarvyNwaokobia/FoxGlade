@@ -23,6 +23,75 @@ const TABLE: { minBanked: number; name: string; scale: number; sniffCooldownMult
 
 export const FOX_MAX_STAGE = TABLE.length - 1;
 
+/**
+ * Fox BEHAVIOUR (Phase 3). The fox used to be a lerp to a fixed point beside the
+ * player — welded to a spot in space, never lagging, never leading, with a "sniff"
+ * that just recoloured two HUD dots. It was a decoration on a leash.
+ *
+ * It's now a creature with its own brain: it keeps loose station rather than
+ * perfect station, it can be SENT — to scout a treasure or to jump a threat — and
+ * it can be hurt. That's what turns it from a cosmetic companion into the thing
+ * you actually rely on, which is what the whole raise-it loop is for.
+ */
+export const FOX = {
+  // --- Heel (following you) ---
+  /** How far it can drift before it bothers catching up. Station-keeping with a
+   *  radius, not a point: this is what lets it lag, cut corners and catch up. */
+  followRadius: 2.6,
+  /** Far enough away and it breaks into a run to close the gap. */
+  sprintRadius: 7,
+  /** Beyond this it has genuinely lost you — teleports back (a stuck fox is
+   *  worse than a briefly-implausible one). */
+  leashRadius: 34,
+  walkSpeed: 3.2,
+  runSpeed: 8.5,
+  accel: 9,
+  /** Metres to the side of the player it prefers to walk. Negative = the player's
+   *  LEFT, deliberately opposite the camera's over-the-shoulder offset — on the
+   *  same side it sat directly under the camera and was cropped off-screen. */
+  sideOffset: -0.95,
+  /** How far ahead it likes to be. It LEADS: a companion you follow reads as
+   *  alive, one that trails behind you is furniture. */
+  leadOffset: 1.6,
+
+  // --- Idle flavour (only when you're standing still) ---
+  /** Seconds of you standing still before it wanders off to nose at something. */
+  idleWanderAfter: 3.5,
+  idleWanderRadius: 4.5,
+
+  // --- Scout: sent to find the real treasure ---
+  scoutSpeed: 9.5,
+  /** How close it needs to get to call it found. */
+  scoutArriveDist: 2.2,
+  /** Seconds it waits at the treasure, barking, before heading back. */
+  scoutHoldTime: 6,
+  /** Give up and come home if a scout takes longer than this (bad path, etc). */
+  scoutTimeout: 22,
+
+  // --- Attack: sent at a threat ---
+  attackSpeed: 11,
+  /** Range from the player within which a threat can be assigned. */
+  attackAcquireRange: 18,
+  /** How close it must get to land the lunge. */
+  attackReachDist: 1.5,
+  /** Seconds a lunged blocker is staggered — it can't fire and its telegraph is
+   *  cancelled. The fox buys you a window; it does not do your killing. */
+  staggerBlocker: 2.6,
+  /** Fraction of normal speed a lunged thief moves at, and for how long. The fox
+   *  earning its keep against the clock. */
+  slowThief: 0.35,
+  slowThiefTime: 4,
+
+  // --- Cost + risk ---
+  /** Base seconds between commands (scout or attack). Scaled by the growth
+   *  stage's sniffCooldownMult, so raising the fox really does buy you more of it. */
+  commandCooldown: 16,
+  /** Enemy fire can hit the fox. It never dies — it goes down, whimpering, and
+   *  you lose it for this long. That's the stake. */
+  hitRadius: 0.5,
+  downTime: 18,
+} as const;
+
 /** The fox's current growth, derived from how much VILLE has been banked. */
 export function foxGrowthFor(villeBanked: number): FoxStage {
   let idx = 0;

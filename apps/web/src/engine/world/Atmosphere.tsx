@@ -4,6 +4,8 @@ import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { THEME } from "./theme";
+import { skyAt } from "@/engine/config/day";
+import { runtime } from "@/engine/runtime";
 
 const EMBER_COUNT = 260;
 const AREA = 72; // spread across the play area
@@ -58,19 +60,38 @@ function Embers() {
   );
 }
 
-/** A warm hanging lantern: glowing bulb + a pool of light (blooms in PostFX). */
+/**
+ * A warm hanging lantern. It now BRIGHTENS as the day ends — barely lit at noon,
+ * carrying the street at night. These were static decoration when the scene was
+ * permanently midday; with the day clock running they're the reason night is
+ * playable at all, and the reason it looks like somewhere.
+ */
 function Lantern({ position }: { position: [number, number, number] }) {
+  const mat = useRef<THREE.MeshStandardMaterial>(null);
+  const light = useRef<THREE.PointLight>(null);
+  useFrame(() => {
+    const mix = skyAt(runtime.dayProgress).lanternMix;
+    if (mat.current) mat.current.emissiveIntensity = 0.35 + mix * 2.6;
+    // The point light only switches on once it would actually be visible — eight
+    // forward-rendered lights at noon cost frames and light nothing.
+    if (light.current) {
+      light.current.visible = mix > 0.25;
+      light.current.intensity = mix * 7;
+    }
+  });
   return (
     <group position={position}>
       <mesh>
         <sphereGeometry args={[0.16, 12, 12]} />
         <meshStandardMaterial
+          ref={mat}
           color={THEME.lantern}
           emissive={THEME.lantern}
           emissiveIntensity={1.5}
           toneMapped={false}
         />
       </mesh>
+      <pointLight ref={light} color={THEME.lantern} distance={13} intensity={0} visible={false} />
       {/* No real point light — 8 of these in forward rendering murdered the frame
           rate, and in daytime they do nothing. The day→night pass re-adds a few
           cheap lights (or a single baked scheme) at dusk. */}

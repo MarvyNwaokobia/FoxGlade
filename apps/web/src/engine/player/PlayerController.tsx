@@ -6,20 +6,40 @@ import * as THREE from "three";
 import { FEEL } from "@/engine/config/feel";
 import { runtime } from "@/engine/runtime";
 import { useKeyboard } from "@/engine/input/useKeyboard";
-import { VILLAGE, COLLIDERS, BOXES3D, interiorIndexAt, ENTERABLES } from "@/engine/world/village";
+import {
+  VILLAGE,
+  COLLIDERS,
+  BOXES3D,
+  CAMERA_BOXES,
+  vaultTarget,
+  interiorIndexAt,
+  ENTERABLES,
+  INTERIORS,
+} from "@/engine/world/village";
 import { resolveColliders, raycastBoxes } from "@/engine/world/collision";
 import { useGame } from "@/engine/store";
 import { fireHitscan, enemies } from "@/engine/combat/enemies";
 import { spawnShot } from "@/engine/combat/shotfx";
 import { spawnBomb, predictLanding } from "@/engine/combat/bombs";
 import { audio } from "@/engine/audio/audio";
-import { HINTS, HINT_RADIUS, SNIFF_COOLDOWN, SNIFF_REVEAL } from "@/engine/world/hints";
+import { HINTS, HINT_RADIUS } from "@/engine/world/hints";
 import { foxGrowthFor } from "@/engine/config/fox";
-import { SESSION_SECONDS, REST, BOMB } from "@/engine/config/round";
+import { REST, BOMB } from "@/engine/config/round";
+import { DAY } from "@/engine/config/day";
 import { WEAPON_STATS } from "@/engine/config/shop";
 import { PlayerRig, type PlayerRigState } from "@/engine/character/PlayerRig";
-import { touch } from "@/engine/input/touch";
+import { touch, AIM_ASSIST } from "@/engine/input/touch";
 import { softShadowTexture } from "@/engine/world/softShadow";
+
+/** World up — the camera pivot lifts along this to drop the player below the reticle. */
+const UP = new THREE.Vector3(0, 1, 0);
+/** Seconds a hurdle over chest-high cover takes, start to landing. Matched to the
+ *  "Vault Over Box" clip so the body and the translation finish together. */
+const VAULT_TIME = 0.62;
+// Scratch vectors for the touch aim assist (no per-frame allocation).
+const _aimDir = new THREE.Vector3();
+const _toTarget = new THREE.Vector3();
+const _eye = new THREE.Vector3();
 
 function lerpAngle(a: number, b: number, t: number) {
   let diff = b - a;
@@ -50,6 +70,12 @@ export function PlayerController() {
     grounded: true,
     dead: false,
     fireAt: -1,
+    aimYaw: VILLAGE.spawnYaw,
+    hitAt: -1,
+    hitSerious: false,
+    hitHeavy: false,
+    hitDir: "front",
+    reloading: false,
     throwAt: -1,
     grabAt: -1,
     resting: false,
@@ -60,7 +86,7 @@ export function PlayerController() {
   const pos = useRef(VILLAGE.spawn.clone());
   const vel = useRef(new THREE.Vector3(0, 0, 0));
   const yaw = useRef(VILLAGE.spawnYaw); // camera/heading yaw
-  const pitch = useRef(0.35);
+  const pitch = useRef<number>(FEEL.startPitch);
   const bodyRot = useRef(VILLAGE.spawnYaw);
   // During an interact gesture, turn the body to FACE the target (vault / stall /
   // treasure) so the pick-up reads as a real act, not a shrug at thin air.
@@ -73,9 +99,20 @@ export function PlayerController() {
   const recoilPitch = useRef(0); // transient view kick from firing (recovers to 0)
   const recoilYaw = useRef(0);
   const crouching = useRef(false); // C toggles; jump stands you back up
-  const firstPerson = useRef(false); // V toggles the camera between 3rd and 1st person
+  /** In-flight hurdle over chest-high cover (null when not vaulting). */
+  const vault = useRef<{
+    t: number;
+    fromX: number;
+    fromZ: number;
+    toX: number;
+    toZ: number;
+    peakY: number;
+  } | null>(null);
+  const adsHeld = useRef(false); // holding right-mouse (or the touch AIM button)
+  const adsT = useRef(0); // eased 0..1 hip→aim blend (drives distance/shoulder/FOV/sensitivity)
   const resting = useRef(false); // sitting indoors (X); any movement stands up
   const eyeH = useRef(FEEL.lookAtHeight); // eased eye height (stand ↔ crouch ↔ sit)
+  const prevHealth = useRef(100); // edge-detects the drop into the danger band
 
   // Interaction keys: E claim (only at the real hint), R respawn, F fire,
   // Q fox-sniff (reveals the real hint on a cooldown).
@@ -92,12 +129,18 @@ export function PlayerController() {
       grabFaceUntil.current = performance.now() + 950;
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.code === "KeyE") {
+      // `!e.repeat` matters: holding E fires the browser's key-repeat every ~30ms,
+      // which re-ran faceAndGrab and restarted the pick-up clip over and over. The
+      // gesture is a one-shot on the press, not a hold.
+      if (e.code === "KeyE" && !e.repeat) {
         if (runtime.nearHintIsReal && runtime.nearHintIndex >= 0 && !runtime.hintClaimed[runtime.nearHintIndex]) {
           useGame.getState().claimTreasure(runtime.nearHintIndex);
           faceAndGrab(HINTS[runtime.nearHintIndex].pos); // reach-out pick-up gesture
         } else if (runtime.nearBank && useGame.getState().villeCarrying > 0) {
+          const hadClaim = useGame.getState().treasureClaimed;
           useGame.getState().depositLoot();
+          // Securing a treasure pushes the sun along — see config/day.ts.
+          if (hadClaim) useGame.getState().advanceDay(DAY.bankAdvance);
           faceAndGrab(VILLAGE.bank); // deposit gesture at the vault
         } else if (runtime.nearMarket) {
           useGame.getState().openShop();
@@ -108,28 +151,40 @@ export function PlayerController() {
       if (e.code === "KeyB" && !e.repeat && runtime.nearMarket && !useGame.getState().shopOpen) {
         useGame.getState().openShop();
       }
-      if (e.code === "KeyR" && useGame.getState().isDead) {
-        useGame.getState().respawn();
+      // R is context-sensitive: respawn when you're down, reload when you're up.
+      // They can never both apply, and R is where every player's finger already
+      // goes for a reload.
+      if (e.code === "KeyR" && !e.repeat) {
+        if (useGame.getState().isDead) useGame.getState().respawn();
+        else useGame.getState().startReload();
       }
       if (e.code === "Enter" && useGame.getState().roundState !== "playing") {
         useGame.getState().restart();
       }
       if (e.code === "KeyF") fireHeld.current = true; // keyboard fire (hold to auto-fire)
       if (e.code === "KeyC" && !e.repeat) crouching.current = !crouching.current;
-      if (e.code === "KeyV" && !e.repeat) firstPerson.current = !firstPerson.current;
+      // V used to toggle a first-person camera that had no arms, hands or weapon.
+      // Aiming is now ADS (hold right-mouse) — see the camera block below. On touch
+      // the AIM button drives the same path via a synthetic KeyV hold.
+      if (e.code === "KeyV") adsHeld.current = true;
       if (e.code === "KeyX" && !e.repeat) {
-        // Sit to rest — only indoors, and standing back up is always allowed.
+        // Sit to restore — only indoors, and standing back up is always allowed.
+        // Spends one of your limited restores; useRestore() refuses (and spends
+        // nothing) if you have none left or you're already at the heal cap, so a
+        // mistimed press never burns a charge.
         if (resting.current) resting.current = false;
         else if (runtime.sheltered && useGame.getState().roundState === "playing" && !useGame.getState().isDead) {
-          resting.current = true;
-          crouching.current = false;
-          fireHeld.current = false;
-          bombAim.current = false;
+          if (useGame.getState().useRestore()) {
+            resting.current = true;
+            crouching.current = false;
+            fireHeld.current = false;
+            bombAim.current = false;
+          }
         }
       }
       if (e.code === "KeyG" && !e.repeat) {
-        // Start aiming a bomb throw (needs the mouse captured, a bomb, live
-        // play, and being outside — the world is paused indoors).
+        // Start aiming a bomb throw (needs the mouse captured, a bomb, live play,
+        // and being OUTSIDE — the safe room cuts both ways, see below).
         const st = useGame.getState();
         if (
           (document.pointerLockElement || touch.enabled) &&
@@ -141,18 +196,18 @@ export function PlayerController() {
           bombAim.current = true;
         }
       }
-      if (e.code === "KeyQ") {
-        const now = performance.now();
-        if (now >= runtime.sniffReadyAt) {
-          runtime.revealRealUntil = now + SNIFF_REVEAL * 1000;
-          // A matured fox sniffs more often (DESIGN §2.5): cooldown scales with stage.
-          const mult = foxGrowthFor(useGame.getState().villeEarned).sniffCooldownMult;
-          runtime.sniffReadyAt = now + SNIFF_COOLDOWN * mult * 1000;
-        }
+      // Q = SEND THE FOX. One contextual command: a threat nearby and it goes for
+      // that, otherwise it runs off to find the real treasure. This replaces the
+      // old "sniff", which just recoloured two compass dots for six seconds — the
+      // player watched the HUD, not the animal, and the fox did nothing. Now the
+      // fox IS the answer: you follow it. (FoxCompanion owns the cooldown.)
+      if (e.code === "KeyQ" && !e.repeat) {
+        window.dispatchEvent(new Event("foxcommand"));
       }
     };
     const onKeyUp = (e: KeyboardEvent) => {
       if (e.code === "KeyF") fireHeld.current = false;
+      if (e.code === "KeyV") adsHeld.current = false;
       if (e.code === "KeyG" && bombAim.current) {
         // Release G → throw along the current aim line (matches the telegraph).
         bombAim.current = false;
@@ -198,7 +253,16 @@ export function PlayerController() {
   // On respawn, return the player to the spawn point.
   const respawnNonce = useGame((s) => s.respawnNonce);
   useEffect(() => {
-    pos.current.copy(VILLAGE.spawn);
+    // Respawn at your REFUGE — the last safe house you stepped into — rather than
+    // all the way back at the gate. You come back inside, where the world is
+    // paused and nothing can reach you, so you gather yourself and walk back out
+    // on your own terms. Falls back to the spawn gate if you've never been in one.
+    const refuge = runtime.refugeIndex >= 0 ? INTERIORS[runtime.refugeIndex] : null;
+    if (refuge) {
+      pos.current.set((refuge.minX + refuge.maxX) / 2, 0, (refuge.minZ + refuge.maxZ) / 2);
+    } else {
+      pos.current.copy(VILLAGE.spawn);
+    }
     vel.current.set(0, 0, 0);
     crouching.current = false;
     resting.current = false;
@@ -218,28 +282,45 @@ export function PlayerController() {
         return;
       }
       if (e.button === 0) fireHeld.current = true; // hold to auto-fire
+      if (e.button === 2) adsHeld.current = true; // hold right-mouse to aim
     };
     const onUp = (e: MouseEvent) => {
       if (e.button === 0) fireHeld.current = false;
+      if (e.button === 2) adsHeld.current = false;
     };
+    // Right-mouse is the aim button, so the browser menu must not eat it.
+    const onContextMenu = (e: Event) => e.preventDefault();
+    // Soft deadzone: damp (don't zero) sub-threshold deltas. A hard cutoff makes
+    // slow aim feel sticky; scaling small movements down kills hand jitter while
+    // keeping the response continuous and latency-free.
+    const damp = (d: number) =>
+      Math.abs(d) < FEEL.aimDeadzonePx ? d * FEEL.aimDeadzoneDamp : d;
     const onMove = (e: MouseEvent) => {
       if (document.pointerLockElement !== canvas) return;
-      yaw.current -= e.movementX * FEEL.mouseSensitivity;
+      // Aiming slows the look down — the steadiness is most of what ADS buys you.
+      const sens = FEEL.mouseSensitivity * (1 - adsT.current * (1 - FEEL.adsSensitivityMult));
+      yaw.current -= damp(e.movementX) * sens;
       pitch.current = THREE.MathUtils.clamp(
-        pitch.current - e.movementY * FEEL.mouseSensitivity,
+        pitch.current - damp(e.movementY) * sens,
         FEEL.pitchMin,
         FEEL.pitchMax
       );
     };
     const onLockChange = () => {
-      if (document.pointerLockElement !== canvas) fireHeld.current = false; // stop firing when unfocused
+      if (document.pointerLockElement === canvas) runtime.playerReady = true;
+      if (document.pointerLockElement !== canvas) {
+        fireHeld.current = false; // stop firing when unfocused
+        adsHeld.current = false;
+      }
     };
     canvas.addEventListener("mousedown", onDown);
+    canvas.addEventListener("contextmenu", onContextMenu);
     window.addEventListener("mouseup", onUp);
     window.addEventListener("mousemove", onMove);
     document.addEventListener("pointerlockchange", onLockChange);
     return () => {
       canvas.removeEventListener("mousedown", onDown);
+      canvas.removeEventListener("contextmenu", onContextMenu);
       window.removeEventListener("mouseup", onUp);
       window.removeEventListener("mousemove", onMove);
       document.removeEventListener("pointerlockchange", onLockChange);
@@ -250,21 +331,22 @@ export function PlayerController() {
     const dt = Math.min(rawDt, 1 / 30); // clamp big frame gaps so physics stays sane
     const k = keys.current;
 
-    // The WORLD pauses indoors OR while the market overlay is open (Marvy's call):
-    // NPCs/projectiles/bombs freeze on runtime.paused, and the round clock holds by
-    // pushing its start forward.
+    // The world pauses while you're INDOORS or in the shop (Marvy's design): the
+    // round clock holds, thieves stop where they are, projectiles freeze. Resting
+    // should never cost you the race. What stops "duck in and top up" from being
+    // strictly dominant isn't a time penalty — it's that restores are a limited
+    // resource (REST.charges), so each rest spends something finite.
     const shopOpen = useGame.getState().shopOpen;
-    runtime.paused = runtime.sheltered || shopOpen;
+    runtime.paused = runtime.sheltered || shopOpen || runtime.mapOpen;
     if (useGame.getState().roundState === "playing" && runtime.paused) {
       runtime.roundStartAt += dt * 1000;
     }
-    // Round timer: end the round when it runs out; freeze play when it's over.
-    if (
-      useGame.getState().roundState === "playing" &&
-      SESSION_SECONDS - (performance.now() - runtime.roundStartAt) / 1000 <= 0
-    ) {
-      useGame.getState().endRound("timeout");
+    // The sun creeps forward on its own so dawdling still costs light; banking is
+    // what really moves it. advanceDay ends the run at nightfall.
+    if (useGame.getState().roundState === "playing" && !runtime.paused) {
+      useGame.getState().advanceDay(dt / DAY.driftSeconds);
     }
+    runtime.dayProgress = useGame.getState().dayProgress;
     const frozen = useGame.getState().isDead || useGame.getState().roundState !== "playing" || shopOpen;
 
     // Mobile look: apply the accumulated touch-drag to yaw/pitch (already in
@@ -274,6 +356,56 @@ export function PlayerController() {
       pitch.current = THREE.MathUtils.clamp(pitch.current - touch.lookDY, FEEL.pitchMin, FEEL.pitchMax);
       touch.lookDX = 0;
       touch.lookDY = 0;
+    }
+
+    // ── Touch aim assist ──
+    //
+    // Only on touch, only while you're firing or aiming, and only toward an enemy
+    // already inside a narrow cone of where you point. It closes the last sliver
+    // of angle for you; it will not find a target, swing you onto one, or reach
+    // across the plaza. See AIM_ASSIST in input/touch.ts for why this exists at
+    // all — a thumb-drag is not a mouse, and without it most mobile firefights
+    // resolve on luck rather than aim.
+    if (touch.enabled && !frozen && (touch.fire || adsHeld.current)) {
+      const eyeY = pos.current.y + eyeH.current;
+      const cp = Math.cos(pitch.current);
+      _aimDir.set(-Math.sin(yaw.current) * cp, Math.sin(pitch.current), -Math.cos(yaw.current) * cp);
+      let bestDot = Math.cos(AIM_ASSIST.coneRad);
+      let bestYaw = 0;
+      let bestPitch = 0;
+      let found = false;
+      for (const e of enemies) {
+        const ep = e.getPosition();
+        _toTarget.set(ep.x - pos.current.x, ep.y + e.hitHeight - eyeY, ep.z - pos.current.z);
+        const range = _toTarget.length();
+        if (range < 1.5 || range > AIM_ASSIST.maxRange) continue;
+        _toTarget.multiplyScalar(1 / range);
+        const dot = _toTarget.dot(_aimDir);
+        if (dot <= bestDot) continue;
+        // Don't be helped onto something you can't actually shoot.
+        if (raycastBoxes(_eye.set(pos.current.x, eyeY, pos.current.z), ep, BOXES3D) < 0.98) continue;
+        bestDot = dot;
+        bestYaw = Math.atan2(-_toTarget.x, -_toTarget.z);
+        bestPitch = Math.asin(THREE.MathUtils.clamp(_toTarget.y, -1, 1));
+        found = true;
+      }
+      if (found) {
+        let dYaw = bestYaw - yaw.current;
+        while (dYaw > Math.PI) dYaw -= Math.PI * 2;
+        while (dYaw < -Math.PI) dYaw += Math.PI * 2;
+        const dPitch = bestPitch - pitch.current;
+        // Inside the dead zone you're on target already — pulling further is what
+        // makes an assist feel like it's playing the game for you.
+        const k = Math.min(1, AIM_ASSIST.strength * dt);
+        if (Math.abs(dYaw) > AIM_ASSIST.deadRad) yaw.current += dYaw * k;
+        if (Math.abs(dPitch) > AIM_ASSIST.deadRad) {
+          pitch.current = THREE.MathUtils.clamp(
+            pitch.current + dPitch * k,
+            FEEL.pitchMin,
+            FEEL.pitchMax
+          );
+        }
+      }
     }
 
     // Movement basis from camera yaw.
@@ -293,33 +425,50 @@ export function PlayerController() {
     // Shelter + rest bookkeeping. Moving (or leaving the house) stands you up.
     runtime.shelterIndex = interiorIndexAt(pos.current.x, pos.current.z);
     runtime.sheltered = runtime.shelterIndex >= 0;
+    // Walking into a safe house claims it as your refuge — the checkpoint you
+    // come back to when downed. No prompt, no interaction: stepping inside is the
+    // act of claiming it.
+    if (runtime.shelterIndex >= 0) runtime.refugeIndex = runtime.shelterIndex;
     if (resting.current && (wish.lengthSq() > 0 || k.jump || touch.jump || frozen || !runtime.sheltered)) {
       resting.current = false;
     }
     runtime.resting = resting.current;
     if (resting.current) {
       wish.set(0, 0, 0); // seated: no locomotion until you stand
-      // Recover only up to the cap — the safe room is a breather, not a free full
-      // reset (kills the "duck inside → heal to 100 for free" exploit).
+      // Burn down the spent restore, up to the cap — then stand automatically, so
+      // you can't idle in a paused room after the charge has done its work.
       const g = useGame.getState();
       if (g.playerHealth < g.maxPlayerHealth * REST.healCap) g.healPlayer(REST.regenPerSec * dt);
+      else resting.current = false;
     }
 
     const run = k.run || touch.run;
     const jump = k.jump || touch.jump;
     const moving = wish.lengthSq() > 0 && !frozen;
+    // Touch has no pointer lock — first stick or button input counts as ready.
+    if (touch.enabled && (moving || touch.fire || touch.jump)) runtime.playerReady = true;
     runtime.running = moving && run && !crouching.current;
+    runtime.playerMoving = moving;
     runtime.crouching = crouching.current;
 
     if (moving) {
+      // Touch is ANALOG: how far the stick is pushed sets how fast you go. This
+      // was being thrown away by the normalize below, so any stick input at all
+      // moved you at full walk speed — half of why mobile felt like it was always
+      // sprinting. Keyboard stays digital (always 1).
+      const analog = touch.enabled
+        ? THREE.MathUtils.clamp(Math.min(1, Math.hypot(touch.moveX, touch.moveY)), 0.35, 1)
+        : 1;
       wish.normalize();
-      const speed = crouching.current ? FEEL.crouchSpeed : run ? FEEL.runSpeed : FEEL.walkSpeed;
+      // Aiming slows you to a walk — you don't sprint down a sight line.
+      const adsSpeed = 1 - adsT.current * (1 - FEEL.adsSpeedMult);
+      const speed =
+        (crouching.current ? FEEL.crouchSpeed : run ? FEEL.runSpeed : FEEL.walkSpeed) *
+        adsSpeed *
+        analog;
       const t = Math.min(1, FEEL.accel * dt);
       vel.current.x += (wish.x * speed - vel.current.x) * t;
       vel.current.z += (wish.z * speed - vel.current.z) * t;
-      // Rotate the body to face where it's heading.
-      const target = Math.atan2(wish.x, wish.z);
-      bodyRot.current = lerpAngle(bodyRot.current, target, FEEL.turnSpeed * dt);
     } else {
       const d = Math.exp(-FEEL.decay * dt);
       vel.current.x *= d;
@@ -329,13 +478,77 @@ export function PlayerController() {
     pos.current.x += vel.current.x * dt;
     pos.current.z += vel.current.z * dt;
 
+    // ── Vault over chest-high cover ──
+    //
+    // The micro-cover crates used to be dead ends: you walked into one and simply
+    // stopped, with no bump, no step, no way past. In a game about chasing a
+    // treasure across a village that reads as a bug rather than as cover. Jump
+    // into one now and you hurdle it — the "Vault Over Box" clip was already
+    // loaded and wired into the state machine, it had just never had anything to
+    // trigger it.
+    // Prefer where you're actually travelling; fall back to where you face, so
+    // a standing vault off a wall of crates still works.
+    const vaultAhead =
+      grounded.current && !frozen && !vault.current
+        ? (() => {
+            const vx = vel.current.x;
+            const vz = vel.current.z;
+            const useVel = Math.hypot(vx, vz) > 0.6;
+            return vaultTarget(
+              pos.current.x,
+              pos.current.z,
+              useVel ? vx : Math.sin(yaw.current),
+              useVel ? vz : Math.cos(yaw.current),
+              FEEL.playerRadius
+            );
+          })()
+        : null;
+    // Published so the touch action button can offer VAULT (mobile has no room
+    // for a dedicated jump button).
+    runtime.canVault = vaultAhead !== null;
+
+    if (grounded.current && jump && !frozen && !vault.current) {
+      const target = vaultAhead;
+      if (target) {
+        crouching.current = false;
+        vault.current = {
+          t: 0,
+          fromX: pos.current.x,
+          fromZ: pos.current.z,
+          toX: target.landX,
+          toZ: target.landZ,
+          peakY: target.peakY,
+        };
+        audio.play(runtime.sheltered ? "footstepWood" : "footstepStone", 0.9);
+      }
+    }
+
+    if (vault.current) {
+      const v = vault.current;
+      v.t = Math.min(1, v.t + dt / VAULT_TIME);
+      const e = v.t;
+      pos.current.x = v.fromX + (v.toX - v.fromX) * e;
+      pos.current.z = v.fromZ + (v.toZ - v.fromZ) * e;
+      // A shallow hurdle arc — up over the lip and back down the far side.
+      pos.current.y = Math.sin(e * Math.PI) * v.peakY;
+      vel.current.set(0, 0, 0);
+      grounded.current = false;
+      if (v.t >= 1) {
+        vault.current = null;
+        pos.current.y = 0;
+        grounded.current = true;
+        audio.play(runtime.sheltered ? "footstepWood" : "footstepStone", 1);
+      }
+    }
+
     // Jump + gravity (jumping stands you back up).
-    if (grounded.current && jump && !frozen) {
+    if (grounded.current && jump && !frozen && !vault.current) {
       crouching.current = false;
       vel.current.y = FEEL.jumpForce;
       grounded.current = false;
     }
-    if (!grounded.current) {
+    // Gravity — but a vault owns its own arc, so it isn't pulled out of it.
+    if (!grounded.current && !vault.current) {
       vel.current.y += FEEL.gravity * dt;
       pos.current.y += vel.current.y * dt;
       if (pos.current.y <= 0) {
@@ -346,7 +559,9 @@ export function PlayerController() {
     }
 
     // Push out of buildings, then out of any NPC bodies, then keep inside walls.
-    resolveColliders(pos.current, FEEL.playerRadius, COLLIDERS);
+    // Mid-vault we're deliberately passing THROUGH a crate, so the box solve is
+    // skipped — the landing spot was already checked to be clear.
+    if (!vault.current) resolveColliders(pos.current, FEEL.playerRadius, COLLIDERS);
     for (const e of enemies) {
       const ep = e.getPosition();
       const dx = pos.current.x - ep.x;
@@ -367,11 +582,28 @@ export function PlayerController() {
     // Eye height eases between stand / crouch / seated (drives camera + aim origin).
     const eyeTarget = resting.current ? 0.75 : crouching.current ? FEEL.crouchEyeHeight : FEEL.lookAtHeight;
     eyeH.current += (eyeTarget - eyeH.current) * Math.min(1, FEEL.crouchLerp * dt);
-    // Feed the animated rig: face travel while moving, aim while standing.
+    // ── Body facing: COMBAT STANCE, not "walk where you look" ──
+    //
+    // The body used to pivot to face its travel direction whenever you moved. That
+    // is how a third-PERSON adventure character walks, and it's wrong for a
+    // shooter: strafing left swung the whole body 90° left, so you were always
+    // watching him turn instead of move, and — because travel direction and body
+    // facing were then identical — the strafe and backpedal clips in the set could
+    // never trigger. Every direction played the forward walk.
+    //
+    // Now he holds the aim direction and STRAFES around it, which is what the clip
+    // set is built for. Sprinting is the exception: at a run he turns to face where
+    // he's going, because nobody sprints sideways.
     const rs = rigState.current;
     rs.position.copy(pos.current);
     const planarSpeed = Math.hypot(vel.current.x, vel.current.z);
-    rs.rotation = planarSpeed > 0.5 && !frozen ? bodyRot.current : yaw.current + Math.PI;
+    const sprinting = runtime.running && planarSpeed > 0.5;
+    const facingTarget =
+      sprinting && !frozen
+        ? Math.atan2(vel.current.x, vel.current.z) // face travel at a sprint
+        : yaw.current + Math.PI; // otherwise hold the aim line
+    bodyRot.current = lerpAngle(bodyRot.current, facingTarget, Math.min(1, FEEL.turnSpeed * dt));
+    rs.rotation = bodyRot.current;
     // Interact gesture: override facing to point the body at the target (vault /
     // stall / treasure), easing quickly so the pick-up lands square on it.
     if (performance.now() < grabFaceUntil.current) {
@@ -380,13 +612,38 @@ export function PlayerController() {
       rs.rotation = bodyRot.current;
     }
     rs.velocity.set(vel.current.x, 0, vel.current.z);
-    rs.moving = planarSpeed > 0.5 && !frozen && !resting.current;
+    // Lowered from 0.5: above that the rig snapped to Idle while the body was
+    // still coasting to a stop, so the last half-metre of every stop was a slide.
+    rs.moving = planarSpeed > 0.25 && !frozen && !resting.current;
     rs.running = runtime.running;
     rs.crouching = crouching.current;
     rs.grounded = grounded.current;
     rs.dead = useGame.getState().isDead;
     rs.fireAt = runtime.fireAt;
     rs.resting = resting.current;
+    rs.reloading = runtime.reloading;
+    rs.aimYaw = yaw.current; // torso traverses onto the crosshair (PlayerRig)
+    // Directional flinch: classify where the shot came from relative to facing.
+    if (runtime.damageAt !== rs.hitAt) {
+      const g = useGame.getState();
+      rs.hitAt = runtime.damageAt;
+      // "Serious" = a big single hit, OR one that drops you into the danger band.
+      // Only these play a body flinch (PlayerRig explains why); chip damage is
+      // carried by the shake, the vignette and the damage arc instead.
+      const big = runtime.damageAmount >= g.maxPlayerHealth * 0.15;
+      // "Into danger" is an EDGE, not a state: the flinch fires on the hit that
+      // CROSSES you into the danger band, once. Testing the band directly meant
+      // that below 35% every single hit flinched, so low health left you
+      // permanently doubled over — the exact failure this gating exists to avoid.
+      const danger = g.maxPlayerHealth * 0.35;
+      const intoDanger = g.playerHealth > 0 && g.playerHealth < danger && prevHealth.current >= danger;
+      prevHealth.current = g.playerHealth;
+      rs.hitSerious = big || intoDanger;
+      rs.hitHeavy = big;
+      const rel = Math.atan2(runtime.damageFrom.x, runtime.damageFrom.z) - bodyRot.current;
+      const a = Math.abs(Math.atan2(Math.sin(rel), Math.cos(rel)));
+      rs.hitDir = a < Math.PI / 3 ? "front" : a > (2 * Math.PI) / 3 ? "back" : "side";
+    }
     // Contact shadow stays flat on the ground under the player (even mid-jump).
     if (shadow.current) {
       shadow.current.position.set(pos.current.x, 0.02, pos.current.z);
@@ -447,35 +704,47 @@ export function PlayerController() {
     runtime.bombAiming = bombAim.current;
     if (bombAim.current) predictLanding(head, aim, runtime.bombAimPoint);
 
-    // Camera target: FIRST-PERSON sits right at the eyes (V toggles); otherwise
-    // it rides over the shoulder behind the aim line, with wall collision.
-    let desired: THREE.Vector3;
-    if (firstPerson.current) {
-      // At the eyes, nudged a touch forward so we're past the neck. The body
-      // fades out on its own here (camera is essentially inside it).
-      desired = head.clone().addScaledVector(aim, 0.14);
-      desired.y = Math.max(desired.y, 0.3);
-    } else {
-      // Over-the-shoulder desired target (behind the aim line, offset to the side).
-      desired = head
-        .clone()
-        .addScaledVector(aim, -FEEL.cameraDistance)
-        .addScaledVector(rightV, FEEL.cameraShoulder);
-      desired.y = Math.max(desired.y, FEEL.cameraMinHeight);
+    // ── Camera: pivot + convergence over-the-shoulder rig ──
+    //
+    // The rig orbits a PIVOT offset from the head (out to the shoulder, up by the
+    // headroom) rather than sitting behind the head itself, and it looks at a
+    // CONVERGENCE point far along the aim line. Because the pivot is beside the
+    // player, he renders down-and-left of the reticle instead of standing on it —
+    // which is the whole difference between "I can see what I'm shooting" and the
+    // old rig, where his back filled the middle of the screen.
+    //
+    // Ease the hip→aim blend, then derive distance + shoulder from it.
+    adsT.current += ((adsHeld.current && !frozen && !resting.current ? 1 : 0) - adsT.current) *
+      Math.min(1, FEEL.adsLerp * dt);
+    const aimBlend = adsT.current;
+    const camDistance = THREE.MathUtils.lerp(FEEL.cameraDistance, FEEL.adsDistance, aimBlend);
+    const camShoulder = THREE.MathUtils.lerp(FEEL.cameraShoulder, FEEL.adsShoulder, aimBlend);
 
-      // Camera collision: raycast head → the DESIRED target (a stable point, not the
-      // current camera position) and pull the target in to just before any wall.
-      // Correcting the target once and then smoothing to it avoids the per-frame
-      // lerp-out / snap-in oscillation that made the camera shake against buildings.
-      const toDesired = desired.clone().sub(head);
-      const dist = toDesired.length();
-      if (dist > 0.001) {
-        const t = raycastBoxes(head, desired, BOXES3D);
-        if (t < 1) {
-          const d = Math.max(FEEL.cameraMinDistance, Math.min(dist, dist * t - FEEL.cameraCollisionBuffer));
-          desired.copy(head).addScaledVector(toDesired.multiplyScalar(1 / dist), d);
-          desired.y = Math.max(desired.y, FEEL.cameraMinHeight);
-        }
+    const pivot = head
+      .clone()
+      .addScaledVector(rightV, camShoulder)
+      .addScaledVector(UP, FEEL.cameraHeadroom);
+    // What the camera actually looks AT — far enough out that small rig motion
+    // barely moves it, which is most of why the old follow read as "swimmy".
+    const lookTarget = pivot.clone().addScaledVector(aim, FEEL.cameraConverge);
+
+    let desired = pivot.clone().addScaledVector(aim, -camDistance);
+    desired.y = Math.max(desired.y, FEEL.cameraMinHeight);
+
+    // Camera collision: raycast pivot → the DESIRED target (a stable point, not the
+    // current camera position) and pull the target in to just before any wall.
+    // Correcting the target once and then smoothing to it avoids the per-frame
+    // lerp-out / snap-in oscillation that made the camera shake against buildings.
+    const toDesired = desired.clone().sub(pivot);
+    const dist = toDesired.length();
+    if (dist > 0.001) {
+      // CAMERA_BOXES, not BOXES3D: chest-high cover is excluded so the lens rides
+      // over a crate instead of being jammed against its face (see village.ts).
+      const t = raycastBoxes(pivot, desired, CAMERA_BOXES);
+      if (t < 1) {
+        const d = Math.max(FEEL.cameraMinDistance, Math.min(dist, dist * t - FEEL.cameraCollisionBuffer));
+        desired.copy(pivot).addScaledVector(toDesired.multiplyScalar(1 / dist), d);
+        desired.y = Math.max(desired.y, FEEL.cameraMinHeight);
       }
     }
 
@@ -495,31 +764,70 @@ export function PlayerController() {
     );
     rs.visible = rs.opacity > 0.02;
 
-    // Damage shake + stagger tilt, decaying over shakeDuration.
+    // ── Damage shake + DIRECTIONAL stagger ──
+    // A hit now shoves the view away from the shooter, kicks the pitch up, rolls
+    // the camera, and jitters — all decaying over shakeDuration. The directional
+    // shove is the important part: the stagger itself tells you where the shot
+    // came from, instead of a symmetric rattle that could have come from anywhere.
     const shakeT = (performance.now() - runtime.damageAt) / (FEEL.shakeDuration * 1000);
     let roll = 0;
     if (shakeT >= 0 && shakeT < 1) {
       const k = (1 - shakeT) * (1 - shakeT); // ease-out
-      const amp = FEEL.shakePosAmp * k;
+      const heavy = runtime.damageAmount >= useGame.getState().maxPlayerHealth * FEEL.heavyHitFraction ? 2 : 1;
+      const amp = FEEL.shakePosAmp * k * heavy;
       camera.position.x += (Math.random() - 0.5) * 2 * amp;
       camera.position.y += (Math.random() - 0.5) * 2 * amp;
       camera.position.z += (Math.random() - 0.5) * 2 * amp;
-      roll = (Math.random() - 0.5) * 2 * FEEL.shakeRollAmp * k;
+      // Shoved AWAY from the shooter (damageFrom points at them, so subtract).
+      const push = FEEL.hitPushAmp * k * heavy;
+      camera.position.x -= runtime.damageFrom.x * push;
+      camera.position.z -= runtime.damageFrom.z * push;
+      // Roll consistently to one side per hit rather than a random rattle, so it
+      // reads as a body flinch instead of noise.
+      roll = runtime.hitRollSign * FEEL.shakeRollAmp * k * heavy;
     }
 
-    // Look along the aim direction so crosshair (screen center) == shot line.
-    camera.lookAt(camera.position.x + aim.x, camera.position.y + aim.y, camera.position.z + aim.z);
+    // Critical health: a slow heartbeat sway on the camera. Pairs with the pulsing
+    // red edge the HUD draws — you should be able to feel you're nearly dead
+    // without reading a number.
+    {
+      const g = useGame.getState();
+      const frac = g.playerHealth / g.maxPlayerHealth;
+      if (frac > 0 && frac < FEEL.lowHealthFraction && !g.isDead) {
+        const severity = 1 - frac / FEEL.lowHealthFraction;
+        const beat = Math.sin((performance.now() / 1000) * FEEL.lowHealthPulseHz * Math.PI * 2);
+        roll += beat * FEEL.lowHealthSwayAmp * severity;
+      }
+    }
+
+    // Look at the CONVERGENCE point rather than along a parallel aim vector. The
+    // crosshair (screen centre) is still exactly the hitscan direction, because
+    // both are camera-forward — but converging on a distant point means camera
+    // jitter barely moves the reticle, which is what makes the view feel planted.
+    camera.lookAt(lookTarget);
     if (roll !== 0) camera.rotateZ(roll); // stagger tilt, applied after lookAt
 
-    // Widen the lens slightly while running so speed is felt, not just numeric.
+    // Lens: widens while running so speed is felt, narrows while aiming.
     const cam = camera as THREE.PerspectiveCamera;
-    const targetFov = FEEL.baseFov + (runtime.running ? FEEL.runFovKick : 0);
+    const hipFov = FEEL.baseFov + (runtime.running ? FEEL.runFovKick : 0);
+    const targetFov = THREE.MathUtils.lerp(hipFov, FEEL.adsFov, aimBlend);
     cam.fov += (targetFov - cam.fov) * Math.min(1, FEEL.fovLerp * dt);
     cam.updateProjectionMatrix();
 
-    // Fire (hold left-click or F) — uses the just-updated camera aim.
-    // Not while seated or sheltered: indoors the world is paused (no shooting
-    // frozen enemies through the doorway), stand and step out to fight.
+    // Fire (hold left-click or F) — uses the just-updated camera aim. Not while
+    // sheltered: the house is a safe room, and safety has to cut both ways. If you
+    // were untouchable in there but could still shoot out, the doorway would be a
+    // free firing position and holding it would beat playing the map. Step out to
+    // fight.
+    // Reload bookkeeping: land the pending reload, and auto-start one the moment
+    // the magazine runs dry so holding the trigger never just silently stops.
+    {
+      const gs = useGame.getState();
+      if (gs.reloadEndsAt > 0 && performance.now() >= gs.reloadEndsAt) gs.finishReload();
+      else if (gs.ammoInMag <= 0 && gs.reloadEndsAt < 0 && !gs.isDead) gs.startReload();
+      runtime.reloading = gs.reloadEndsAt > 0;
+    }
+
     fireCd.current -= dt;
     if (
       (fireHeld.current || touch.fire) &&
@@ -527,14 +835,18 @@ export function PlayerController() {
       !frozen &&
       !resting.current &&
       !runtime.paused &&
-      fireCd.current <= 0
+      !runtime.sheltered &&
+      fireCd.current <= 0 &&
+      useGame.getState().spendAmmo()
     ) {
       // Equipped weapon (bought in the market) drives cadence + damage; the
       // foregrip attachment speeds any gun up.
       const gs = useGame.getState();
       const w = WEAPON_STATS[gs.equippedWeapon];
       fireCd.current = w.fireInterval * (gs.owned.includes("a_grip") ? 0.8 : 1);
-      const shot = fireHitscan(camera, w.damage);
+      // Touch players get aim magnetism — a thumb-drag reticle cannot track a
+      // strafing blocker, so the shot bends onto a nearby target (see fireHitscan).
+      const shot = fireHitscan(camera, w.damage, touch.enabled);
       runtime.fireAt = performance.now();
       if (shot.hit) runtime.hitAt = performance.now();
       if (shot.headshot) runtime.headshotAt = performance.now();
@@ -543,14 +855,11 @@ export function PlayerController() {
       const kick = gs.owned.includes("a_sight") ? 0.6 : 1;
       recoilPitch.current += FEEL.recoilKickPitch * kick;
       recoilYaw.current += (Math.random() - 0.5) * 2 * FEEL.recoilKickYaw * kick;
-      // Cosmetic tracer + muzzle flash, launched from a shouldered-rifle muzzle
-      // offset (not the camera) so the streak reads as leaving the gun.
-      const muzzle = head
-        .clone()
-        .addScaledVector(aim, FEEL.muzzleForward)
-        .addScaledVector(rightV, FEEL.muzzleSide);
-      muzzle.y -= FEEL.muzzleDrop;
-      spawnShot(muzzle, shot.point, shot.hit);
+      // Tracer + flash leave the REAL barrel tip, which the rig publishes each
+      // frame now that the weapon is aimed rather than posed. The old version used
+      // fixed offsets from the eye, so the streak started somewhere near the
+      // shoulder regardless of where the gun actually was.
+      spawnShot(runtime.muzzlePos, shot.point, shot.hit);
     }
   });
 
@@ -558,12 +867,12 @@ export function PlayerController() {
     <>
       {/* Animated character rig, driven by rigState each frame. */}
       <PlayerRig state={rigState.current} />
-      {/* Soft contact shadow so the player reads as grounded. Raised above the
-          ground decals (dirt patches/pads at ~0.02) + renderOrder so it never
-          z-fights/shakes, and a soft radial texture so it's a pool, not a disc. */}
+      {/* Contact pool under the feet. This used to BE the grounding; now the rig
+          casts a real shadow it's demoted to ambient occlusion — the dark patch
+          directly under a body that a directional shadow alone never gives you. */}
       <mesh ref={shadow} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.06, 0]} renderOrder={2}>
         <planeGeometry args={[FEEL.playerRadius * 3.4, FEEL.playerRadius * 3.4]} />
-        <meshBasicMaterial map={softShadowTexture()} transparent opacity={0.8} depthWrite={false} />
+        <meshBasicMaterial map={softShadowTexture()} transparent opacity={0.34} depthWrite={false} />
       </mesh>
     </>
   );

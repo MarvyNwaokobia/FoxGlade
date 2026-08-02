@@ -48,12 +48,46 @@ function rangeFalloff(dist: number): number {
  * (enemy / first wall / max range) so the ShotFX layer draws a tracer that stops
  * at what it hits.
  */
+/**
+ * Aim magnetism (touch only). A hitscan rifle aimed by thumb-drag will basically
+ * never connect with a strafing NPC, so on touch the shot bends onto the nearest
+ * enemy inside a narrow cone around where you're actually pointing. It's a bend,
+ * not a snap: you still have to be roughly on target, and the tracer follows the
+ * bent ray so the shot reads honestly.
+ */
+const ASSIST_CONE = Math.cos(THREE.MathUtils.degToRad(4.5)); // half-angle the assist covers
+const ASSIST_MAX_RANGE = 45;
+
+function assistedDirection(origin: THREE.Vector3, dir: THREE.Vector3): THREE.Vector3 {
+  let best: THREE.Vector3 | null = null;
+  let bestDot = ASSIST_CONE;
+  const to = new THREE.Vector3();
+  for (const e of enemies) {
+    const gp = e.getPosition();
+    to.set(gp.x, gp.y + e.hitHeight, gp.z).sub(origin);
+    const dist = to.length();
+    if (dist < 0.5 || dist > ASSIST_MAX_RANGE) continue;
+    to.multiplyScalar(1 / dist);
+    const d = to.dot(dir);
+    if (d > bestDot) {
+      // Don't magnetise onto something behind a wall.
+      const far = origin.clone().addScaledVector(to, dist);
+      if (raycastBoxes(origin, far, BOXES3D) < 1) continue;
+      bestDot = d;
+      best = to.clone();
+    }
+  }
+  return best ?? dir;
+}
+
 export function fireHitscan(
   camera: THREE.Camera,
   damageMult = 1,
+  aimAssist = false,
 ): { hit: boolean; point: THREE.Vector3; headshot: boolean } {
   const origin = camera.position.clone();
-  const dir = camera.getWorldDirection(new THREE.Vector3());
+  let dir = camera.getWorldDirection(new THREE.Vector3());
+  if (aimAssist) dir = assistedDirection(origin, dir);
 
   // Nearest hit across every enemy's body + head sphere.
   let best: Enemy | null = null;

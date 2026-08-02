@@ -1,6 +1,8 @@
 "use client";
 
 import { Blocker } from "./Blocker";
+import { useGame } from "@/engine/store";
+import { CHAPTERS } from "@/engine/config/day";
 
 /**
  * Blocker spawn points, placed in the chokepoints of the organic layout so
@@ -14,10 +16,18 @@ const BLOCKER_SPAWNS: [number, number, number][] = [
   [-7, 0, -25], // deep corridor guarding the rare nook
 ];
 
+/**
+ * How many blockers are awake is a function of the CHAPTER, not a constant.
+ * Chapter 1 has none at all: a new player gets to learn the map, the fox, the
+ * bank and the market without being shot, which was impossible when all five
+ * systems fired at once from the opening second.
+ */
 export function Blockers() {
+  const chapter = useGame((s) => s.chapter);
+  const count = CHAPTERS[chapter]?.blockers ?? BLOCKER_SPAWNS.length;
   return (
     <>
-      {BLOCKER_SPAWNS.map((p, i) => (
+      {BLOCKER_SPAWNS.slice(0, count).map((p, i) => (
         <Blocker key={i} position={p} />
       ))}
     </>

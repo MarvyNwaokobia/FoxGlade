@@ -20,13 +20,25 @@ export interface ShopItem {
 
 export type WeaponId = "sidearm" | "smg" | "assault_rifle" | "marksman" | "legendary";
 
-/** Per-weapon feel. `damage` scales the base hit; `fireInterval` is seconds/shot. */
-export const WEAPON_STATS: Record<WeaponId, { damage: number; fireInterval: number }> = {
-  sidearm: { damage: 0.85, fireInterval: 0.14 },
-  smg: { damage: 0.7, fireInterval: 0.08 },
-  assault_rifle: { damage: 1, fireInterval: 0.16 }, // the starter baseline
-  marksman: { damage: 2.4, fireInterval: 0.55 },
-  legendary: { damage: 1.7, fireInterval: 0.13 },
+/**
+ * Per-weapon feel. `damage` scales the base hit; `fireInterval` is seconds/shot;
+ * `magSize` / `reloadTime` give each gun its own rhythm.
+ *
+ * The magazine is what gives a firefight cadence — the beat where you break
+ * contact, the window where you're vulnerable, the reason to take cover rather
+ * than hold the trigger. Without it every gun is an infinite hose and the only
+ * variable is DPS. Reserve ammo is deliberately unlimited for now: the tension we
+ * want is the mid-fight reload, not inventory management.
+ */
+export const WEAPON_STATS: Record<
+  WeaponId,
+  { damage: number; fireInterval: number; magSize: number; reloadTime: number }
+> = {
+  sidearm: { damage: 0.85, fireInterval: 0.14, magSize: 14, reloadTime: 1.3 },
+  smg: { damage: 0.7, fireInterval: 0.08, magSize: 34, reloadTime: 1.7 },
+  assault_rifle: { damage: 1, fireInterval: 0.16, magSize: 30, reloadTime: 1.9 }, // the starter baseline
+  marksman: { damage: 2.4, fireInterval: 0.55, magSize: 7, reloadTime: 2.4 },
+  legendary: { damage: 1.7, fireInterval: 0.13, magSize: 24, reloadTime: 1.6 },
 };
 
 export const DEFAULT_WEAPON: WeaponId = "assault_rifle";
@@ -38,15 +50,21 @@ export const BAG_CAP = { none: 350, g_satchel: 750, g_rucksack: 1300 } as const;
 export const BOMB_CAP = { base: 2, upgraded: 4 } as const;
 
 export const SHOP_ITEMS: ShopItem[] = [
-  // ── Weapons (equip one; the assault rifle is owned from the start) ──
-  { id: "w_sidearm", category: "weapon", name: "Sidearm", desc: "Snappy, low damage — a light backup.", price: 80, icon: "🔫", gunId: "sidearm" },
-  { id: "w_smg", category: "weapon", name: "SMG", desc: "Very high fire rate, low per-shot.", price: 220, icon: "🔫", gunId: "smg" },
-  { id: "w_rifle", category: "weapon", name: "Assault Rifle", desc: "The balanced all-rounder.", price: 0, icon: "🔫", gunId: "assault_rifle" },
-  { id: "w_marksman", category: "weapon", name: "Marksman", desc: "Heavy damage, slow cadence.", price: 400, icon: "🎯", gunId: "marksman" },
-  { id: "w_exotic", category: "weapon", name: "Prototype", desc: "Exotic — high damage, fast.", price: 800, icon: "⚡", gunId: "legendary" },
+  // ── Weapons (equip one; the Carbine is owned from the start) ──
+  //
+  // Named for the world, not for a modern shooter's tier list. "SMG",
+  // "Assault Rifle" and "Prototype" are 20th- and 21st-century words, and
+  // reading them in a walled medieval market — from a trader standing under a
+  // canvas awning — pulled you straight out of the fiction. The stats and the
+  // ladder are untouched; only the fiction changed.
+  { id: "w_sidearm", category: "weapon", name: "Flintlock", desc: "Snappy, light hit — a backup piece.", price: 80, icon: "🔫", gunId: "sidearm" },
+  { id: "w_smg", category: "weapon", name: "Repeater", desc: "Spits lead. Little weight behind it.", price: 220, icon: "🔫", gunId: "smg" },
+  { id: "w_rifle", category: "weapon", name: "Carbine", desc: "The balanced all-rounder.", price: 0, icon: "🔫", gunId: "assault_rifle" },
+  { id: "w_marksman", category: "weapon", name: "Long Rifle", desc: "Heavy hit, slow cadence. One shot, one thief.", price: 400, icon: "🎯", gunId: "marksman" },
+  { id: "w_exotic", category: "weapon", name: "The Relic", desc: "Nobody will say where it came from.", price: 800, icon: "⚡", gunId: "legendary" },
   // ── Attachments (global feel upgrades, bought once) ──
-  { id: "a_sight", category: "attachment", name: "Reflex Sight", desc: "Cuts recoil — steadier aim.", price: 150, icon: "🔭" },
-  { id: "a_grip", category: "attachment", name: "Foregrip", desc: "Faster fire on any gun.", price: 180, icon: "✊" },
+  { id: "a_sight", category: "attachment", name: "Brass Sight", desc: "Cuts recoil — steadier aim.", price: 150, icon: "🔭" },
+  { id: "a_grip", category: "attachment", name: "Wrapped Grip", desc: "Faster fire on any gun.", price: 180, icon: "✊" },
   // ── Bombs ──
   { id: "b_satchel", category: "bomb", name: "Bomb Satchel", desc: "Carry 4 bombs per run instead of 2.", price: 120, icon: "💣" },
   // ── Bags (raise how much loot you can hold before banking) ──

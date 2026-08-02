@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useGame } from "@/engine/store";
+import { weaponThumb } from "./weaponThumb";
 import {
   SHOP_ITEMS,
   CATEGORY_ORDER,
@@ -117,26 +118,42 @@ export function Shop() {
             const own = isOwned(i);
             const equipped = isEquipped(i);
             const stats = i.gunId ? WEAPON_STATS[i.gunId] : null;
+            // Weapons show the actual weapon. Everything else keeps its glyph.
+            const thumb = i.gunId ? weaponThumb(i.gunId) : null;
+            // Can't afford it? Say so on the card, rather than making the player
+            // tap through to a dead Sign button to find out.
+            const short = !own && i.price > villeBanked ? i.price - villeBanked : 0;
             return (
               <button
                 key={i.id}
                 onClick={() => setSelId(i.id)}
-                style={{ ...styles.card, ...(selected ? styles.cardSelected : null) }}
+                style={{
+                  ...styles.card,
+                  ...(selected ? styles.cardSelected : null),
+                  ...(short ? styles.cardUnaffordable : null),
+                }}
               >
                 {equipped ? (
                   <span style={styles.badgeEquipped}>EQUIPPED</span>
                 ) : own ? (
                   <span style={styles.badgeOwned}>OWNED</span>
                 ) : (
-                  <span style={styles.badgePrice}>{i.price === 0 ? "FREE" : `${i.price}`}</span>
+                  <span style={{ ...styles.badgePrice, ...(short ? styles.badgeShort : null) }}>
+                    {i.price === 0 ? "FREE" : `${i.price}`}
+                  </span>
                 )}
-                <span style={styles.cardIcon}>{i.icon}</span>
+                {thumb ? (
+                  <img src={thumb} alt="" style={styles.cardThumb} />
+                ) : (
+                  <span style={styles.cardIcon}>{i.icon}</span>
+                )}
                 <span style={styles.cardName}>{i.name}</span>
                 {stats && (
                   <span style={styles.cardStats}>
                     ⚔ {stats.damage.toFixed(2)}× · {Math.round(1 / stats.fireInterval)}/s
                   </span>
                 )}
+                {short > 0 && <span style={styles.cardShort}>need {short} more</span>}
               </button>
             );
           })}
@@ -147,7 +164,11 @@ export function Shop() {
           {sel ? (
             <>
               <div style={styles.footInfo}>
-                <span style={styles.footIcon}>{sel.icon}</span>
+                {sel.gunId && weaponThumb(sel.gunId) ? (
+                  <img src={weaponThumb(sel.gunId)!} alt="" style={styles.footThumb} />
+                ) : (
+                  <span style={styles.footIcon}>{sel.icon}</span>
+                )}
                 <div>
                   <div style={styles.footName}>{sel.name}</div>
                   <div style={styles.footDesc}>{sel.desc}</div>
@@ -274,6 +295,19 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: "0 0 0 1px rgba(242,193,78,0.5) inset",
   },
   cardIcon: { fontSize: 40, lineHeight: 1 },
+  /** The rendered weapon. Wide and short — a gun is a horizontal object. */
+  cardThumb: {
+    width: "100%",
+    maxWidth: 118,
+    height: 62,
+    objectFit: "contain",
+    display: "block",
+  },
+  /** Priced out of reach: readable, clearly not available yet, not hidden. */
+  cardUnaffordable: { opacity: 0.48 },
+  badgeShort: { color: "rgba(232,238,242,0.45)" },
+  cardShort: { fontSize: 10.5, color: GOLD, opacity: 0.85, letterSpacing: 0.2 },
+  footThumb: { width: 74, height: 44, objectFit: "contain", display: "block" },
   cardName: { fontSize: 13, fontWeight: 700, textAlign: "center" },
   cardStats: { fontSize: 11, color: "rgba(232,238,242,0.55)" },
   badgePrice: {

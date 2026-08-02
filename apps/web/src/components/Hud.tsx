@@ -6,7 +6,10 @@ import { useGame } from "@/engine/store";
 import { audio } from "@/engine/audio/audio";
 import { HINTS } from "@/engine/world/hints";
 import { VILLAGE } from "@/engine/world/village";
-import { SESSION_SECONDS } from "@/engine/config/round";
+import { REST } from "@/engine/config/round";
+import { CHAPTERS, clockLabel, DAY } from "@/engine/config/day";
+import { WEAPON_STATS } from "@/engine/config/shop";
+import { FEEL } from "@/engine/config/feel";
 import { foxGrowthFor, foxNextThreshold } from "@/engine/config/fox";
 import { thieves, MAX_THIEVES } from "@/engine/npc/thieves";
 import { isTouchDevice } from "@/engine/input/touch";
@@ -25,8 +28,11 @@ export function Hud() {
   const thiefBlips = useRef<(HTMLDivElement | null)[]>([]);
   const bankBlip = useRef<HTMLDivElement>(null);
   const sniffEl = useRef<HTMLDivElement>(null);
+  const foxBlip = useRef<HTMLDivElement>(null);
   const promptEl = useRef<HTMLDivElement>(null);
   const timerEl = useRef<HTMLDivElement>(null);
+  const chapterEl = useRef<HTMLDivElement>(null);
+  const bannerEl = useRef<HTMLDivElement>(null);
   const runEl = useRef<HTMLDivElement>(null);
   const crouchEl = useRef<HTMLDivElement>(null);
   const shelterEl = useRef<HTMLDivElement>(null);
@@ -38,6 +44,8 @@ export function Hud() {
   const crossLeft = useRef<HTMLDivElement>(null);
   const crossRight = useRef<HTMLDivElement>(null);
   const dmgEl = useRef<HTMLDivElement>(null);
+  const dmgArcEl = useRef<HTMLDivElement>(null);
+  const ammoEl = useRef<HTMLDivElement>(null);
   const [locked, setLocked] = useState(false);
   const [muted, setMuted] = useState(false);
   const health = useGame((s) => s.playerHealth);
@@ -46,11 +54,38 @@ export function Hud() {
   const roundState = useGame((s) => s.roundState);
   const roundReason = useGame((s) => s.roundReason);
   const bombsLeft = useGame((s) => s.bombsLeft);
+  const restoresLeft = useGame((s) => s.restoresLeft);
   const treasureCracked = useGame((s) => s.treasureCracked);
+  const treasuresBanked = useGame((s) => s.treasuresBanked);
   const claimedRarity = useGame((s) => s.claimedRarity);
   const villeCarrying = useGame((s) => s.villeCarrying);
   const villeBanked = useGame((s) => s.villeBanked);
   const villeEarned = useGame((s) => s.villeEarned);
+  const roundNonce = useGame((s) => s.roundNonce);
+
+  // The control legend: up while you settle in, then out of the way. Bound to H
+  // so it's never actually lost, and reshown at the top of each run.
+  const [showControls, setShowControls] = useState(true);
+  const [controlsFading, setControlsFading] = useState(false);
+  useEffect(() => {
+    setShowControls(true);
+    setControlsFading(false);
+    const fade = window.setTimeout(() => setControlsFading(true), 14000);
+    const gone = window.setTimeout(() => setShowControls(false), 15200);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== "KeyH" || e.repeat) return;
+      window.clearTimeout(fade);
+      window.clearTimeout(gone);
+      setControlsFading(false);
+      setShowControls((v) => !v);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.clearTimeout(fade);
+      window.clearTimeout(gone);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [roundNonce]);
 
   // Mute toggle: reflect the persisted state, keep in sync, and bind M.
   useEffect(() => {
@@ -70,10 +105,11 @@ export function Hud() {
     const onLockChange = () => setLocked(!!document.pointerLockElement);
     document.addEventListener("pointerlockchange", onLockChange);
 
+    // Resolved once: prompts inside the rAF loop have to name the right control.
+    const touchInput = isTouchDevice();
     let raf = 0;
     const tick = () => {
       const now = performance.now();
-      const revealed = now < runtime.revealRealUntil;
 
       // One radar blip per hint, placed AROUND the compass ring at its bearing
       // (top = ahead). Its position around the ring shows direction; color shows
@@ -93,7 +129,10 @@ export function Hud() {
         const rel = Math.atan2(dx, dz) - runtime.yaw;
         el.style.left = `${C + Math.sin(rel) * R}px`;
         el.style.top = `${C - Math.cos(rel) * R}px`;
-        el.style.background = revealed ? (h.real ? HINT_REAL : HINT_FAKE) : HINT_DEFAULT;
+        // All candidates look identical, always. The old "sniff" recoloured these
+        // to give the answer away on the HUD; now the fox physically runs to the
+        // real one and you follow it, so the compass stays honest.
+        el.style.background = HINT_DEFAULT;
         el.style.opacity = "1";
       }
 
@@ -128,28 +167,75 @@ export function Hud() {
         }
       }
 
-      // Countdown timer (freezes when the round ends).
+      // Time of day, not a countdown. The sun going down is the clock now — it
+      // reads as a journey rather than a punishment, and it tells you how much
+      // light you have left without a number screaming at you.
       if (timerEl.current && useGame.getState().roundState === "playing") {
-        const left = Math.max(0, SESSION_SECONDS - (now - runtime.roundStartAt) / 1000);
-        const mm = Math.floor(left / 60);
-        const ss = Math.floor(left % 60);
-        timerEl.current.textContent = `${mm}:${ss < 10 ? "0" : ""}${ss}`;
-        timerEl.current.style.color = left <= 30 ? "#ff6b5a" : "#e8eef2";
+        const d = runtime.dayProgress;
+        timerEl.current.textContent = clockLabel(d);
+        timerEl.current.style.color =
+          d > 0.86 ? "#ff6b5a" : d > 0.62 ? "#ffb054" : "#e8eef2";
+      }
+      if (chapterEl.current) {
+        chapterEl.current.textContent = runtime.chapterName;
       }
 
-      // Fox sniff indicator.
+      // Chapter banner — announces the one new thing this stretch introduces.
+      if (bannerEl.current) {
+        const age = now - runtime.chapterAt;
+        if (runtime.chapterAt > 0 && age < 5200) {
+          bannerEl.current.innerHTML =
+            `<div style="font-size:26px;font-weight:800;letter-spacing:1px">${runtime.chapterName}</div>` +
+            `<div style="font-size:15px;opacity:0.85;margin-top:4px">${runtime.chapterBrief}</div>`;
+          bannerEl.current.style.opacity = String(age < 4200 ? 1 : (5200 - age) / 1000);
+        } else {
+          bannerEl.current.style.opacity = "0";
+        }
+      }
+
+      // Fox blip: while it's scouting or attacking, the compass tracks the FOX.
+      // That's the point of the redesign — the animal is the navigation, so the
+      // thing you're steering by is your companion, not a revealed answer.
+      if (foxBlip.current) {
+        const tracking = runtime.foxState === "scout" || runtime.foxState === "attack";
+        if (tracking) {
+          const rel = Math.atan2(runtime.foxPos.x - runtime.playerPos.x, runtime.foxPos.z - runtime.playerPos.z) - runtime.yaw;
+          foxBlip.current.style.left = `${C + Math.sin(rel) * R}px`;
+          foxBlip.current.style.top = `${C - Math.cos(rel) * R}px`;
+          foxBlip.current.style.opacity = runtime.foxFoundTreasure
+            ? String(0.6 + 0.4 * Math.sin(now / 180)) // urgent pulse once it's found it
+            : "1";
+        } else {
+          foxBlip.current.style.opacity = "0";
+        }
+      }
+
+      // Fox status pill.
       if (sniffEl.current) {
-        const cd = runtime.sniffReadyAt - now;
-        if (revealed) {
-          sniffEl.current.textContent = "🦊 on the scent!";
+        const cd = runtime.foxReadyAt - now;
+        const st = runtime.foxState;
+        if (st === "down") {
+          const left = Math.ceil((runtime.foxDownUntil - now) / 1000);
+          sniffEl.current.textContent = `🦊 down — ${Math.max(0, left)}s`;
+          sniffEl.current.style.color = "#ff8a7a";
+          sniffEl.current.style.borderColor = "rgba(232,86,63,0.7)";
+        } else if (st === "scout") {
+          sniffEl.current.textContent = runtime.foxFoundTreasure ? "🦊 found it — follow!" : "🦊 scouting…";
           sniffEl.current.style.color = HINT_REAL;
           sniffEl.current.style.borderColor = HINT_REAL;
+        } else if (st === "attack") {
+          sniffEl.current.textContent = "🦊 going in!";
+          sniffEl.current.style.color = "#ffb054";
+          sniffEl.current.style.borderColor = "rgba(255,176,84,0.8)";
         } else if (cd > 0) {
-          sniffEl.current.textContent = `🦊 sniff ${Math.ceil(cd / 1000)}s`;
+          sniffEl.current.textContent = `🦊 ${Math.ceil(cd / 1000)}s`;
           sniffEl.current.style.color = "rgba(232,238,242,0.5)";
           sniffEl.current.style.borderColor = "rgba(232,238,242,0.25)";
         } else {
-          sniffEl.current.textContent = "🦊 sniff — Q";
+          // Name the control the player actually HAS. On a phone this read
+          // "send — Q", pointing at a key that isn't there, while the toast two
+          // lines below it correctly said "Tap FOX".
+          sniffEl.current.textContent = touchInput ? "🦊 send — FOX" : "🦊 send — Q";
           sniffEl.current.style.color = HINT_DEFAULT;
           sniffEl.current.style.borderColor = HINT_DEFAULT;
         }
@@ -219,10 +305,17 @@ export function Hud() {
           shelterEl.current.innerHTML = "at the market — press <b>E</b> to shop";
           shelterEl.current.style.opacity = "1";
         } else if (runtime.resting) {
-          shelterEl.current.innerHTML = "resting — world paused · health recovering · <b>X</b> to stand";
+          shelterEl.current.innerHTML = "resting — world paused · recovering";
           shelterEl.current.style.opacity = "1";
         } else if (runtime.sheltered) {
-          shelterEl.current.innerHTML = "indoors — world paused · <b>X</b> to sit and rest";
+          const left = useGame.getState().restoresLeft;
+          const atCap =
+            useGame.getState().playerHealth >= useGame.getState().maxPlayerHealth * REST.healCap;
+          shelterEl.current.innerHTML = atCap
+            ? "safe inside — world paused · you're patched up"
+            : left > 0
+              ? `safe inside — world paused · <b>X</b> to use a restore (${left} left)`
+              : "safe inside — world paused · <b>no restores left</b> — buy more at the market";
           shelterEl.current.style.opacity = "1";
         } else {
           shelterEl.current.style.opacity = "0";
@@ -233,9 +326,51 @@ export function Hud() {
       if (timerEl.current) {
         timerEl.current.style.opacity = runtime.sheltered ? "0.4" : "1";
       }
+      // Damage flash, PLUS a sustained low-health pulse. The two share one element:
+      // a hit spikes it, and below the critical threshold it never fully clears —
+      // it breathes instead, harder the closer to death you are. Health bars are
+      // easy to not look at mid-fight; the edge of the screen is not.
       if (dmgEl.current) {
+        const g = useGame.getState();
         const since = now - runtime.damageAt;
-        dmgEl.current.style.opacity = since < 450 ? String(0.55 * (1 - since / 450)) : "0";
+        const hitFlash = since < 450 ? 0.6 * (1 - since / 450) : 0;
+        const frac = g.playerHealth / g.maxPlayerHealth;
+        let critical = 0;
+        if (frac > 0 && frac < FEEL.lowHealthFraction && !g.isDead && roundState === "playing") {
+          const severity = 1 - frac / FEEL.lowHealthFraction; // 0 at threshold → 1 at death
+          const beat = 0.5 + 0.5 * Math.sin((now / 1000) * FEEL.lowHealthPulseHz * Math.PI * 2);
+          critical = (0.16 + 0.3 * beat) * severity;
+        }
+        dmgEl.current.style.opacity = String(Math.min(0.85, Math.max(hitFlash, critical)));
+      }
+
+      // Ammo readout. Turns amber when the magazine is running low and shows the
+      // reload explicitly, so running dry is never a silent surprise.
+      if (ammoEl.current) {
+        const g = useGame.getState();
+        const mag = WEAPON_STATS[g.equippedWeapon].magSize;
+        if (g.reloadEndsAt > 0) {
+          ammoEl.current.textContent = "reloading…";
+          ammoEl.current.style.color = "#8fd0e0";
+        } else {
+          ammoEl.current.textContent = `${g.ammoInMag} / ${mag}`;
+          ammoEl.current.style.color =
+            g.ammoInMag === 0 ? "#e8563f" : g.ammoInMag <= mag * 0.25 ? "#ffb054" : "#e8eef2";
+        }
+      }
+
+      // Damage arc — rotate it to the bearing of whoever hit you, relative to
+      // where you're facing, and fade it out over ~1.1s.
+      if (dmgArcEl.current) {
+        const since = now - runtime.damageAt;
+        if (since < 1100) {
+          const bearing =
+            Math.atan2(runtime.damageFrom.x, runtime.damageFrom.z) - runtime.yaw;
+          dmgArcEl.current.style.transform = `translate(-50%, -50%) rotate(${180 - (bearing * 180) / Math.PI}deg)`;
+          dmgArcEl.current.style.opacity = String(1 - since / 1100);
+        } else {
+          dmgArcEl.current.style.opacity = "0";
+        }
       }
       // Dynamic crosshair: ticks spread while running/firing, tighten when still;
       // whole reticle flashes red on a connecting hit (the hitmarker).
@@ -294,8 +429,23 @@ export function Hud() {
         <div style={styles.healthLabel}>{Math.max(0, Math.round(health))}</div>
       </div>
 
-      {/* Bomb count, beside the health bar */}
-      <div style={{ ...styles.bombPill, opacity: bombsLeft > 0 ? 1 : 0.35 }}>💣 ×{bombsLeft}</div>
+      {/* Consumables row, centred just above the health bar: ammo · restores ·
+          bombs. These used to be scattered to either side of the bar at fixed
+          pixel offsets, which put them straight under the touch buttons on a
+          phone. One centred row reads as a single resource strip and stays clear
+          of the thumb zones on every screen size. */}
+      <div style={styles.resourceRow}>
+        <div ref={ammoEl} style={styles.ammoPill} />
+        <div style={{ ...styles.restorePill, opacity: restoresLeft > 0 ? 1 : 0.35 }}>✚ ×{restoresLeft}</div>
+        <div style={{ ...styles.bombPill, opacity: bombsLeft > 0 ? 1 : 0.35 }}>💣 ×{bombsLeft}</div>
+      </div>
+
+      {/* Directional damage indicator: an arc pointing at whoever just hit you.
+          Screen shake and a red vignette tell you THAT you were hit; they never
+          told you FROM WHERE, which is why fights read as arbitrary. */}
+      <div ref={dmgArcEl} style={styles.damageArc}>
+        <div style={styles.damageArcMark} />
+      </div>
 
       {/* Loot wallet, top-left: banked total + what you're carrying (unbanked) */}
       <div style={styles.wallet}>
@@ -309,21 +459,26 @@ export function Hud() {
         </div>
       </div>
 
-      {/* Countdown timer, top-right */}
+      {/* Time of day + chapter, top-right */}
       <div style={styles.timer}>
-        <div ref={timerEl} style={styles.timerNum}>
-          {Math.floor(SESSION_SECONDS / 60)}:{SESSION_SECONDS % 60 < 10 ? "0" : ""}
-          {SESSION_SECONDS % 60}
-        </div>
-        <div style={styles.timerLabel}>time left</div>
+        <div ref={timerEl} style={styles.timerNum}>06:00</div>
+        <div ref={chapterEl} style={styles.timerLabel}>Dawn</div>
       </div>
+
+      {/* Chapter banner — text set from the game loop */}
+      <div ref={bannerEl} style={styles.chapterBanner} />
 
       {/* Downed overlay (mid-round setback, not round end) */}
       {isDead && roundState === "playing" && (
         <div style={styles.deathOverlay}>
           <div style={styles.deathTitle}>You were downed</div>
+          {runtime.lootLostAmount > 0 && (
+            <div style={styles.deathLoss}>
+              you dropped {runtime.lootLostAmount} VILLE — the treasure is back on the board
+            </div>
+          )}
           <div style={styles.deathHint}>
-            press <b>R</b> to respawn at the gate
+            press <b>R</b> to come back {runtime.refugeIndex >= 0 ? "at your refuge" : "at the gate"}
           </div>
         </div>
       )}
@@ -331,16 +486,13 @@ export function Hud() {
       {/* Round-over overlay (win / lose) */}
       {roundState !== "playing" && (
         <div style={styles.roundOverlay}>
-          <div style={{ ...styles.roundTitle, color: roundState === "won" ? "#ffd873" : "#e8563f" }}>
-            {roundState === "won"
-              ? treasureCracked
-                ? claimedRarity === "rare"
-                  ? "Treasure secured — cracked (rare → common)"
-                  : "Treasure secured — cracked (common → scrap)"
-                : `Treasure secured! · ${(claimedRarity ?? "common").toUpperCase()}`
-              : roundReason === "thief"
-                ? "Thieves took every treasure"
-                : "Time's up"}
+          <div style={{ ...styles.roundTitle, color: treasuresBanked > 0 ? "#ffd873" : "#e8563f" }}>
+            {roundReason === "thief" ? "Thieves took the last of it" : "Night falls"}
+          </div>
+          <div style={styles.roundLoot}>
+            {treasuresBanked > 0
+              ? `${treasuresBanked} treasure${treasuresBanked === 1 ? "" : "s"} banked · ${villeBanked} VILLE safe`
+              : "You banked nothing today."}
           </div>
           {villeCarrying > 0 && (
             <div style={styles.roundLoot}>
@@ -377,6 +529,8 @@ export function Hud() {
           ))}
           {/* Bank marker — shows only while carrying loot (points to the vault) */}
           <div ref={bankBlip} style={styles.bankDot} />
+          {/* Fox marker — shows while it's off scouting or attacking */}
+          <div ref={foxBlip} style={styles.foxDot} />
         </div>
         <div ref={sniffEl} style={styles.sniffPill}>
           🦊 sniff — Q
@@ -427,21 +581,30 @@ export function Hud() {
         {muted ? "🔇" : "🔊"}
       </button>
 
-      {/* Controls, bottom-left */}
-      <div style={styles.controls}>
-        <div>
-          <b>WASD</b> move &nbsp;·&nbsp; <b>Shift</b> run &nbsp;·&nbsp; <b>Space</b> jump &nbsp;·&nbsp; <b>C</b> crouch &nbsp;·&nbsp; <b>V</b> view
+      {/* Controls, bottom-left — DESKTOP ONLY, and no longer permanent.
+          Four lines of key bindings pinned over the world for the entire run is
+          a dev overlay, not a HUD: it competed with the guardian, the fox pill
+          and the toasts for the same first ten seconds, and then never left. It
+          shows while you're finding your feet, fades out, and comes back on H. */}
+      {!isTouchDevice() && showControls && (
+        <div style={{ ...styles.controls, opacity: controlsFading ? 0 : 1 }}>
+          <div>
+            <b>WASD</b> move &nbsp;·&nbsp; <b>Shift</b> run &nbsp;·&nbsp; <b>Space</b> jump / vault &nbsp;·&nbsp; <b>C</b> crouch
+          </div>
+          <div>
+            <b>Mouse</b> look &nbsp;·&nbsp; <b>Left-click</b> / <b>F</b> shoot &nbsp;·&nbsp; <b>Right-click</b> aim &nbsp;·&nbsp; <b>R</b> reload
+          </div>
+          <div>
+            <b>G</b> hold to aim bomb, release to throw
+          </div>
+          <div>
+            <b>Q</b> send fox &nbsp;·&nbsp; <b>E</b> claim &nbsp;·&nbsp; <b>X</b> rest (indoors) &nbsp;·&nbsp; <b>Esc</b> release mouse
+          </div>
+          <div style={styles.controlsHint}>
+            <b>H</b> hides / shows this
+          </div>
         </div>
-        <div>
-          <b>Mouse</b> look &nbsp;·&nbsp; <b>Left-click</b> / <b>F</b> shoot
-        </div>
-        <div>
-          <b>G</b> hold to aim bomb, release to throw
-        </div>
-        <div>
-          <b>Q</b> fox sniff &nbsp;·&nbsp; <b>E</b> claim &nbsp;·&nbsp; <b>X</b> rest (indoors) &nbsp;·&nbsp; <b>Esc</b> release mouse
-        </div>
-      </div>
+      )}
 
       {/* Click-to-play prompt when the mouse isn't captured (desktop only —
           touch devices use on-screen controls, no pointer lock). */}
@@ -507,6 +670,18 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: "0 0 0 1px rgba(0,0,0,0.55), 0 0 6px rgba(232,86,63,0.8)",
     opacity: 0,
   },
+  foxDot: {
+    position: "absolute",
+    left: "50%",
+    top: "50%",
+    width: 10,
+    height: 10,
+    borderRadius: "50%",
+    transform: "translate(-50%, -50%)",
+    background: "#f0a860",
+    boxShadow: "0 0 0 1px rgba(0,0,0,0.55), 0 0 8px rgba(240,168,96,0.95)",
+    opacity: 0,
+  },
   bankDot: {
     // A gold diamond (rotated square) so it reads distinctly from the round
     // hint/thief dots. Shows only while carrying loot; the game loop pulses it.
@@ -521,8 +696,12 @@ const styles: Record<string, React.CSSProperties> = {
     opacity: 0,
   },
   timer: {
+    // BELOW the minimap, not under it. The minimap has always occupied the
+    // top-right corner, so the clock was rendering behind it and simply could not
+    // be read — which mattered little for a countdown nobody looked at and
+    // matters a great deal now that the time of day IS the round timer.
     position: "absolute",
-    top: 16,
+    top: 176,
     right: 20,
     textAlign: "right",
     pointerEvents: "none",
@@ -537,6 +716,20 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1,
   },
   timerLabel: { fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", color: "rgba(232,238,242,0.5)", marginTop: 2 },
+  chapterBanner: {
+    position: "absolute",
+    left: "50%",
+    top: "20%",
+    transform: "translateX(-50%)",
+    textAlign: "center",
+    color: "#f3e6c8",
+    textShadow: "0 2px 12px rgba(0,0,0,0.85)",
+    opacity: 0,
+    transition: "opacity 0.4s ease",
+    pointerEvents: "none",
+    userSelect: "none",
+    whiteSpace: "nowrap",
+  },
   roundOverlay: {
     position: "absolute",
     inset: 0,
@@ -637,14 +830,73 @@ const styles: Record<string, React.CSSProperties> = {
     userSelect: "none",
   },
   bombPill: {
-    position: "absolute",
-    left: "calc(50% + 132px)",
-    bottom: 50,
     padding: "3px 10px",
     borderRadius: 999,
     background: "rgba(11,13,16,0.6)",
     border: "1px solid rgba(232,238,242,0.25)",
     color: "#e8eef2",
+    fontSize: 13,
+    letterSpacing: 0.5,
+    whiteSpace: "nowrap",
+    transition: "opacity 0.2s ease",
+    pointerEvents: "none",
+    userSelect: "none",
+  },
+  resourceRow: {
+    position: "absolute",
+    left: "50%",
+    bottom: 74,
+    transform: "translateX(-50%)",
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    pointerEvents: "none",
+    userSelect: "none",
+  },
+  ammoPill: {
+    padding: "3px 10px",
+    borderRadius: 999,
+    background: "rgba(11,13,16,0.6)",
+    border: "1px solid rgba(232,238,242,0.25)",
+    color: "#e8eef2",
+    fontSize: 14,
+    fontWeight: 700,
+    letterSpacing: 0.5,
+    fontVariantNumeric: "tabular-nums",
+    whiteSpace: "nowrap",
+    pointerEvents: "none",
+    userSelect: "none",
+  },
+  damageArc: {
+    // A ring centred on the crosshair; the mark sits at its top edge and the whole
+    // ring is rotated to the bearing of the hit, so the mark lands in that
+    // direction. Rotating one element is cheaper than repositioning per frame.
+    position: "absolute",
+    left: "50%",
+    top: "50%",
+    width: 240,
+    height: 240,
+    transform: "translate(-50%, -50%)",
+    opacity: 0,
+    pointerEvents: "none",
+    userSelect: "none",
+  },
+  damageArcMark: {
+    position: "absolute",
+    left: "50%",
+    top: 0,
+    width: 76,
+    height: 8,
+    marginLeft: -38,
+    borderRadius: 6,
+    background: "linear-gradient(to bottom, rgba(255,70,50,0.95), rgba(255,70,50,0))",
+  },
+  restorePill: {
+    padding: "3px 10px",
+    borderRadius: 999,
+    background: "rgba(11,13,16,0.6)",
+    border: "1px solid rgba(90,209,122,0.45)",
+    color: "#8fe0a8",
     fontSize: 13,
     letterSpacing: 0.5,
     whiteSpace: "nowrap",
@@ -676,6 +928,7 @@ const styles: Record<string, React.CSSProperties> = {
     userSelect: "none",
   },
   deathTitle: { fontSize: 34, fontWeight: 700, letterSpacing: 1, color: "#e8563f" },
+  deathLoss: { fontSize: 15, color: "#ffb054", letterSpacing: 0.3 },
   deathHint: { fontSize: 16, color: "rgba(232,238,242,0.85)" },
   crosshairWrap: {
     position: "absolute",
@@ -826,11 +1079,26 @@ const styles: Record<string, React.CSSProperties> = {
     position: "absolute",
     left: 18,
     bottom: 18,
+    // A card, not raw text floating on the world — it was unreadable against
+    // pale cobblestone and read as debug output rather than part of the game.
+    padding: "10px 14px",
+    borderRadius: 8,
+    background: "rgba(14,11,8,0.55)",
+    border: "1px solid rgba(233,214,174,0.14)",
+    backdropFilter: "blur(3px)",
     fontSize: 13,
-    color: "rgba(232,238,242,0.75)",
+    color: "rgba(232,238,242,0.78)",
     lineHeight: 1.7,
     pointerEvents: "none",
     userSelect: "none",
+    transition: "opacity 1.1s ease-out",
+  },
+  controlsHint: {
+    marginTop: 4,
+    paddingTop: 5,
+    borderTop: "1px solid rgba(233,214,174,0.12)",
+    fontSize: 11.5,
+    color: "rgba(232,238,242,0.45)",
   },
   muteBtn: {
     position: "absolute",

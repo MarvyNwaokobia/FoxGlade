@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { enemies, type Enemy } from "@/engine/combat/enemies";
@@ -9,45 +9,71 @@ import { thieves, type ThiefRef } from "./thieves";
 import { THIEF } from "@/engine/config/round";
 import { HINTS } from "@/engine/world/hints";
 import { runtime } from "@/engine/runtime";
-import type { Enemy as EnemyT } from "@/engine/combat/enemies";
+import { audio } from "@/engine/audio/audio";
 import { NpcRig, type NpcRigState, DEATH_LINGER_MS } from "@/engine/character/NpcRig";
+import { foxThiefSpeedMult, steerTowards } from "@/engine/fox/foxBrain";
+import { findPath } from "@/engine/world/navgrid";
 
 const BODY_H = 1.7;
 const BODY_R = 0.4;
 
 /**
- * A thief racing the player to ONE specific real treasure along a fixed
- * waypoint path (a simple timed racer, DESIGN §13.6). If it arrives, it makes
- * off with THAT treasure (§14.1) — the round is lost only when every real
- * treasure is stolen. Fast and fragile: shoot it down to save the treasure.
- * It doesn't exist in the world until its start time hits (so late thieves
- * can't be pre-sniped); its blip appearing on the compass IS the alarm.
+ * A thief racing you for the treasure — and now actually hunting it.
+ *
+ * It used to run a HARDCODED waypoint list at a constant speed, never looking at
+ * you, never reacting to being shot, and vanishing on arrival. Two things were
+ * wrong with that:
+ *
+ *  - Phase 5 made the treasure board RESEED each chapter, and those waypoints
+ *    ended at the old fixed hint coordinates. So since that change the thieves
+ *    have been sprinting, with total confidence, to patches of empty cobblestone.
+ *    The race had quietly stopped existing.
+ *  - Even when it worked it was a train on rails. Shooting at one did nothing but
+ *    subtract health; it wouldn't flinch, hurry, or deviate.
+ *
+ * Now it finds the real treasure itself, PATHS to it across the village (same A*
+ * the fox uses), breaks into a sprint when shot at, physically takes the treasure
+ * with a grab beat, and then runs for the wall with it. Kill it before it reaches
+ * the wall and the treasure drops back onto the board.
  */
+type Phase = "running" | "taking" | "fleeing";
+
+const GRAB_TIME = 1.1; // seconds spent taking the treasure — your window to stop it
+const PANIC_TIME = 4.5; // seconds it sprints after being shot at
+const REPATH = 0.8; // seconds between route recalculations
+const _goal = new THREE.Vector3();
+
 export function Thief({
-  path,
-  targetHint,
+  entry,
   speed = THIEF.speed,
   startDelay = 0,
 }: {
-  path: [number, number, number][];
-  /** Index into HINTS of the (real) treasure this thief is racing for. */
-  targetHint: number;
+  /** Where it slips into the village from (a point on the wall). */
+  entry: [number, number];
   speed?: number;
   startDelay?: number;
 }) {
-  const wp = useMemo(() => path.map((p) => new THREE.Vector3(p[0], p[1], p[2])), [path]);
   const group = useRef<THREE.Group>(null);
-  const pos = useRef(wp[0].clone());
-  const seg = useRef(0);
+  const pos = useRef(new THREE.Vector3(entry[0], 0, entry[1]));
   const facing = useRef(0);
   const delay = useRef(startDelay);
   const [started, setStarted] = useState(startDelay <= 0);
-  const [escaped, setEscaped] = useState(false); // reached its treasure and left
+  const [escaped, setEscaped] = useState(false);
   const [health, setHealth] = useState<number>(THIEF.health);
-  const [removed, setRemoved] = useState(false); // unmount after the death lies out
-  const live = useRef<{ enemy: EnemyT; ref: ThiefRef } | null>(null);
+  const [removed, setRemoved] = useState(false);
+  const live = useRef<{ enemy: Enemy; ref: ThiefRef } | null>(null);
   const anim = useRef<NpcRigState>({ moving: false, running: true, fireAt: -1, speed });
   const dead = health <= 0;
+
+  const phase = useRef<Phase>("running");
+  const targetHint = useRef(-1);
+  const grabClock = useRef(0);
+  const panicUntil = useRef(0);
+  const path = useRef<THREE.Vector3[]>([]);
+  const repathClock = useRef(0);
+  const carrying = useRef(false);
+  const exit = useRef(new THREE.Vector3(entry[0], 0, entry[1]));
+  const prevPos = useRef(new THREE.Vector3(entry[0], 0, entry[1]));
 
   useEffect(() => {
     if (!started) return;
@@ -60,7 +86,10 @@ export function Thief({
       hitHeight: 0.9,
       bodyRadius: 0.4,
       takeHit: (damage) => {
-        anim.current.hitAt = performance.now(); // stagger + flash punch
+        anim.current.hitAt = performance.now();
+        // Being shot at makes it RUN. A racer that doesn't panic when rounds
+        // start landing near it reads as scenery, not a rival.
+        panicUntil.current = performance.now() + PANIC_TIME * 1000;
         setHealth((h) => {
           const next = Math.max(0, h - damage);
           if (next === 0) {
@@ -81,71 +110,140 @@ export function Thief({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [started]);
 
-  // Shot down: stop racing (useFrame bails on `dead`), lie for a beat, then despawn.
+  // Shot down. If it was carrying, the treasure goes back on the board — killing
+  // a courier has to actually recover the prize or there's no point chasing one.
   useEffect(() => {
     if (!dead) return;
     anim.current.dead = true;
+    if (carrying.current && targetHint.current >= 0) {
+      runtime.hintStolen[targetHint.current] = false;
+      carrying.current = false;
+    }
     const id = setTimeout(() => setRemoved(true), DEATH_LINGER_MS);
     return () => clearTimeout(id);
   }, [dead]);
 
   useFrame((_, rawDt) => {
     if (dead || escaped || useGame.getState().roundState !== "playing") return;
-    if (runtime.paused) return; // player indoors or shopping: the world is paused
+    if (runtime.paused) return;
     const dt = Math.min(rawDt, 1 / 30);
+    const now = performance.now();
+
     if (!started) {
-      delay.current -= dt; // not yet in the world (staggered starts)
+      delay.current -= dt;
       if (delay.current <= 0) setStarted(true);
       return;
     }
-    if (seg.current < wp.length - 1) {
-      const target = wp[seg.current + 1];
-      const to = target.clone().sub(pos.current);
-      to.y = 0;
-      const d = to.length();
-      const step = speed * dt;
-      if (d <= step) {
-        pos.current.copy(target);
-        seg.current++;
-        if (seg.current >= wp.length - 1) {
-          // Reached its treasure: it's stolen and the thief melts away. The
-          // round is lost only when no real treasure is left to claim. (If a
-          // faster thief already took this one, it leaves empty-handed.)
-          if (!runtime.hintStolen[targetHint] && !runtime.hintClaimed[targetHint]) {
-            runtime.hintStolen[targetHint] = true;
-            runtime.treasureStolenAt = performance.now();
-          }
-          if (live.current) {
-            enemies.delete(live.current.enemy);
-            thieves.delete(live.current.ref);
-          }
-          setEscaped(true);
-          const allGone = HINTS.every((h, i) => !h.real || runtime.hintStolen[i]);
-          if (allGone) useGame.getState().endRound("thief");
+
+    // Find the real treasure for itself, every time — the board moves.
+    if (phase.current === "running") {
+      if (
+        targetHint.current < 0 ||
+        !HINTS[targetHint.current]?.real ||
+        runtime.hintStolen[targetHint.current] ||
+        runtime.hintClaimed[targetHint.current]
+      ) {
+        const idx = HINTS.findIndex(
+          (h, i) => h.real && !runtime.hintStolen[i] && !runtime.hintClaimed[i]
+        );
+        if (idx < 0) {
+          // Nothing left worth stealing — cut and run.
+          phase.current = "fleeing";
+        } else if (idx !== targetHint.current) {
+          targetHint.current = idx;
+          path.current.length = 0;
         }
-      } else {
-        to.multiplyScalar(1 / d);
-        pos.current.addScaledVector(to, step);
-        facing.current = Math.atan2(to.x, to.z);
       }
     }
 
+    prevPos.current.copy(pos.current);
+    const panicking = now < panicUntil.current;
+    const foxSlow = live.current ? foxThiefSpeedMult(live.current.enemy) : 1;
+    const spd = speed * (panicking ? THIEF.panicMult : 1) * foxSlow;
+    let moving = false;
+
+    if (phase.current === "taking") {
+      grabClock.current -= dt;
+      if (grabClock.current <= 0) {
+        const i = targetHint.current;
+        if (i >= 0 && !runtime.hintStolen[i] && !runtime.hintClaimed[i]) {
+          runtime.hintStolen[i] = true;
+          runtime.treasureStolenAt = now;
+          carrying.current = true;
+          audio.playAt("spot", pos.current.x, pos.current.z, 8, 45);
+        }
+        phase.current = "fleeing";
+        path.current.length = 0;
+      }
+    } else {
+      // Route to the treasure, or to the wall if it's carrying / has nothing left.
+      const goal =
+        phase.current === "fleeing"
+          ? _goal.copy(exit.current)
+          : _goal.copy(HINTS[targetHint.current]?.pos ?? exit.current);
+
+      repathClock.current -= dt;
+      if (path.current.length === 0 || repathClock.current <= 0) {
+        repathClock.current = REPATH;
+        path.current = findPath(pos.current, goal) ?? [];
+      }
+      while (path.current.length && path.current[0].distanceTo(pos.current) < 1.0) {
+        path.current.shift();
+      }
+      const next = path.current[0] ?? goal;
+      moving = steerTowards(pos.current, next, spd, dt, BODY_R) > 1e-5;
+
+      const dGoal = Math.hypot(goal.x - pos.current.x, goal.z - pos.current.z);
+      if (phase.current === "running" && dGoal < 1.8) {
+        // At the treasure: it has to physically TAKE it, which is the window you
+        // get to shoot it off the prize. It used to teleport out of existence the
+        // instant it touched the spot.
+        phase.current = "taking";
+        grabClock.current = GRAB_TIME;
+        anim.current.moving = false;
+      } else if (phase.current === "fleeing" && dGoal < 1.5) {
+        // Out through the wall with it. Only NOW is the treasure really gone.
+        if (live.current) {
+          enemies.delete(live.current.enemy);
+          thieves.delete(live.current.ref);
+        }
+        setEscaped(true);
+        // Only a thief that actually got AWAY costs you — and it costs daylight
+        // and a relocated treasure, not the run (see store.loseTreasureToThief).
+        if (carrying.current) useGame.getState().loseTreasureToThief();
+      }
+    }
+
+    // Face the way it actually travelled this frame.
+    if (moving) {
+      const dx = pos.current.x - prevPos.current.x;
+      const dz = pos.current.z - prevPos.current.z;
+      if (Math.abs(dx) + Math.abs(dz) > 1e-5) facing.current = Math.atan2(dx, dz);
+    }
+
+    anim.current.moving = moving;
+    anim.current.running = panicking || phase.current === "fleeing";
+    anim.current.speed = spd;
     if (group.current) {
       group.current.position.set(pos.current.x, 0, pos.current.z);
       group.current.rotation.y = facing.current;
     }
-    anim.current.moving = true; // always racing while alive
   });
 
-  if (escaped || !started || removed) return null; // corpse lingers while `dead`
+  if (escaped || !started || removed) return null;
 
   return (
-    <group ref={group} position={[wp[0].x, 0, wp[0].z]}>
+    <group ref={group} position={[entry[0], 0, entry[1]]}>
       <NpcRig model="npc_thief" state={anim.current} />
-      {/* Loot sack over the shoulder */}
-      <mesh position={[-0.3, BODY_H * 0.62, -0.12]}>
+      {/* Loot sack — only actually full once it has the treasure. */}
+      <mesh position={[-0.3, BODY_H * 0.62, -0.12]} scale={carrying.current ? 1.35 : 0.85}>
         <sphereGeometry args={[0.22, 10, 10]} />
-        <meshStandardMaterial color="#8a6a3c" roughness={0.85} />
+        <meshStandardMaterial
+          color={carrying.current ? "#d8b45a" : "#8a6a3c"}
+          emissive={carrying.current ? "#8a6a20" : "#000000"}
+          emissiveIntensity={carrying.current ? 0.5 : 0}
+          roughness={0.85}
+        />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
         <circleGeometry args={[BODY_R * 1.4, 20]} />

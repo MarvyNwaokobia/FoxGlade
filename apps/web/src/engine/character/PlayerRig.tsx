@@ -5,6 +5,7 @@ import { useFrame } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
+import { dressCharacterMaterial } from "./materials";
 import {
   AnimationStateMachine,
   AnimState,
@@ -12,14 +13,15 @@ import {
   loadMixamoAnimations,
   getMixamoClips,
   isMixamoLoadComplete,
-  isUpperBodyTrack,
+  getClipStride,
   CLIP_NAMES,
 } from "@/engine/animation";
+import type { HitDirection } from "@/engine/animation";
 import { BOMB } from "@/engine/config/round";
 import { runtime } from "@/engine/runtime";
 import { useGame } from "@/engine/store";
 import type { WeaponId } from "@/engine/config/shop";
-import { makeGunMesh } from "./GunMesh";
+import { makeGunMesh, aimGunWorldMatrix, muzzleWorldPos } from "./GunMesh";
 
 /** Free a swapped-out procedural gun's geometry + materials (no leaks on re-equip). */
 function disposeGroup(obj: THREE.Object3D) {
@@ -49,6 +51,12 @@ export interface PlayerRigState {
   grounded: boolean;
   dead: boolean;
   fireAt: number; // performance.now of the last shot
+  aimYaw: number; // camera aim yaw (radians) — turns the torso onto the crosshair
+  hitAt: number; // performance.now of the last hit taken (drives the flinch)
+  hitSerious: boolean; // worth a body flinch at all? (chip damage isn't — see below)
+  hitHeavy: boolean; // was that a big hit? → the heavier flinch clip
+  hitDir: HitDirection; // which side it came from, so he flinches the right way
+  reloading: boolean; // drives the reload clip
   throwAt: number; // performance.now of the last bomb lob (drives the throw clip)
   grabAt: number; // performance.now of the last interact (drives the pick-up clip)
   resting: boolean; // seated indoors (drives the sit clip)
@@ -91,21 +99,63 @@ const HIPS_PITCH_FIX_INV = HIPS_PITCH_FIX.clone().invert();
 // scale is 1 and the grip drops in like Valor's fighters. Live-tunable via the
 // keys below if a nudge is needed; bake the logged values here + set GUN_TUNER=false.
 //   I/K pitch · J/L yaw · U/O roll · 4/6 x · 8/2 y · 7/9 z · -/= scale · P = log.
+// rx = -90°: the hand bone's local frame is NOT world-aligned, so the gun's
+// authored +Z-forward axis came out pointing along world -X — the rifle was held
+// straight out sideways across the body, in every pose, for the player AND every
+// armed NPC.
+//
+// The axis was found by sweeping each one headlessly; the SIGN was found by
+// measuring, after eyeballing screenshots got it backwards (easy to do — from
+// behind the character, a stock reads much like a barrel). The check that
+// settled it: take the gun's named `muzzle` anchor, compute its world direction
+// from the grip origin, and dot it against the camera's aim vector.
+//   rx=+90 → -0.787  (muzzle pointing back at the player — wrong)
+//   rx=-90 → +0.841  (muzzle down the aim line — right)
+// The residual off-axis component is just the idle clip's relaxed arm pose; the
+// spine traverse pulls it onto the crosshair when aiming.
+// rz = the ROLL about the barrel. rx above got the muzzle pointing down the aim
+// line, but left the weapon rolled onto its side — sights facing left rather than
+// up. Measured the same way: take the gun's local +Y in world space, project world
+// up perpendicular to the barrel, and read the signed angle between them about the
+// barrel axis. That came out at -105.2°, which is this value. (Euler order is XYZ,
+// so rz is applied first, in the gun's own frame — it rolls the weapon without
+// disturbing the rx yaw fix.)
 const GUN_TUNER = false; // keys freed for play
-const gripTune = { rx: 0, ry: 0, rz: 0, ox: 0, oy: 0.02, oz: 0.04, scale: 1 };
+const gripTune = { rx: -Math.PI / 2, ry: 0, rz: -1.8368, ox: 0, oy: 0.02, oz: 0.04, scale: 1 };
 const _gunScratch = new THREE.Matrix4();
 const _gunWorld = new THREE.Matrix4();
 const _gunScaleVec = new THREE.Vector3();
 const _gunOff = new THREE.Vector3();
 const _gunEuler = new THREE.Euler();
 const _tmpQ = new THREE.Quaternion();
+const _handPos = new THREE.Vector3();
+const _playerAim = new THREE.Vector3();
 
-// Aim elevation: pitch the upper spine toward the vertical aim so the socketed gun
-// tracks the crosshair up/down instead of staying level. Axis/gain are tuned by eye
-// (verified via screenshots); gain < 1 keeps the lean from looking extreme.
-const SPINE_AIM_AXIS = new THREE.Vector3(1, 0, 0);
-const SPINE_AIM_GAIN = -0.6; // negative: aim down → gun down (sign verified by screenshot)
+// Aim elevation + TRAVERSE: pitch AND yaw the upper spine toward the aim so the
+// socketed gun actually tracks the crosshair, instead of only nodding up and down
+// while the muzzle points wherever the locomotion clip happened to leave it.
+//
+// The pitch half was already here. The yaw half is new, and it's the fix for
+// "the gun doesn't point where I'm shooting": the body faces its travel direction
+// while the camera aims somewhere else, so without a torso traverse the weapon can
+// sit 30°+ off the reticle. Clamped, because past ~45° a spine-only twist stops
+// looking like aiming and starts looking broken — beyond that the body should turn,
+// which it does whenever you're moving.
+const SPINE_PITCH_AXIS = new THREE.Vector3(1, 0, 0);
+const SPINE_PITCH_GAIN = -0.6; // negative: aim down → gun down (sign verified by screenshot)
+const SPINE_YAW_GAIN = 0.75; // how much of the body↔aim yaw error the torso takes up
+const SPINE_YAW_CLAMP = 0.8; // radians (~46°) — past this the body turns instead
 const _spineQ = new THREE.Quaternion();
+const _spineYawQ = new THREE.Quaternion();
+const _spineAxisY = new THREE.Vector3(0, 1, 0);
+
+/** Shortest signed angle from a to b, in radians. */
+function angleDelta(a: number, b: number): number {
+  let d = b - a;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return d;
+}
 
 // Held bomb: nudge it into the palm of the throwing hand during the wind-up.
 const BOMB_GRIP = new THREE.Matrix4().compose(
@@ -117,21 +167,57 @@ const BOMB_GRIP = new THREE.Matrix4().compose(
 // Recent-shot window (seconds) that keeps the standing Fire clip playing.
 const FIRE_HOLD = 0.22;
 
-// Weapon-ready pose (Marvy's call): hold the shooting clip's aim frame as a
-// STATIC additive over the lowered rifle-idle, so the character always keeps the
-// rifle up in two hands while the legs keep walking/running underneath. Camera
-// recoil (PlayerController) sells the shot, so this layer just holds the stance.
-const AIM_HOLD_TIME = 0.0; // seconds into gunplayShooting to freeze the aim pose (bump if it looks mid-recoil)
-const AIM_WEIGHT = 1.0; // additive weight of the aim-ready pose (0 = lowered idle, 1 = full aim)
+// Getting shot plays a real flinch clip — but SPARINGLY, for two reasons found by
+// screenshotting it under live fire:
+//
+//  1. Mixamo's hit-reaction clips are UNARMED animations. On a rifleman the arms
+//     fly up and the socketed gun swings off with the hand, which reads as a bug.
+//  2. A blocker lands ~9 damage every 2.2s and there are five of them, so a
+//     short cooldown had the character flinching almost continuously — sliding
+//     around mid-flinch, unable to run, gun waving.
+//
+// So the full-body flinch is reserved for hits that genuinely matter (a heavy hit,
+// or one that drops you into the danger band — see PlayerController). Ordinary
+// chip damage reads through the screen shake, the red vignette and the directional
+// damage arc, none of which fight the rifle pose. Rare and meaningful beats
+// constant and broken.
+const FLINCH_COOLDOWN = 2.0; // seconds
 
-// Seated clips bake their hip-drop into the (stripped) Hips position track, so
-// the rig would sit at standing height = floating. Settle the whole rig down by
-// this much while seated — same code-driven trick as the death drop. Tune to the
-// Sitting clip if he sits too high/low.
-const SIT_DROP = -0.4;
-// Crouch clips also bake a hip-drop that gets stripped → the crouch pose floats.
-// Settle it back to the ground (tune if he hovers / sinks while crouched).
-const CROUCH_DROP = -0.45;
+// REMOVED: the additive "aim-ready" upper-body layer.
+//
+// It froze one frame of gunplayShooting, made it additive against rifleIdle, and
+// held it over whatever the legs were doing — the idea being "keep the rifle up
+// while he runs". Two things were wrong with it:
+//
+//  1. An additive pose delta is only valid over clips in the SAME pose family.
+//     Held over crouchIdle (whose arms sit somewhere completely different) it
+//     produced crouchArms + (shootArms − idleArms) — which is why the character
+//     crouched folded double with the rifle jabbed vertically over his head.
+//  2. It wasn't needed. Every locomotion clip in this set is already a
+//     rifle-held clip (rifleIdle / walk / run / strafes / crouch), so the weapon
+//     is in two hands at the ready without any layer at all.
+//
+// Verified by screenshot: with the layer off, crouch reads as a correct
+// shouldered stance and walk/run hold the rifle across the body. The per-shot
+// beat is the Fire state (below) plus the camera recoil in PlayerController.
+
+// Pose drop, DERIVED — not guessed.
+//
+// MixamoLoader strips the whole Hips position track (it carries cm-scale root
+// motion that would fling the body), which also throws away the vertical dip that
+// crouch / sit / death clips bake in. The rig then plays a crouch at standing hip
+// height, so it floats — and the old fix was three hand-tuned constants
+// (CROUCH_DROP -0.45, SIT_DROP -0.4, death -0.78) applied to the whole group.
+// They were each eyeballed against a different clip, they stacked with the spine
+// aim and the hips pitch fix, and the crouch pose came out folded double.
+//
+// The loader already measures every clip's mean hip height (ClipStride.hipY, in
+// clip units) before stripping the track. So the correct drop is just the clip's
+// hip height minus the idle's, converted to metres and scaled to this rig — one
+// formula that is right for every clip, including ones nobody has tuned yet.
+const MIXAMO_UNITS_PER_METER = 100;
+/** Clamp: a derived drop should never exceed a plausible crouch/lie-down. */
+const MAX_POSE_DROP = 0.95;
 
 // Show the socketed rifle in-hand (the procedural GunMesh rifle).
 const SHOW_GUN = true;
@@ -159,12 +245,10 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
   const revealed = useRef(false);
   const initTime = useRef(0);
   const lastFireAt = useRef(state.fireAt);
+  const lastHitAt = useRef(state.hitAt);
+  const lastFlinchAt = useRef(-Infinity); // rate-limits the flinch clip
   const deathPlayed = useRef(false);
   const deathDrop = useRef(0); // eased downward offset that settles the corpse
-  // Additive upper-body fire layer (run-and-gun) + its eased weight.
-  const fireAddAction = useRef<THREE.AnimationAction | null>(null);
-  const fireLayerBuilt = useRef(false);
-  const fireWeight = useRef(0);
   // Edge trackers for the one-shot / stateful movement clips.
   const lastThrowAt = useRef(state.throwAt);
   const lastGrabAt = useRef(state.grabAt);
@@ -174,8 +258,27 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
   const prevRotation = useRef(state.rotation); // for turn-in-place detection
   const turnHold = useRef(0); // keeps the turn clip up briefly (anti-flicker)
   const heldBombRef = useRef<THREE.Mesh | null>(null); // bomb in hand during wind-up
+  const rigHipY = useRef(1); // this rig's bind hip height (m), for scaling clip drops
 
   const { scene, animations } = useGLTF(MODEL_PATHS[model]);
+
+  /**
+   * How far to settle the rig for the clip currently playing — derived from that
+   * clip's own baked hip height vs the idle's, rather than a per-clip constant.
+   * Returns metres (negative = down). Zero when the clip isn't measured (an
+   * in-place clip with no hips track), which is the correct no-op.
+   */
+  const poseDrop = () => {
+    const name = animMachine.currentClipName;
+    if (!name) return 0;
+    const clip = getClipStride(name);
+    const idle = getClipStride(CLIP_NAMES.rifleIdle);
+    if (!clip || !idle || idle.hipY <= 0) return 0;
+    // Clip units → metres, then scaled to THIS rig's proportions (a taller
+    // character's hips travel further for the same pose).
+    const drop = ((clip.hipY - idle.hipY) / MIXAMO_UNITS_PER_METER) * (rigHipY.current / 1.0);
+    return THREE.MathUtils.clamp(drop, -MAX_POSE_DROP, 0);
+  };
 
   const animMachine = useMemo(() => new AnimationStateMachine(buildAnimMap()), []);
 
@@ -185,10 +288,11 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
     const mats: THREE.Material[] = [];
     clone.traverse((child) => {
       if (child instanceof THREE.Mesh) {
-        // No cast shadow: a skinned-mesh shadow pass is pricey and the blob
-        // contact-shadow under the player already grounds him. Still receives
-        // building shadows (cheap) so he doesn't glow in the shade.
-        child.castShadow = false;
+        // He casts a real shadow now. The blob decal under him never agreed with
+        // the light, which is most of why he read as pasted onto the ground
+        // rather than standing on it — and with the sun sweeping across the day
+        // a real shadow also tells you what time it is.
+        child.castShadow = true;
         child.receiveShadow = true;
         child.frustumCulled = false; // his bounds swing wide when animating
         // Own the materials (clone) so the camera fade opacity doesn't leak to
@@ -197,10 +301,7 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
           ? child.material.map((m) => m.clone())
           : child.material.clone();
         (Array.isArray(child.material) ? child.material : [child.material]).forEach((m) => {
-          // Matte — kill the wet/shiny plastic highlight on the character.
-          const sm = m as THREE.MeshStandardMaterial;
-          if ("roughness" in sm) sm.roughness = Math.max(sm.roughness ?? 1, 0.9);
-          if ("metalness" in sm) sm.metalness = 0;
+          dressCharacterMaterial(m);
           mats.push(m);
         });
       }
@@ -273,6 +374,7 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
         groupRef.current.updateWorldMatrix(true, true);
         const hipY = (hipsBone as THREE.Object3D).getWorldPosition(new THREE.Vector3()).y;
         animMachine.setRigScale(hipY);
+        rigHipY.current = Math.max(0.3, hipY); // also scales the derived pose drop
       }
     }
 
@@ -297,35 +399,6 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
           currentGunId.current = id;
         }
 
-        // Build the additive upper-body AIM-READY layer: take the shot clip's aim
-        // pose, mask it to arm/torso/head tracks, make it additive relative to the
-        // lowered idle, and FREEZE it on one frame. Held over the base locomotion
-        // action it keeps the rifle up in two hands while the legs walk/run. Legs
-        // are untouched because the layer only carries upper-body tracks.
-        if (!fireLayerBuilt.current && mixerRef.current) {
-          fireLayerBuilt.current = true;
-          const mixer = mixerRef.current;
-          const fire = mixamoClips.get(CLIP_NAMES.gunplayShooting);
-          const idle = mixamoClips.get(CLIP_NAMES.rifleIdle);
-          if (fire && idle) {
-            const upper = fire.clone();
-            const idleNames = new Set(idle.tracks.map((t) => t.name));
-            // makeClipAdditive subtracts a reference value per track, so keep only
-            // upper-body tracks that also exist in the idle reference clip.
-            upper.tracks = upper.tracks.filter((t) => isUpperBodyTrack(t.name) && idleNames.has(t.name));
-            if (upper.tracks.length > 0) {
-              upper.name = "aimReadyAdditive";
-              THREE.AnimationUtils.makeClipAdditive(upper, 0, idle, 30);
-              const action = mixer.clipAction(upper);
-              action.setLoop(THREE.LoopRepeat, Infinity);
-              action.play();
-              action.paused = true; // hold a static aim frame — no shoot-loop bob
-              action.time = AIM_HOLD_TIME;
-              action.setEffectiveWeight(0); // eased up to AIM_WEIGHT below
-              fireAddAction.current = action;
-            }
-          }
-        }
       }
     }
 
@@ -360,6 +433,20 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
       if (deathPlayed.current) {
         deathPlayed.current = false;
         animMachine.transition(AnimState.Idle, true);
+      }
+
+      // Taking a hit: a real flinch clip (light or heavy, by how hard it landed),
+      // rate-limited so sustained fire can't lock the body in a flinch loop.
+      if (state.hitAt !== lastHitAt.current) {
+        lastHitAt.current = state.hitAt;
+        const now = performance.now();
+        if (state.hitAt > 0 && state.hitSerious && now - lastFlinchAt.current > FLINCH_COOLDOWN * 1000) {
+          lastFlinchAt.current = now;
+          animMachine.transitionHit(
+            state.hitHeavy ? AnimState.HitHeavy : AnimState.HitLight,
+            state.hitDir
+          );
+        }
       }
 
       // One-shot / stateful movement clips (edge-triggered). A missing clip makes
@@ -411,42 +498,32 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
       ];
       const busy = busyStates.includes(animMachine.state);
       if (!busy) {
-        if (state.crouching) {
+        if (state.reloading) {
+          // Reload owns the arms; the legs keep their locomotion cadence via the
+          // clip's own timing. It's interruptible so movement stays responsive.
+          animMachine.transition(AnimState.Reload);
+        } else if (state.crouching) {
           animMachine.transition(state.moving ? AnimState.CrouchWalk : AnimState.CrouchIdle);
         } else if (state.moving) {
           animMachine.transition(state.running ? AnimState.Run : AnimState.Walk);
         } else if (turningInPlace) {
           animMachine.transition(AnimState.Turn);
-        } else if (firedRecently && !fireAddAction.current) {
-          animMachine.transition(AnimState.Fire); // fallback if the additive layer failed to build
+        } else if (firedRecently) {
+          // Standing and shooting → the full-body Fire clip. (Firing while moving
+          // keeps the locomotion clip, which is already rifle-held; the shot reads
+          // through the camera recoil + muzzle flash rather than a pose change.)
+          animMachine.transition(AnimState.Fire);
         } else {
           animMachine.transition(AnimState.Idle);
         }
       }
     }
 
-    // Weapon-ready aim weight: hold the rifle up over whatever the legs are doing,
-    // eased in/out. Dropped only while a committed full-body clip owns the arms
-    // (bomb throw, vault, seated rest, grab) or on death.
-    if (fireAddAction.current) {
-      const s = animMachine.state;
-      const armed =
-        !state.dead &&
-        s !== AnimState.Throw && s !== AnimState.Vault &&
-        s !== AnimState.Sit && s !== AnimState.Drink && s !== AnimState.Grab &&
-        s !== AnimState.Death;
-      const target = armed ? AIM_WEIGHT : 0;
-      fireWeight.current += (target - fireWeight.current) * Math.min(1, 10 * dt);
-      fireAddAction.current.setEffectiveWeight(fireWeight.current);
-    }
-
-    // Body faces state.rotation. On death the clip lays him horizontal but
-    // pivots at hip height (root motion is stripped), so ease the whole rig down
-    // to settle the body on the ground instead of floating.
-    const seated = animMachine.state === AnimState.Sit || animMachine.state === AnimState.Drink;
-    const crouched = animMachine.state === AnimState.CrouchIdle || animMachine.state === AnimState.CrouchWalk;
-    const dropTarget = state.dead ? -0.78 : seated ? SIT_DROP : crouched ? CROUCH_DROP : 0;
-    deathDrop.current += (dropTarget - deathDrop.current) * Math.min(1, 5 * dt);
+    // Body faces state.rotation. Settle the rig by the drop the CURRENT clip
+    // actually bakes in (see MAX_POSE_DROP above) — derived from its own measured
+    // hip height against the idle's, so crouch, sit and death all land correctly
+    // without three separate magic numbers fighting each other.
+    deathDrop.current += (poseDrop() - deathDrop.current) * Math.min(1, 5 * dt);
     groupRef.current.position.copy(state.position);
     groupRef.current.position.y = Math.max(0, state.position.y) + deathDrop.current;
     const targetQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), state.rotation);
@@ -500,11 +577,18 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
       hipsFixApplied.current = true;
     }
 
-    // Aim elevation: pitch the upper body toward the vertical aim so the socketed
-    // gun tracks the crosshair up/down instead of staying level. Applied on top of
-    // the animated pose (after the mixer + hips fix), suppressed while dead/seated.
+    // Aim elevation + traverse: pitch AND yaw the upper body onto the aim line so
+    // the socketed gun tracks the crosshair in both axes. Applied on top of the
+    // animated pose (after the mixer + hips fix), suppressed while dead/seated.
     if (spineBoneRef.current && !state.dead && !state.resting) {
-      _spineQ.setFromAxisAngle(SPINE_AIM_AXIS, SPINE_AIM_GAIN * state.aimPitch);
+      const yawErr = THREE.MathUtils.clamp(
+        angleDelta(state.rotation, state.aimYaw) * SPINE_YAW_GAIN,
+        -SPINE_YAW_CLAMP,
+        SPINE_YAW_CLAMP
+      );
+      _spineQ.setFromAxisAngle(SPINE_PITCH_AXIS, SPINE_PITCH_GAIN * state.aimPitch);
+      _spineYawQ.setFromAxisAngle(_spineAxisY, yawErr);
+      _spineQ.premultiply(_spineYawQ); // yaw about world-up, then the pitch lean
       spineBoneRef.current.quaternion.premultiply(_spineQ);
       spineAimUndo.current.copy(_spineQ).invert();
       spineAimApplied.current = true;
@@ -532,13 +616,24 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
 
     if (gunRef.current && handBoneRef.current && groupRef.current) {
       handBoneRef.current.updateWorldMatrix(true, false); // refresh hand + ancestors
-      _gunWorld.compose(
-        _gunOff.set(gripTune.ox, gripTune.oy, gripTune.oz),
-        _tmpQ.setFromEuler(_gunEuler.set(gripTune.rx, gripTune.ry, gripTune.rz)),
-        _gunScaleVec.setScalar(gripTune.scale)
+      // Position from the hand, orientation from the AIM. The animation carries
+      // the weapon around convincingly but has no idea where you're looking, so
+      // leaving the barrel to the clip left shots visibly departing off-crosshair
+      // — and swinging further off during the fire clip specifically. Aiming it
+      // outright is what makes the muzzle, the tracer and the hitscan agree.
+      _handPos.setFromMatrixPosition(handBoneRef.current.matrixWorld);
+      const cp = Math.cos(state.aimPitch);
+      _playerAim.set(
+        -Math.sin(state.aimYaw) * cp,
+        Math.sin(state.aimPitch),
+        -Math.cos(state.aimYaw) * cp
       );
+      aimGunWorldMatrix(_gunWorld, _handPos, _playerAim);
+      // Publish the real muzzle so the tracer + flash leave the barrel tip rather
+      // than a hand-tuned offset floating near the shoulder.
+      muzzleWorldPos(runtime.muzzlePos, gunRef.current, _gunWorld);
       _gunScratch.copy(groupRef.current.matrixWorld).invert();
-      gunRef.current.matrix.multiplyMatrices(_gunScratch, handBoneRef.current.matrixWorld).multiply(_gunWorld);
+      gunRef.current.matrix.multiplyMatrices(_gunScratch, _gunWorld);
     }
 
     // Held bomb + hand position — only during a throw (otherwise this per-frame

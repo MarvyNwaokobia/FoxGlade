@@ -33,10 +33,18 @@ export function tintColor(seed: number): THREE.Color {
 }
 
 /**
- * Every regular house uses the one complete `tavern` model (variety comes from the
- * per-instance TINTS + rotation + footprint scale). Retired as unrealistic here:
- * `house_timber` (open arches), `stone_hall` as a house, and `stilt_house` (raised
- * on posts with stairs — out of place on dry ground). `hall` = the BANK landmark only.
+ * Which model a building uses: the tavern, for everything except the bank.
+ *
+ * I tried mixing `hall` in to break up the repetition and reverted it — the model
+ * is a roofless stone shell with open window frames, so a street of them reads as
+ * a ruin, not a town. The comment this replaced had already recorded that
+ * decision ("retired as unrealistic here: stone_hall as a house") and I should
+ * have trusted it rather than re-running the experiment.
+ *
+ * So the repetition stands, and it is an ASSET problem rather than a code one:
+ * two or three more house meshes would fix in an afternoon what no amount of
+ * tinting, rotating or rescaling can. What the code CAN do — vary proportion and
+ * height per building so the skyline isn't flat — it now does below.
  */
 export function chooseModel(_b: Building, _i: number): ModelKey {
   return "tavern";
@@ -90,11 +98,25 @@ export function BuildingModel({
     const buildLongX = b.w >= b.d;
     let ry = modelLongX === buildLongX ? 0 : Math.PI / 2;
     ry += (seed % 2) * Math.PI; // 180° flips for variety
-    // Footprint after alignment rotation → uniform scale to fit b.w × b.d.
     const footX = ry % Math.PI === 0 ? size.x : size.z;
     const footZ = ry % Math.PI === 0 ? size.z : size.x;
-    const s = Math.min(b.w / footX, b.d / footZ) * 1.04;
-    return { obj: o, rotY: ry, scale: s };
+    // Fit the footprint PROPERLY. A single uniform scale (the old
+    // `min(w/footX, d/footZ)`) fits the narrow axis and leaves the model rattling
+    // around inside its own collider — which is why you could be blocked by
+    // apparently open ground and walk through apparently solid gaps. Per-axis
+    // scaling fixes that, clamped so nothing stretches more than 35% off-square
+    // and turns to taffy. Height varies too, so the skyline isn't dead flat.
+    const fx = b.w / footX;
+    const fz = b.d / footZ;
+    const base = Math.min(fx, fz);
+    const cap = base * 1.35;
+    const sy = base * (0.92 + ((seed * 37) % 5) * 0.11);
+    const scl: [number, number, number] = [
+      Math.min(fx, cap) * 1.02,
+      sy,
+      Math.min(fz, cap) * 1.02,
+    ];
+    return { obj: o, rotY: ry, scale: scl };
   }, [scene, b.w, b.d, seed]);
 
   // Swap-on-enter: hide this exterior while the player is inside this house.

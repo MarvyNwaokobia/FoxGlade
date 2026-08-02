@@ -7,6 +7,7 @@ import { AUDIO } from "@/engine/config/audio";
 import { runtime } from "@/engine/runtime";
 import { useGame } from "@/engine/store";
 import { explosions } from "@/engine/combat/bombs";
+import { VILLAGE } from "@/engine/world/village";
 
 /**
  * Turns game state into sound. Lives inside the Canvas for `useFrame`. Per-frame
@@ -109,6 +110,16 @@ export function AudioDriver() {
     const moved = Math.hypot(px - st.lastX, pz - st.lastZ);
     st.lastX = px;
     st.lastZ = pz;
+    // What you're standing on, and what room you're standing in. Both are just a
+    // read of where the player is: inside a house it's boards in a small stone
+    // room, inside the ramparts it's cobble in a street, beyond them it's grass
+    // under open sky. Cheap, and it does more for "somewhere real" than another
+    // ambient loop would.
+    const indoors = runtime.sheltered;
+    const inTown = Math.abs(px) <= VILLAGE.half && Math.abs(pz) <= VILLAGE.half;
+    audio.setSpace(indoors ? "room" : inTown ? "street" : "open");
+    const surface = indoors ? "footstepWood" : inTown ? "footstepStone" : "footstepGrass";
+
     const canStep =
       runtime.grounded &&
       !runtime.sheltered &&
@@ -120,7 +131,7 @@ export function AudioDriver() {
       const stride = runtime.running ? AUDIO.stepDistanceRun : AUDIO.stepDistanceWalk;
       if (st.stepAccum >= stride) {
         st.stepAccum = 0;
-        audio.play("footstep", AUDIO.stepVolume);
+        audio.play(surface, AUDIO.stepVolume);
       }
     } else {
       // Standing/airborne: prime the accumulator so the next step lands promptly.
