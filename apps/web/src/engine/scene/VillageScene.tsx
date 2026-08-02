@@ -19,6 +19,7 @@ import { useGame } from "@/engine/store";
 import { Daylight } from "@/engine/world/Daylight";
 import { SkyDome } from "@/engine/world/SkyDome";
 import { Horizon } from "@/engine/world/Horizon";
+import { HouseDressing } from "@/engine/world/HouseDressing";
 import { perfOff } from "@/engine/scene/perf";
 
 /**
@@ -49,6 +50,9 @@ export function VillageScene({
       {/* Sun, sky, fog and ambient — all driven by the day clock (Daylight). */}
       <Daylight shadows={shadows && !degraded} shadowSize={shadowSize} />
       <Village />
+      {/* Chimneys, dormers, lean-tos and painted trim, so twenty copies of one
+          house mesh stop reading as twenty copies of one house mesh. Instanced. */}
+      {!perfOff("noProps") && <HouseDressing />}
       {/* Hills, treeline and a ruined tower past the walls — so the world doesn't
           stop at a flat band of grass. Instanced; four draw calls all in. */}
       {!perfOff("noProps") && <Horizon />}

@@ -33,21 +33,85 @@ export function tintColor(seed: number): THREE.Color {
 }
 
 /**
- * Which model a building uses: the tavern, for everything except the bank.
+ * House meshes the street may draw from, chosen by the building's seed.
  *
- * I tried mixing `hall` in to break up the repetition and reverted it — the model
- * is a roofless stone shell with open window frames, so a street of them reads as
- * a ruin, not a town. The comment this replaced had already recorded that
- * decision ("retired as unrealistic here: stone_hall as a house") and I should
- * have trusted it rather than re-running the experiment.
+ * Add entries here and the town varies immediately — that is the whole reason
+ * this is a list rather than a constant. Good CC0 sources that match the Tudor
+ * look already in the village: KayKit's Medieval Builder Pack and Quaternius's
+ * Fantasy Town, both public domain, no attribution, no cost. Drop a .glb into
+ * public/models/buildings/, add it to MODELS, add its key here.
  *
- * So the repetition stands, and it is an ASSET problem rather than a code one:
- * two or three more house meshes would fix in an afternoon what no amount of
- * tinting, rotating or rescaling can. What the code CAN do — vary proportion and
- * height per building so the skyline isn't flat — it now does below.
+ * `hall` is deliberately NOT in this list: it's a roofless stone shell with open
+ * window frames, so a street of them reads as a ruin rather than a town. That
+ * was tried, reverted, and is recorded here so it doesn't get re-tried a third
+ * time. The bank still uses it directly, where a grand stone hall is right.
  */
-export function chooseModel(_b: Building, _i: number): ModelKey {
-  return "tavern";
+const HOUSE_MESHES: ModelKey[] = ["tavern"];
+
+/**
+ * Which model a building uses.
+ *
+ * With one entry in HOUSE_MESHES this still returns the tavern every time, and
+ * the repetition is still visible — it is genuinely an ASSET problem, and two or
+ * three more meshes fix in an afternoon what no amount of tinting can. What the
+ * code can do it now does: proportion and height vary per building (below), and
+ * chimneys, dormers, lean-tos and painted trim vary the outline
+ * (see world/HouseDressing.tsx). Those compose with new meshes rather than
+ * substituting for them.
+ */
+export function chooseModel(_b: Building, i: number): ModelKey {
+  return HOUSE_MESHES[i % HOUSE_MESHES.length];
+}
+
+export interface BuildingFit {
+  rotY: number;
+  scale: [number, number, number];
+  /** Height of the model as actually RENDERED, in metres. */
+  height: number;
+  /** Footprint of the model as actually rendered (may be smaller than b.w/b.d). */
+  footW: number;
+  footD: number;
+}
+
+/**
+ * How a house mesh is fitted onto a building's footprint.
+ *
+ * Exported because anything that ATTACHES to a house — chimneys, dormers,
+ * lean-tos, painted trim — has to agree with this exactly. The dressing was
+ * first written against the collision box (`b.h`, `b.w`, `b.d`) and the result
+ * was chimneys hanging in mid-air and sheds standing in the middle of the
+ * street, because the collider is not the same size as the mesh drawn inside it.
+ * One function, one answer, both callers.
+ */
+export function fitBuilding(size: THREE.Vector3, b: Building, seed: number): BuildingFit {
+  // Align the model's longer footprint axis with the building's longer axis.
+  const modelLongX = size.x >= size.z;
+  const buildLongX = b.w >= b.d;
+  let ry = modelLongX === buildLongX ? 0 : Math.PI / 2;
+  ry += (seed % 2) * Math.PI; // 180° flips for variety
+  const footX = ry % Math.PI === 0 ? size.x : size.z;
+  const footZ = ry % Math.PI === 0 ? size.z : size.x;
+  // Fit the footprint PROPERLY. A single uniform scale (the old
+  // `min(w/footX, d/footZ)`) fits the narrow axis and leaves the model rattling
+  // around inside its own collider — which is why you could be blocked by
+  // apparently open ground and walk through apparently solid gaps. Per-axis
+  // scaling fixes that, clamped so nothing stretches more than 35% off-square
+  // and turns to taffy. Height varies too, so the skyline isn't dead flat.
+  const fx = b.w / footX;
+  const fz = b.d / footZ;
+  const base = Math.min(fx, fz);
+  const cap = base * 1.35;
+  const sy = base * (0.92 + ((seed * 37) % 5) * 0.11);
+  const sx = Math.min(fx, cap) * 1.02;
+  const sz = Math.min(fz, cap) * 1.02;
+  return {
+    rotY: ry,
+    scale: [sx, sy, sz],
+    height: size.y * sy,
+    // Back into world-space footprint: the rotation only ever swaps the axes.
+    footW: (ry % Math.PI === 0 ? size.x * sx : size.z * sz),
+    footD: (ry % Math.PI === 0 ? size.z * sz : size.x * sx),
+  };
 }
 
 /**
@@ -74,6 +138,7 @@ export function BuildingModel({
     const box = new THREE.Box3().setFromObject(o);
     const size = box.getSize(new THREE.Vector3());
     const center = box.getCenter(new THREE.Vector3());
+    const fitted = fitBuilding(size, b, seed);
     // Pre-centre horizontally and drop the base onto y=0 (so group scale keeps it grounded).
     o.position.set(-center.x, -box.min.y, -center.z);
     const tint = new THREE.Color(TINTS[seed % TINTS.length]);
@@ -93,31 +158,8 @@ export function BuildingModel({
         });
       }
     });
-    // Align the model's longer footprint axis with the building's longer axis.
-    const modelLongX = size.x >= size.z;
-    const buildLongX = b.w >= b.d;
-    let ry = modelLongX === buildLongX ? 0 : Math.PI / 2;
-    ry += (seed % 2) * Math.PI; // 180° flips for variety
-    const footX = ry % Math.PI === 0 ? size.x : size.z;
-    const footZ = ry % Math.PI === 0 ? size.z : size.x;
-    // Fit the footprint PROPERLY. A single uniform scale (the old
-    // `min(w/footX, d/footZ)`) fits the narrow axis and leaves the model rattling
-    // around inside its own collider — which is why you could be blocked by
-    // apparently open ground and walk through apparently solid gaps. Per-axis
-    // scaling fixes that, clamped so nothing stretches more than 35% off-square
-    // and turns to taffy. Height varies too, so the skyline isn't dead flat.
-    const fx = b.w / footX;
-    const fz = b.d / footZ;
-    const base = Math.min(fx, fz);
-    const cap = base * 1.35;
-    const sy = base * (0.92 + ((seed * 37) % 5) * 0.11);
-    const scl: [number, number, number] = [
-      Math.min(fx, cap) * 1.02,
-      sy,
-      Math.min(fz, cap) * 1.02,
-    ];
-    return { obj: o, rotY: ry, scale: scl };
-  }, [scene, b.w, b.d, seed]);
+    return { obj: o, rotY: fitted.rotY, scale: fitted.scale };
+  }, [scene, b, seed]);
 
   // Swap-on-enter: hide this exterior while the player is inside this house.
   useFrame(() => {

@@ -131,11 +131,14 @@ function staff(color: number): THREE.Object3D {
   // The lantern: emissive and tone-mapping-exempt so it holds up at night, when
   // knowing which figure is the honest one matters most.
   const glass = new THREE.Mesh(
-    new THREE.BoxGeometry(0.19, 0.24, 0.19),
+    new THREE.BoxGeometry(0.17, 0.22, 0.17),
     new THREE.MeshStandardMaterial({
       color,
       emissive: color,
-      emissiveIntensity: 2.2,
+      // Bright enough to find at night, dim enough not to blow out. At 2.2 with
+      // toneMapped off, the bloom pass turned it into a pale cone the size of the
+      // guardian's head once the lanterns came up at dusk.
+      emissiveIntensity: 1.15,
       roughness: 0.4,
       toneMapped: false,
     })

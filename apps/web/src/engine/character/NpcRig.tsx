@@ -66,13 +66,34 @@ const DEATH_FADE_SEC = 0.5;
 
 export type NpcModelId = "npc_blocker" | "npc_distractor" | "npc_thief" | "guardian";
 
+/**
+ * Which mesh wears each ROLE. The keys are roles, the values are just files —
+ * so casting the village is this table, and nothing else.
+ *
+ * The old casting drew one model from each of two completely different
+ * families: a sci-fi trooper for the blocker, a modern tactical operator for
+ * the guardian, and a medieval crusader for the villager, all standing on
+ * cobblestone in front of Tudor half-timbering. Four fictions in one frame.
+ * Meanwhile `phantom` (dark full plate) and `berserker` (a rough labourer) —
+ * both already in the repo, both the right period — were sitting unused.
+ *
+ * The rule the casting follows now is the oldest one there is: **you can see an
+ * ally's face, and you cannot see a threat's.** The guardian is open-faced and
+ * gold, which is the colour his kit and his bubble already use. The blocker is a
+ * faceless helm. The thief is hooded. The villager has nothing to hide behind
+ * and nothing to fight with.
+ */
 const MODEL_PATHS: Record<NpcModelId, string> = {
-  npc_blocker: "/characters/glb/npc_blocker.glb",
-  npc_distractor: "/characters/glb/npc_distractor.glb",
+  // Faceless dark plate — the widest, most menacing silhouette in the set.
+  npc_blocker: "/characters/glb/phantom.glb",
+  // A rough local. No armour, no weapon, no authority — which is exactly what
+  // makes it interesting that he's telling you where the treasure is.
+  npc_distractor: "/characters/glb/berserker.glb",
+  // Hooded wanderer. This one was already right.
   npc_thief: "/characters/glb/npc_thief.glb",
-  // The guardian gets its own silhouette — it must be unmistakable at a glance,
-  // because the whole mechanic rests on you knowing which voice to trust.
-  guardian: "/characters/glb/sentinel.glb",
+  // Red-and-gold herald, face visible. It must be unmistakable at a glance,
+  // because the whole mechanic rests on knowing which voice to trust.
+  guardian: "/characters/glb/npc_distractor.glb",
 };
 
 // Our FBX→GLB conversions carry the ~90° Z-up→Y-up root-pitch offset the mixer
@@ -403,7 +424,7 @@ export const NpcRig = memo(function NpcRig({
   );
 });
 
-useGLTF.preload("/characters/glb/npc_blocker.glb");
-useGLTF.preload("/characters/glb/npc_distractor.glb");
-useGLTF.preload("/characters/glb/npc_thief.glb");
-useGLTF.preload("/characters/glb/sentinel.glb");
+// Preload exactly what the casting table above actually uses, so nothing is
+// fetched for a role it no longer plays (npc_blocker.glb and sentinel.glb are
+// now unused by the village — see MODEL_PATHS).
+Object.values(MODEL_PATHS).forEach((p) => useGLTF.preload(p));
