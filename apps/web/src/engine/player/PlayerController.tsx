@@ -114,8 +114,7 @@ export function PlayerController() {
   const resting = useRef(false); // sitting indoors (X); any movement stands up
   const eyeH = useRef(FEEL.lookAtHeight); // eased eye height (stand ↔ crouch ↔ sit)
   const prevHealth = useRef(100); // edge-detects the drop into the danger band
-  const bobPhase = useRef(0); // first-person head-bob phase (radians)
-  const bobAmt = useRef(0); // eased 0..1 bob strength, so stopping doesn't cut it dead
+  const driftT = useRef(0); // first-person bodycam drift phase (radians)
 
   // Interaction keys: E claim (only at the real hint), R respawn, F fire,
   // Q fox-sniff (reveals the real hint on a cooldown).
@@ -722,6 +721,8 @@ export function PlayerController() {
     // What the camera looks AT. Both rigs converge on a distant point rather than
     // aiming along a parallel vector, so lens jitter barely moves the reticle.
     let lookTarget: THREE.Vector3;
+    /** First-person bodycam roll, folded into the damage-stagger roll below. */
+    let driftRoll = 0;
 
     if (gameMode().firstPerson) {
       // ── Camera: first person (Nighthaul) ──
@@ -730,27 +731,40 @@ export function PlayerController() {
       // the head was already resolved against the world by the movement step, and
       // a follow lerp here would read as input lag rather than as weight.
       //
-      // What carries the view instead is BOB — a figure-eight scaled by speed,
-      // eased in and out so coming to a stop doesn't chop it off mid-stride. Y runs
-      // at double phase (one dip per footfall), X at single (one sway per stride).
-      const speed = Math.hypot(vel.current.x, vel.current.z);
-      const bobTarget = runtime.playerMoving && grounded.current
-        ? Math.min(1, speed / FEEL.runSpeed)
-        : 0;
-      bobAmt.current += (bobTarget - bobAmt.current) * Math.min(1, FIRST_PERSON.bobLerp * dt);
-      const hz = THREE.MathUtils.lerp(FIRST_PERSON.bobHz, FIRST_PERSON.bobRunHz, bobAmt.current);
-      bobPhase.current += dt * hz * Math.PI * 2;
-      const bobK = bobAmt.current * (1 - aimBlend * FIRST_PERSON.adsBobDamp);
-      const bobY = Math.sin(bobPhase.current * 2) * FIRST_PERSON.bobAmpY * bobK;
-      const bobX = Math.sin(bobPhase.current) * FIRST_PERSON.bobAmpX * bobK;
+      // BODYCAM DRIFT — ported from Valor, where it is the signature of the look.
+      // Three sines on incommensurate periods, so the wander never visibly loops,
+      // applied to the VIEW rather than to the weapon. That distinction is the
+      // whole thing: swaying the gun inside a locked lens animates a prop while
+      // the head stays dead, which is what reads as "no personality". Drifting the
+      // lens makes the whole frame handheld and the weapon comes along with it.
+      //
+      // Aiming steadies it to a fraction, so precision never fights the camera.
+      const moving = runtime.playerMoving && grounded.current;
+      driftT.current +=
+        dt * (moving ? FIRST_PERSON.driftMoveRate : FIRST_PERSON.driftStillRate);
+      const amt =
+        (moving ? 1 : FIRST_PERSON.driftStillAmt) * (1 - aimBlend * FIRST_PERSON.driftAdsDamp);
+      const driftPitch = Math.sin(driftT.current * 1.07) * FIRST_PERSON.driftPitch * amt;
+      const driftYaw = Math.sin(driftT.current * 0.63) * FIRST_PERSON.driftYaw * amt;
+      driftRoll = Math.sin(driftT.current * 0.51) * FIRST_PERSON.driftRoll * amt;
+      const driftY = Math.sin(driftT.current * 2.1) * FIRST_PERSON.driftEyeBob * amt;
 
       camBase.current
         .copy(head)
         .addScaledVector(aim, FIRST_PERSON.eyeForward)
-        .addScaledVector(rightV, bobX)
-        .addScaledVector(UP, bobY);
+        .addScaledVector(UP, driftY);
       camera.position.copy(camBase.current);
-      lookTarget = camBase.current.clone().addScaledVector(aim, FEEL.cameraConverge);
+
+      // Look along the DRIFTED aim. The hitscan is taken from the camera, so the
+      // drift moves your point of aim too — as it does in Valor. That is the cost
+      // of a handheld camera and the reason ADS steadies it.
+      const dp = Math.cos(aimPitch + driftPitch);
+      const driftedAim = new THREE.Vector3(
+        -Math.sin(aimYaw + driftYaw) * dp,
+        Math.sin(aimPitch + driftPitch),
+        -Math.cos(aimYaw + driftYaw) * dp
+      );
+      lookTarget = camBase.current.clone().addScaledVector(driftedAim, FEEL.cameraConverge);
 
       // You are not rendered from inside your own head. (Body awareness — legs and
       // a torso when you look down — is a later pass: it needs the head bone hidden
@@ -819,7 +833,7 @@ export function PlayerController() {
     // shove is the important part: the stagger itself tells you where the shot
     // came from, instead of a symmetric rattle that could have come from anywhere.
     const shakeT = (performance.now() - runtime.damageAt) / (FEEL.shakeDuration * 1000);
-    let roll = 0;
+    let roll = driftRoll; // first-person bodycam wander (zero in third person)
     if (shakeT >= 0 && shakeT < 1) {
       const k = (1 - shakeT) * (1 - shakeT); // ease-out
       const heavy = runtime.damageAmount >= useGame.getState().maxPlayerHealth * FEEL.heavyHitFraction ? 2 : 1;
@@ -856,10 +870,15 @@ export function PlayerController() {
     camera.lookAt(lookTarget);
     if (roll !== 0) camera.rotateZ(roll); // stagger tilt, applied after lookAt
 
-    // Lens: widens while running so speed is felt, narrows while aiming.
+    // Lens: widens while running so speed is felt, narrows while aiming. First
+    // person runs Valor's 55°/42° pair — with a viewmodel in frame, a 60° hip
+    // lens stretches the weapon at the edge and the ADS step reads as too small.
     const cam = camera as THREE.PerspectiveCamera;
-    const hipFov = FEEL.baseFov + (runtime.running ? FEEL.runFovKick : 0);
-    const targetFov = THREE.MathUtils.lerp(hipFov, FEEL.adsFov, aimBlend);
+    const fp = gameMode().firstPerson;
+    const baseFov = fp ? FIRST_PERSON.fov : FEEL.baseFov;
+    const adsFov = fp ? FIRST_PERSON.adsFov : FEEL.adsFov;
+    const hipFov = baseFov + (runtime.running ? FEEL.runFovKick : 0);
+    const targetFov = THREE.MathUtils.lerp(hipFov, adsFov, aimBlend);
     cam.fov += (targetFov - cam.fov) * Math.min(1, FEEL.fovLerp * dt);
     cam.updateProjectionMatrix();
 

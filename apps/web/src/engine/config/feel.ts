@@ -151,14 +151,24 @@ export const FEEL = {
 export type Feel = typeof FEEL;
 
 /**
- * First-person feel (Nighthaul). Separate from FEEL because none of it applies
- * to Foxglade's over-the-shoulder rig — but it lives in this file so there is
- * still exactly one place to twist numbers while judging feel.
+ * First-person feel (Nighthaul).
  *
- * Two things carry a first-person camera: head bob and the weapon viewmodel.
- * Without them the view is a floating lens — which is precisely why the old V
- * toggle was cut (see the ADS note in FEEL above). The gun in the corner of the
- * screen is not decoration; it is the body you have left.
+ * PORTED FROM VALOR (Marvy's own shipped FPS, apps/web/src/engine/scene/ValorScene.tsx),
+ * because the first attempt here reinvented it and got it wrong. Three things
+ * Valor does that hand-rolling this missed:
+ *
+ *  1. NEAR PLANE 0.01, FOV 55. That is what lets a full-size weapon sit half a
+ *     metre from the lens without being sliced. Fighting a 0.1 near plane by
+ *     shrinking the gun to half scale and pushing it away is why the first pass
+ *     read as a small prop hovering in the corner.
+ *  2. THE DRIFT IS ON THE CAMERA, NOT THE GUN. Valor calls it bodycam handheld
+ *     drift and it is the signature of the look: a slow pitch/yaw/roll wander of
+ *     the whole view, steadied when you aim. Swaying the weapon inside a locked
+ *     lens — the first attempt — animates the prop while the head stays dead,
+ *     which is exactly the "no personality" read.
+ *  3. ADS IS A RAISE, NOT A SHOVE. The gun stays at hip DEPTH and only lifts and
+ *     moves slightly toward centre; the zoom comes entirely from the FOV. Pulling
+ *     the weapon toward the eye puts its receiver end-on against the lens.
  *
  * Viewmodel offsets are in CAMERA space: +X right, +Y up, -Z forward.
  */
@@ -166,100 +176,91 @@ export const FIRST_PERSON = {
   /** Eye nudged forward of the head centre so the lens sits at the face rather
    *  than inside the skull — stops the near plane slicing walls you stand against. */
   eyeForward: 0.08,
+  /** Valor's lens. The near plane is the load-bearing number (see the note above). */
+  near: 0.01,
+  fov: 55,
+  adsFov: 42,
 
-  // --- Head bob ---
-  // Phase drives a figure-eight: Y at double rate (one dip per footfall), X at
-  // single rate (one sway per stride). Amplitudes are deliberately small; bob
-  // reads as weight at 3cm and as seasickness at 8cm.
-  bobHz: 1.05, // strides/second at a walk
-  bobRunHz: 1.55,
-  bobAmpY: 0.032, // vertical travel (m) at full speed
-  bobAmpX: 0.026, // lateral sway (m) at full speed
-  bobLerp: 7, // how fast bob eases in/out as you start and stop
-  adsBobDamp: 0.75, // fraction of bob removed while aiming
+  // --- Bodycam drift (Valor: the signature of the look) ---
+  // A slow, irregular wander of the CAMERA — three sine waves on incommensurate
+  // periods so it never visibly loops. Aiming steadies it to a fifth, so
+  // precision is never fighting the camera.
+  driftMoveRate: 6.2, // phase advance per second while moving
+  driftStillRate: 1.5, // …and while standing
+  driftStillAmt: 0.38, // amplitude multiplier when not moving
+  driftAdsDamp: 0.85, // fraction removed while aiming
+  driftPitch: 0.0045, // radians
+  driftYaw: 0.0038,
+  driftRoll: 0.0075,
+  driftEyeBob: 0.011, // metres the eye rises/falls on the drift
+
+  // --- Head bob (eye height) ---
+  bobRate: 9, // phase advance/sec while moving
+  bobAdsRate: 6, // …while aiming
 
   // --- Weapon viewmodel ---
-  // THE STOCK, NOT THE BARREL, SETS THESE NUMBERS. The gun models span roughly
-  // z ∈ [-0.31, +0.50] locally (stock to muzzle); the half turn that points the
-  // barrel downrange flips that to [-0.50, +0.31], so the BUTT of the weapon is
-  // the part nearest the lens, at (z offset) + 0.31·gunScale. Placed naively it
-  // sits ~0.2m from the camera and looms across a third of the screen as an
-  // unreadable slab — which is exactly what the first build did. Keep the butt
-  // out past ~0.45m and the weapon reads as a weapon.
+  // Valor's framing, at FULL gun scale. ADS keeps the same DEPTH and only lifts
+  // and eases toward centre — the aim zoom is the FOV, not the gun.
   //
-  // Near plane is 0.1 (shared canvas), so the butt must also clear that at the
-  // peak of recoilBack. A separate viewmodel render pass is the real fix and
-  // would free all of this up; it's a later job.
-  // Y is measured to the GRIP, which is the models' local origin — the receiver,
-  // optic and stock all sit above it. So the anchor has to hang well below centre
-  // for the weapon to read as held at the hip rather than floating at chest height.
-  gunScale: 0.5,
-  gunHip: [0.16, -0.198, -0.62] as [number, number, number],
-  gunAds: [0, -0.062, -0.55] as [number, number, number],
+  // The DEPTH is derived from the model rather than hard-coded, because Valor's
+  // -0.5 is tuned to Valor's rifle. These guns measure 0.847m long, so at -0.5
+  // the weapon's rear sits 7.6cm from the lens, where it is four times the height
+  // of the frame — an unreadable black wall, which is what ADS looked like before.
+  // Instead the weapon is pushed out until its REAR clears the lens by
+  // `rearClearance`, and the lateral offsets are scaled by the same factor so the
+  // on-screen framing stays exactly Valor's regardless of how long the gun is.
+  gunScale: 1,
+  /** Metres of clear air between the lens and the butt of the weapon. */
+  rearClearance: 0.35,
+  /** Valor's offsets, expressed at its reference depth of 0.5m (scaled at build). */
+  gunHip: [0.2, -0.2] as [number, number],
+  gunAds: [0.1, -0.1] as [number, number],
+  refDepth: 0.5,
   gunLerp: 16, // hip↔ADS ease
-  /** Resting yaw/pitch (radians) so the weapon sits ANGLED across the view rather
-   *  than axis-aligned with the lens. Both ease to zero down the sights, which is
-   *  most of what makes ADS read as "lining up" rather than as a zoom. */
-  gunYaw: 0.14,
-  gunPitch: 0.045,
-  gunBobY: 0.018, // the gun bobs less than the camera, so it lags the head
-  gunBobX: 0.014,
+  /** Figure-eight bob on the weapon: x on the sine, y on |cos| so it bounces on
+   *  every footfall rather than dipping once a stride. */
+  bobAmp: 0.014,
 
-  // --- Sway: the gun trails the look, then catches up ---
-  // Coefficients are metres of lag per radian of look delta in a single frame.
-  swayYaw: 1.1,
-  swayPitch: 0.9,
-  swayMax: 0.05, // clamp (m) so a fast flick can't fling it off screen
-  swayLerp: 9,
-  swayAdsDamp: 0.35, // sway is mostly suppressed down the sights
+  // --- Recoil ---
+  // One value drives both the view kick and the viewmodel, so they can't disagree.
+  recoilKick: 0.02, // radians per shot at feel.kick 1
+  recoilAdsDamp: 0.4, // fraction removed while aiming
+  recoilRecover: 12, // per second
+  recoilBack: 2.2, // metres of viewmodel punch per radian of view kick
+  recoilTilt: 1.6, // radians the viewmodel rotates per radian of view kick
 
-  // --- Recoil (viewmodel kick — separate from FEEL's view kick) ---
-  recoilBack: 0.055, // metres the gun punches toward the viewer
-  recoilRise: 0.022,
-  recoilPitch: 0.14, // radians the muzzle climbs
-  recoilRecover: 9,
+  // --- Weapon raise (on spawn and on a weapon swap) ---
+  raiseRate: 2.4, // per second
+  raiseDrop: 0.22, // metres it dips below the hip pose at full raise
+
+  // --- Wall pullback (Valor) ---
+  // Retract the viewmodel TOWARD the eye as a wall closes, rather than rotating
+  // the barrel up. Scaling depth keeps the weapon in frame; rotating it swings
+  // the whole thing across the view.
+  wallClear: 1.1, // start retracting inside this many metres
+  wallMinScale: 0.12, // never fully collapsed, so it can't pop out of view
+  wallDip: 0.06, // metres it lowers at full contact
+
+  // --- Sprint pose ---
+  // Not in Valor, kept from the local pass: the weapon drops and cants at a run.
+  // It reads as effort AND makes "I can't shoot right now" legible without UI.
+  sprintDrop: 0.07,
+  sprintIn: 0.06,
+  sprintPitch: -0.35,
+  sprintRoll: 0.5,
+  sprintYaw: 0.3,
+  sprintLerp: 7,
+  sprintOutLerp: 15, // out fast — you may be about to shoot
 
   // --- Reload: the gun drops out of the sightline while you work ---
   reloadDrop: 0.14,
-  reloadRoll: 0.5, // radians it rolls toward the viewer
+  reloadRoll: 0.5,
   reloadLerp: 8,
 
-  // --- Sprint pose ---
-  // The signature first-person animation: at a run the weapon drops out of the
-  // ready position and cants across the body, and it snaps back the instant you
-  // let go of sprint. It is doing two jobs — it reads as effort, and it makes
-  // "I am sprinting and cannot shoot right now" legible without any UI.
-  sprintDrop: 0.07, // metres the weapon lowers — enough to read, not so far it leaves frame
-  sprintIn: 0.06, // metres it pulls toward the body's centre
-  sprintPitch: -0.35, // radians the muzzle drops
-  sprintRoll: 0.5, // radians it cants over
-  sprintYaw: 0.3, // radians it swings across the body
-  sprintLerp: 7, // into the pose (out is faster — see sprintOutLerp)
-  sprintOutLerp: 15, // back to ready: snappy, because you may be about to shoot
-
-  // --- Idle breathing ---
-  // A weapon held perfectly still is the other half of "it just floats". This is
-  // a slow figure-eight that never fully stops, strongest when you're standing.
-  breatheHz: 0.24,
-  breatheAmpY: 0.0075,
-  breatheAmpX: 0.0045,
-  breatheRoll: 0.012,
-  breatheMovingDamp: 0.55, // reduced while walking, where bob takes over
-  breatheAdsDamp: 0.45, // reduced but NOT removed down the sights — holding steady is effort
-
   // --- Landing impact ---
-  // Touching down shoves the weapon down and springs it back. Without it a jump
-  // has no arrival, and the whole viewmodel goes weightless for the landing frame.
   landDrop: 0.075,
   landPitch: 0.2,
   landRecover: 7,
-
-  // --- Wall lower ---
-  // Barrel tucks up when geometry is right in front of you, so it stops short of
-  // punching through the wall instead of clipping into it.
-  wallProbe: 0.9, // metres ahead the probe looks
-  wallPitch: 0.85, // radians the gun rotates up at full contact
-  wallLerp: 12,
 } as const;
 
 export type FirstPersonFeel = typeof FIRST_PERSON;
