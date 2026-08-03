@@ -11,6 +11,7 @@ import { CHAPTERS, clockLabel, DAY } from "@/engine/config/day";
 import { WEAPON_STATS } from "@/engine/config/shop";
 import { FEEL } from "@/engine/config/feel";
 import { foxGrowthFor, foxNextThreshold } from "@/engine/config/fox";
+import { gameMode } from "@/engine/config/mode";
 import { thieves, MAX_THIEVES } from "@/engine/npc/thieves";
 import { isTouchDevice } from "@/engine/input/touch";
 
@@ -451,12 +452,16 @@ export function Hud() {
       <div style={styles.wallet}>
         <div style={styles.walletBanked}>🏦 {villeBanked} VILLE</div>
         {villeCarrying > 0 && <div style={styles.walletCarry}>◆ carrying {villeCarrying} — bank it</div>}
-        <div style={styles.foxStage}>
-          🦊 {foxGrowthFor(villeEarned).name}
-          {foxNextThreshold(villeEarned) !== null && (
-            <span style={styles.foxNext}> · bank {foxNextThreshold(villeEarned)! - villeEarned} to grow</span>
-          )}
-        </div>
+        {/* Growth stage is the fox's, and the fox IS the rank — so in a mode
+            without one there is nothing here to report. */}
+        {gameMode().fox && (
+          <div style={styles.foxStage}>
+            🦊 {foxGrowthFor(villeEarned).name}
+            {foxNextThreshold(villeEarned) !== null && (
+              <span style={styles.foxNext}> · bank {foxNextThreshold(villeEarned)! - villeEarned} to grow</span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Time of day + chapter, top-right */}
@@ -530,11 +535,15 @@ export function Hud() {
           {/* Bank marker — shows only while carrying loot (points to the vault) */}
           <div ref={bankBlip} style={styles.bankDot} />
           {/* Fox marker — shows while it's off scouting or attacking */}
-          <div ref={foxBlip} style={styles.foxDot} />
+          {gameMode().fox && <div ref={foxBlip} style={styles.foxDot} />}
         </div>
-        <div ref={sniffEl} style={styles.sniffPill}>
-          🦊 sniff — Q
-        </div>
+        {/* The send-the-fox pill and its compass blip only exist where a fox does.
+            The frame loop above guards on the same refs being null. */}
+        {gameMode().fox && (
+          <div ref={sniffEl} style={styles.sniffPill}>
+            🦊 sniff — Q
+          </div>
+        )}
       </div>
 
       {/* Dynamic crosshair — while aiming (mouse captured) OR on touch, which has
@@ -566,7 +575,7 @@ export function Hud() {
       <div ref={eventEl} style={styles.eventToast} />
 
       {/* Fox grew a stage — celebratory toast, text set from the game loop */}
-      <div ref={foxToastEl} style={styles.foxToast} />
+      {gameMode().fox && <div ref={foxToastEl} style={styles.foxToast} />}
 
       {/* Proximity prompt (claim / false lead) — text set from the game loop */}
       <div ref={promptEl} style={styles.prompt} />

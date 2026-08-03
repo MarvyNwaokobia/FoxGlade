@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { touch } from "@/engine/input/touch";
 import { useGame } from "@/engine/store";
 import { runtime } from "@/engine/runtime";
+import { gameMode } from "@/engine/config/mode";
 
 // Synthesize a key event so the PlayerController's existing keydown/keyup
 // handlers drive discrete actions (crouch, sniff, claim, bomb, rest, restart).
@@ -311,9 +312,12 @@ export function MobileControls() {
             : "calc(env(safe-area-inset-bottom, 0px) + 92px)",
         }}
       >
-        <button style={styles.btnSm} {...tap("KeyQ")}>
-          FOX
-        </button>
+        {/* Nighthaul has no companion, so the button would command nothing. */}
+        {gameMode().fox && (
+          <button style={styles.btnSm} {...tap("KeyQ")}>
+            FOX
+          </button>
+        )}
         {/* A real press-and-release, not a tap: VAULT rides on Space, and a
             keydown/keyup fired in the same microsecond is gone before the next
             frame ever samples it. */}
