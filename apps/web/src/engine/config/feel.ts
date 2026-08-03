@@ -194,7 +194,7 @@ export const FIRST_PERSON = {
   // optic and stock all sit above it. So the anchor has to hang well below centre
   // for the weapon to read as held at the hip rather than floating at chest height.
   gunScale: 0.5,
-  gunHip: [0.17, -0.225, -0.62] as [number, number, number],
+  gunHip: [0.16, -0.198, -0.62] as [number, number, number],
   gunAds: [0, -0.062, -0.55] as [number, number, number],
   gunLerp: 16, // hip↔ADS ease
   /** Resting yaw/pitch (radians) so the weapon sits ANGLED across the view rather
@@ -223,6 +223,36 @@ export const FIRST_PERSON = {
   reloadDrop: 0.14,
   reloadRoll: 0.5, // radians it rolls toward the viewer
   reloadLerp: 8,
+
+  // --- Sprint pose ---
+  // The signature first-person animation: at a run the weapon drops out of the
+  // ready position and cants across the body, and it snaps back the instant you
+  // let go of sprint. It is doing two jobs — it reads as effort, and it makes
+  // "I am sprinting and cannot shoot right now" legible without any UI.
+  sprintDrop: 0.07, // metres the weapon lowers — enough to read, not so far it leaves frame
+  sprintIn: 0.06, // metres it pulls toward the body's centre
+  sprintPitch: -0.35, // radians the muzzle drops
+  sprintRoll: 0.5, // radians it cants over
+  sprintYaw: 0.3, // radians it swings across the body
+  sprintLerp: 7, // into the pose (out is faster — see sprintOutLerp)
+  sprintOutLerp: 15, // back to ready: snappy, because you may be about to shoot
+
+  // --- Idle breathing ---
+  // A weapon held perfectly still is the other half of "it just floats". This is
+  // a slow figure-eight that never fully stops, strongest when you're standing.
+  breatheHz: 0.24,
+  breatheAmpY: 0.0075,
+  breatheAmpX: 0.0045,
+  breatheRoll: 0.012,
+  breatheMovingDamp: 0.55, // reduced while walking, where bob takes over
+  breatheAdsDamp: 0.45, // reduced but NOT removed down the sights — holding steady is effort
+
+  // --- Landing impact ---
+  // Touching down shoves the weapon down and springs it back. Without it a jump
+  // has no arrival, and the whole viewmodel goes weightless for the landing frame.
+  landDrop: 0.075,
+  landPitch: 0.2,
+  landRecover: 7,
 
   // --- Wall lower ---
   // Barrel tucks up when geometry is right in front of you, so it stops short of

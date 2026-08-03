@@ -8,6 +8,7 @@ import { gameMode } from "@/engine/config/mode";
 import { runtime } from "@/engine/runtime";
 import { useGame } from "@/engine/store";
 import { makeGunMesh, muzzleWorldPos } from "@/engine/character/GunMesh";
+import { makeViewArms } from "@/engine/character/ViewArms";
 import { BOXES3D } from "@/engine/world/village";
 import { raycastBoxes } from "@/engine/world/collision";
 
@@ -51,6 +52,10 @@ export function ViewModel() {
   const bobPhase = useRef(0);
   const bobAmt = useRef(0);
   const lastFireAt = useRef(-1);
+  const sprintT = useRef(0); // eased 0..1 into the sprint pose
+  const breathePhase = useRef(0);
+  const land = useRef(0); // 0..1 landing impact, decays
+  const wasGrounded = useRef(true); // edge-detects touchdown
 
   const scratch = useMemo(
     () => ({
@@ -83,6 +88,10 @@ export function ViewModel() {
     const gun = makeGunMesh(equipped);
     gun.rotation.y = Math.PI; // barrel (+Z) → camera forward (-Z)
     gun.scale.setScalar(FIRST_PERSON.gunScale);
+    // Hands are parented to the WEAPON, not the holder, so they stay welded to it
+    // through recoil, sway and bob without a line of per-frame code. Added before
+    // the traverse below so they pick up the same no-shadow / render-order pass.
+    gun.add(makeViewArms());
     // The viewmodel sits centimetres from the lens and must never be occlusion-
     // tested against the world it's drawn over.
     gun.traverse((o) => {
@@ -172,6 +181,30 @@ export function ViewModel() {
     const reloading = g.reloadEndsAt > 0;
     reloadT.current += ((reloading ? 1 : 0) - reloadT.current) * Math.min(1, FIRST_PERSON.reloadLerp * dt);
 
+    // ── Sprint ── into the pose slowly (it's effort), out of it fast (you may be
+    // about to shoot, and a weapon that takes half a second to come up when you
+    // release sprint feels broken rather than heavy). Suppressed while aiming, so
+    // holding ADS always wins over a stale sprint flag.
+    const sprinting = runtime.running && runtime.playerMoving && runtime.grounded && ads < 0.05;
+    const sprintTarget = sprinting ? 1 : 0;
+    const sprintRate = sprinting ? FIRST_PERSON.sprintLerp : FIRST_PERSON.sprintOutLerp;
+    sprintT.current += (sprintTarget - sprintT.current) * Math.min(1, sprintRate * dt);
+    const sp = sprintT.current;
+
+    // ── Breathing ── the weapon is never completely still. Damped while walking
+    // (bob has taken over) and while aiming, but never zeroed: holding a rifle
+    // steady is effort, and showing none of it is what reads as floating.
+    breathePhase.current += dt * FIRST_PERSON.breatheHz * Math.PI * 2;
+    const breatheK =
+      (1 - bobAmt.current * FIRST_PERSON.breatheMovingDamp) * (1 - ads * FIRST_PERSON.breatheAdsDamp);
+    const breatheY = Math.sin(breathePhase.current) * FIRST_PERSON.breatheAmpY * breatheK;
+    const breatheX = Math.sin(breathePhase.current * 0.5) * FIRST_PERSON.breatheAmpX * breatheK;
+
+    // ── Landing ── edge-detect touchdown and shove the weapon down.
+    if (runtime.grounded && !wasGrounded.current) land.current = 1;
+    wasGrounded.current = runtime.grounded;
+    land.current -= land.current * Math.min(1, FIRST_PERSON.landRecover * dt);
+
     // ── Wall contact ── probe straight ahead from the eye; the closer the
     // geometry, the further the barrel tucks up, so it stops short of the wall
     // instead of punching through it.
@@ -185,13 +218,21 @@ export function ViewModel() {
     const hip = FIRST_PERSON.gunHip;
     const aim = FIRST_PERSON.gunAds;
     const k = Math.min(1, FIRST_PERSON.gunLerp * dt);
-    const tx = THREE.MathUtils.lerp(hip[0], aim[0], ads) + sway.current.x + bobX;
+    const tx =
+      THREE.MathUtils.lerp(hip[0], aim[0], ads) +
+      sway.current.x +
+      bobX +
+      breatheX -
+      sp * FIRST_PERSON.sprintIn;
     const ty =
       THREE.MathUtils.lerp(hip[1], aim[1], ads) +
       sway.current.y +
       bobY +
+      breatheY +
       recoil.current * FIRST_PERSON.recoilRise -
-      reloadT.current * FIRST_PERSON.reloadDrop;
+      reloadT.current * FIRST_PERSON.reloadDrop -
+      sp * FIRST_PERSON.sprintDrop -
+      land.current * FIRST_PERSON.landDrop;
     const tz =
       THREE.MathUtils.lerp(hip[2], aim[2], ads) + recoil.current * FIRST_PERSON.recoilBack;
 
@@ -207,9 +248,15 @@ export function ViewModel() {
     const rx =
       THREE.MathUtils.lerp(FIRST_PERSON.gunPitch, 0, ads) -
       recoil.current * FIRST_PERSON.recoilPitch +
-      wallT.current * FIRST_PERSON.wallPitch;
-    const ry = Math.PI + THREE.MathUtils.lerp(FIRST_PERSON.gunYaw, 0, ads);
-    const rz = reloadT.current * FIRST_PERSON.reloadRoll;
+      wallT.current * FIRST_PERSON.wallPitch +
+      sp * FIRST_PERSON.sprintPitch +
+      land.current * FIRST_PERSON.landPitch;
+    const ry =
+      Math.PI + THREE.MathUtils.lerp(FIRST_PERSON.gunYaw, 0, ads) + sp * FIRST_PERSON.sprintYaw;
+    const rz =
+      reloadT.current * FIRST_PERSON.reloadRoll +
+      sp * FIRST_PERSON.sprintRoll +
+      Math.sin(breathePhase.current) * FIRST_PERSON.breatheRoll * breatheK;
     gun.rotation.x += (rx - gun.rotation.x) * k;
     gun.rotation.y += (ry - gun.rotation.y) * k;
     gun.rotation.z += (rz - gun.rotation.z) * k;
