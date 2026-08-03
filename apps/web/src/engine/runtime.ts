@@ -115,6 +115,10 @@ export const runtime = {
   guardianSpokeAt: -1,
   chapterName: "Dawn",
   chapterBrief: "Find the first treasure. Bank it at the vault.",
+  /** Eased 0..1 hip→aim blend, published by PlayerController so the first-person
+   *  weapon viewmodel can ride the same curve as the camera FOV instead of
+   *  running a second, subtly-out-of-sync ease of its own. */
+  adsBlend: 0,
   /** True while the player is holding G to aim a bomb throw. */
   bombAiming: false,
   /** Predicted bomb landing point (valid while bombAiming). */

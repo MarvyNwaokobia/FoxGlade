@@ -5,6 +5,8 @@ import { Canvas } from "@react-three/fiber";
 import { Loader, Stats, PerformanceMonitor, AdaptiveDpr } from "@react-three/drei";
 import * as THREE from "three";
 import { PlayerController } from "@/engine/player/PlayerController";
+import { ViewModel } from "@/engine/player/ViewModel";
+import { gameMode } from "@/engine/config/mode";
 import { FoxCompanion } from "@/engine/fox/FoxCompanion";
 import { VillageScene } from "@/engine/scene/VillageScene";
 import { AudioDriver } from "@/engine/audio/AudioDriver";
@@ -58,6 +60,8 @@ export default function Game() {
   }, []);
 
   const q = HIGH;
+  // Which game this canvas is running (set by the route before mount).
+  const mode = gameMode();
 
   return (
     <>
@@ -81,7 +85,11 @@ export default function Game() {
             degraded={degraded}
           />
           <PlayerController />
-          {!perfOff("noFox") && <FoxCompanion />}
+          {/* Must come AFTER PlayerController: both write runtime.muzzlePos, and
+              in first person the visible barrel is the viewmodel's, not the
+              hidden rig's. Sibling order is what puts its useFrame second. */}
+          <ViewModel />
+          {!perfOff("noFox") && mode.fox && <FoxCompanion />}
           {/* Link shaders while the map is up, not mid-firefight. */}
           <ShaderWarmup />
         </Suspense>
@@ -112,7 +120,9 @@ export default function Game() {
         containerStyles={{ background: "#1a140f" }}
         barStyles={{ background: "#f2c14e", height: 4 }}
         dataStyles={{ color: "#e8dcc6", fontSize: 13, fontFamily: "system-ui, sans-serif", letterSpacing: 1 }}
-        dataInterpolation={(p) => `Entering the village… ${p.toFixed(0)}%`}
+        dataInterpolation={(p) =>
+          mode.firstPerson ? `Inserting… ${p.toFixed(0)}%` : `Entering the village… ${p.toFixed(0)}%`
+        }
       />
     </>
   );

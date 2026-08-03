@@ -149,3 +149,87 @@ export const FEEL = {
 } as const;
 
 export type Feel = typeof FEEL;
+
+/**
+ * First-person feel (Nighthaul). Separate from FEEL because none of it applies
+ * to Foxglade's over-the-shoulder rig — but it lives in this file so there is
+ * still exactly one place to twist numbers while judging feel.
+ *
+ * Two things carry a first-person camera: head bob and the weapon viewmodel.
+ * Without them the view is a floating lens — which is precisely why the old V
+ * toggle was cut (see the ADS note in FEEL above). The gun in the corner of the
+ * screen is not decoration; it is the body you have left.
+ *
+ * Viewmodel offsets are in CAMERA space: +X right, +Y up, -Z forward.
+ */
+export const FIRST_PERSON = {
+  /** Eye nudged forward of the head centre so the lens sits at the face rather
+   *  than inside the skull — stops the near plane slicing walls you stand against. */
+  eyeForward: 0.08,
+
+  // --- Head bob ---
+  // Phase drives a figure-eight: Y at double rate (one dip per footfall), X at
+  // single rate (one sway per stride). Amplitudes are deliberately small; bob
+  // reads as weight at 3cm and as seasickness at 8cm.
+  bobHz: 1.05, // strides/second at a walk
+  bobRunHz: 1.55,
+  bobAmpY: 0.032, // vertical travel (m) at full speed
+  bobAmpX: 0.026, // lateral sway (m) at full speed
+  bobLerp: 7, // how fast bob eases in/out as you start and stop
+  adsBobDamp: 0.75, // fraction of bob removed while aiming
+
+  // --- Weapon viewmodel ---
+  // THE STOCK, NOT THE BARREL, SETS THESE NUMBERS. The gun models span roughly
+  // z ∈ [-0.31, +0.50] locally (stock to muzzle); the half turn that points the
+  // barrel downrange flips that to [-0.50, +0.31], so the BUTT of the weapon is
+  // the part nearest the lens, at (z offset) + 0.31·gunScale. Placed naively it
+  // sits ~0.2m from the camera and looms across a third of the screen as an
+  // unreadable slab — which is exactly what the first build did. Keep the butt
+  // out past ~0.45m and the weapon reads as a weapon.
+  //
+  // Near plane is 0.1 (shared canvas), so the butt must also clear that at the
+  // peak of recoilBack. A separate viewmodel render pass is the real fix and
+  // would free all of this up; it's a later job.
+  // Y is measured to the GRIP, which is the models' local origin — the receiver,
+  // optic and stock all sit above it. So the anchor has to hang well below centre
+  // for the weapon to read as held at the hip rather than floating at chest height.
+  gunScale: 0.5,
+  gunHip: [0.17, -0.225, -0.62] as [number, number, number],
+  gunAds: [0, -0.062, -0.55] as [number, number, number],
+  gunLerp: 16, // hip↔ADS ease
+  /** Resting yaw/pitch (radians) so the weapon sits ANGLED across the view rather
+   *  than axis-aligned with the lens. Both ease to zero down the sights, which is
+   *  most of what makes ADS read as "lining up" rather than as a zoom. */
+  gunYaw: 0.14,
+  gunPitch: 0.045,
+  gunBobY: 0.018, // the gun bobs less than the camera, so it lags the head
+  gunBobX: 0.014,
+
+  // --- Sway: the gun trails the look, then catches up ---
+  // Coefficients are metres of lag per radian of look delta in a single frame.
+  swayYaw: 1.1,
+  swayPitch: 0.9,
+  swayMax: 0.05, // clamp (m) so a fast flick can't fling it off screen
+  swayLerp: 9,
+  swayAdsDamp: 0.35, // sway is mostly suppressed down the sights
+
+  // --- Recoil (viewmodel kick — separate from FEEL's view kick) ---
+  recoilBack: 0.055, // metres the gun punches toward the viewer
+  recoilRise: 0.022,
+  recoilPitch: 0.14, // radians the muzzle climbs
+  recoilRecover: 9,
+
+  // --- Reload: the gun drops out of the sightline while you work ---
+  reloadDrop: 0.14,
+  reloadRoll: 0.5, // radians it rolls toward the viewer
+  reloadLerp: 8,
+
+  // --- Wall lower ---
+  // Barrel tucks up when geometry is right in front of you, so it stops short of
+  // punching through the wall instead of clipping into it.
+  wallProbe: 0.9, // metres ahead the probe looks
+  wallPitch: 0.85, // radians the gun rotates up at full contact
+  wallLerp: 12,
+} as const;
+
+export type FirstPersonFeel = typeof FIRST_PERSON;

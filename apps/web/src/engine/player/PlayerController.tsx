@@ -3,7 +3,8 @@
 import { useEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { FEEL } from "@/engine/config/feel";
+import { FEEL, FIRST_PERSON } from "@/engine/config/feel";
+import { gameMode } from "@/engine/config/mode";
 import { runtime } from "@/engine/runtime";
 import { useKeyboard } from "@/engine/input/useKeyboard";
 import {
@@ -113,6 +114,8 @@ export function PlayerController() {
   const resting = useRef(false); // sitting indoors (X); any movement stands up
   const eyeH = useRef(FEEL.lookAtHeight); // eased eye height (stand ↔ crouch ↔ sit)
   const prevHealth = useRef(100); // edge-detects the drop into the danger band
+  const bobPhase = useRef(0); // first-person head-bob phase (radians)
+  const bobAmt = useRef(0); // eased 0..1 bob strength, so stopping doesn't cut it dead
 
   // Interaction keys: E claim (only at the real hint), R respawn, F fire,
   // Q fox-sniff (reveals the real hint on a cooldown).
@@ -645,8 +648,11 @@ export function PlayerController() {
       rs.hitDir = a < Math.PI / 3 ? "front" : a > (2 * Math.PI) / 3 ? "back" : "side";
     }
     // Contact shadow stays flat on the ground under the player (even mid-jump).
+    // Hidden in first person: it's the ambient occlusion for a body that isn't
+    // drawn, so looking down would show a dark disc pooled under nothing.
     if (shadow.current) {
       shadow.current.position.set(pos.current.x, 0.02, pos.current.z);
+      shadow.current.visible = !gameMode().firstPerson;
     }
 
     // Hint proximity: which hint zone (if any) the player is standing in.
@@ -704,65 +710,108 @@ export function PlayerController() {
     runtime.bombAiming = bombAim.current;
     if (bombAim.current) predictLanding(head, aim, runtime.bombAimPoint);
 
-    // ── Camera: pivot + convergence over-the-shoulder rig ──
-    //
-    // The rig orbits a PIVOT offset from the head (out to the shoulder, up by the
-    // headroom) rather than sitting behind the head itself, and it looks at a
-    // CONVERGENCE point far along the aim line. Because the pivot is beside the
-    // player, he renders down-and-left of the reticle instead of standing on it —
-    // which is the whole difference between "I can see what I'm shooting" and the
-    // old rig, where his back filled the middle of the screen.
-    //
-    // Ease the hip→aim blend, then derive distance + shoulder from it.
+    // Ease the hip→aim blend. Both camera rigs ride this same curve (third person
+    // pulls the boom in; first person narrows the lens and centres the gun), and
+    // the viewmodel reads it off runtime rather than running a second ease that
+    // would drift a frame or two out of sync with the FOV.
     adsT.current += ((adsHeld.current && !frozen && !resting.current ? 1 : 0) - adsT.current) *
       Math.min(1, FEEL.adsLerp * dt);
     const aimBlend = adsT.current;
-    const camDistance = THREE.MathUtils.lerp(FEEL.cameraDistance, FEEL.adsDistance, aimBlend);
-    const camShoulder = THREE.MathUtils.lerp(FEEL.cameraShoulder, FEEL.adsShoulder, aimBlend);
+    runtime.adsBlend = aimBlend;
 
-    const pivot = head
-      .clone()
-      .addScaledVector(rightV, camShoulder)
-      .addScaledVector(UP, FEEL.cameraHeadroom);
-    // What the camera actually looks AT — far enough out that small rig motion
-    // barely moves it, which is most of why the old follow read as "swimmy".
-    const lookTarget = pivot.clone().addScaledVector(aim, FEEL.cameraConverge);
+    // What the camera looks AT. Both rigs converge on a distant point rather than
+    // aiming along a parallel vector, so lens jitter barely moves the reticle.
+    let lookTarget: THREE.Vector3;
 
-    let desired = pivot.clone().addScaledVector(aim, -camDistance);
-    desired.y = Math.max(desired.y, FEEL.cameraMinHeight);
+    if (gameMode().firstPerson) {
+      // ── Camera: first person (Nighthaul) ──
+      //
+      // The lens IS the eye, so there is no boom to collide and nothing to smooth:
+      // the head was already resolved against the world by the movement step, and
+      // a follow lerp here would read as input lag rather than as weight.
+      //
+      // What carries the view instead is BOB — a figure-eight scaled by speed,
+      // eased in and out so coming to a stop doesn't chop it off mid-stride. Y runs
+      // at double phase (one dip per footfall), X at single (one sway per stride).
+      const speed = Math.hypot(vel.current.x, vel.current.z);
+      const bobTarget = runtime.playerMoving && grounded.current
+        ? Math.min(1, speed / FEEL.runSpeed)
+        : 0;
+      bobAmt.current += (bobTarget - bobAmt.current) * Math.min(1, FIRST_PERSON.bobLerp * dt);
+      const hz = THREE.MathUtils.lerp(FIRST_PERSON.bobHz, FIRST_PERSON.bobRunHz, bobAmt.current);
+      bobPhase.current += dt * hz * Math.PI * 2;
+      const bobK = bobAmt.current * (1 - aimBlend * FIRST_PERSON.adsBobDamp);
+      const bobY = Math.sin(bobPhase.current * 2) * FIRST_PERSON.bobAmpY * bobK;
+      const bobX = Math.sin(bobPhase.current) * FIRST_PERSON.bobAmpX * bobK;
 
-    // Camera collision: raycast pivot → the DESIRED target (a stable point, not the
-    // current camera position) and pull the target in to just before any wall.
-    // Correcting the target once and then smoothing to it avoids the per-frame
-    // lerp-out / snap-in oscillation that made the camera shake against buildings.
-    const toDesired = desired.clone().sub(pivot);
-    const dist = toDesired.length();
-    if (dist > 0.001) {
-      // CAMERA_BOXES, not BOXES3D: chest-high cover is excluded so the lens rides
-      // over a crate instead of being jammed against its face (see village.ts).
-      const t = raycastBoxes(pivot, desired, CAMERA_BOXES);
-      if (t < 1) {
-        const d = Math.max(FEEL.cameraMinDistance, Math.min(dist, dist * t - FEEL.cameraCollisionBuffer));
-        desired.copy(pivot).addScaledVector(toDesired.multiplyScalar(1 / dist), d);
-        desired.y = Math.max(desired.y, FEEL.cameraMinHeight);
+      camBase.current
+        .copy(head)
+        .addScaledVector(aim, FIRST_PERSON.eyeForward)
+        .addScaledVector(rightV, bobX)
+        .addScaledVector(UP, bobY);
+      camera.position.copy(camBase.current);
+      lookTarget = camBase.current.clone().addScaledVector(aim, FEEL.cameraConverge);
+
+      // You are not rendered from inside your own head. (Body awareness — legs and
+      // a torso when you look down — is a later pass: it needs the head bone hidden
+      // rather than the whole rig, so the shadow survives.)
+      rs.opacity = 0;
+      rs.visible = false;
+    } else {
+      // ── Camera: pivot + convergence over-the-shoulder rig (Foxglade) ──
+      //
+      // The rig orbits a PIVOT offset from the head (out to the shoulder, up by the
+      // headroom) rather than sitting behind the head itself. Because the pivot is
+      // beside the player, he renders down-and-left of the reticle instead of
+      // standing on it — which is the whole difference between "I can see what I'm
+      // shooting" and the old rig, where his back filled the middle of the screen.
+      const camDistance = THREE.MathUtils.lerp(FEEL.cameraDistance, FEEL.adsDistance, aimBlend);
+      const camShoulder = THREE.MathUtils.lerp(FEEL.cameraShoulder, FEEL.adsShoulder, aimBlend);
+
+      const pivot = head
+        .clone()
+        .addScaledVector(rightV, camShoulder)
+        .addScaledVector(UP, FEEL.cameraHeadroom);
+      // Far enough out that small rig motion barely moves it, which is most of why
+      // the old follow read as "swimmy".
+      lookTarget = pivot.clone().addScaledVector(aim, FEEL.cameraConverge);
+
+      const desired = pivot.clone().addScaledVector(aim, -camDistance);
+      desired.y = Math.max(desired.y, FEEL.cameraMinHeight);
+
+      // Camera collision: raycast pivot → the DESIRED target (a stable point, not the
+      // current camera position) and pull the target in to just before any wall.
+      // Correcting the target once and then smoothing to it avoids the per-frame
+      // lerp-out / snap-in oscillation that made the camera shake against buildings.
+      const toDesired = desired.clone().sub(pivot);
+      const dist = toDesired.length();
+      if (dist > 0.001) {
+        // CAMERA_BOXES, not BOXES3D: chest-high cover is excluded so the lens rides
+        // over a crate instead of being jammed against its face (see village.ts).
+        const t = raycastBoxes(pivot, desired, CAMERA_BOXES);
+        if (t < 1) {
+          const d = Math.max(FEEL.cameraMinDistance, Math.min(dist, dist * t - FEEL.cameraCollisionBuffer));
+          desired.copy(pivot).addScaledVector(toDesired.multiplyScalar(1 / dist), d);
+          desired.y = Math.max(desired.y, FEEL.cameraMinHeight);
+        }
       }
+
+      // Smooth the follow on a base position; keep shake separate so it never
+      // contaminates the follow (and the collision solve stays stable).
+      camBase.current.lerp(desired, Math.min(1, FEEL.cameraLerp * dt));
+      camera.position.copy(camBase.current);
+
+      // Fade the character as the camera closes in (near a wall, or the near-
+      // first-person indoor pull-in) instead of hard-hiding him — smooth, so he
+      // never abruptly vanishes. Fully solid past fadeStart, gone by fadeEnd.
+      const camDist = camBase.current.distanceTo(head);
+      rs.opacity = THREE.MathUtils.clamp(
+        (camDist - FEEL.cameraFadeEnd) / (FEEL.cameraFadeStart - FEEL.cameraFadeEnd),
+        0,
+        1
+      );
+      rs.visible = rs.opacity > 0.02;
     }
-
-    // Smooth the follow on a base position; keep shake separate so it never
-    // contaminates the follow (and the collision solve stays stable).
-    camBase.current.lerp(desired, Math.min(1, FEEL.cameraLerp * dt));
-    camera.position.copy(camBase.current);
-
-    // Fade the character as the camera closes in (near a wall, or the near-
-    // first-person indoor pull-in) instead of hard-hiding him — smooth, so he
-    // never abruptly vanishes. Fully solid past fadeStart, gone by fadeEnd.
-    const camDist = camBase.current.distanceTo(head);
-    rs.opacity = THREE.MathUtils.clamp(
-      (camDist - FEEL.cameraFadeEnd) / (FEEL.cameraFadeStart - FEEL.cameraFadeEnd),
-      0,
-      1
-    );
-    rs.visible = rs.opacity > 0.02;
 
     // ── Damage shake + DIRECTIONAL stagger ──
     // A hit now shoves the view away from the shooter, kicks the pitch up, rolls
