@@ -119,11 +119,15 @@ export function findScoutTarget(villeEarned: number): THREE.Vector3 | null {
 
   const growth = foxGrowthFor(villeEarned);
   const familiar = spotFamiliarity(HINTS[realIdx].pos.x, HINTS[realIdx].pos.z);
-  if (scoutIsCorrect(growth.misreadChance, familiar)) return HINTS[realIdx].pos;
+  // Cloned, not the live HINTS Vector3: reseedHints() rewrites those objects IN
+  // PLACE (a new board mid-chapter, or the very resolution this scout is about to
+  // cause), so holding the reference would let the fox's destination teleport out
+  // from under it mid-run and send it chasing the new board forever.
+  if (scoutIsCorrect(growth.misreadChance, familiar)) return HINTS[realIdx].pos.clone();
 
   const wrong = pickWrongSlot(decoys);
   // With no decoy left to be confused by, an unsure fox just gets it right.
-  return wrong === null ? HINTS[realIdx].pos : HINTS[wrong].pos;
+  return wrong === null ? HINTS[realIdx].pos.clone() : HINTS[wrong].pos.clone();
 }
 
 /** Nearest threat to the player the fox could be sent at (blockers + thieves). */
