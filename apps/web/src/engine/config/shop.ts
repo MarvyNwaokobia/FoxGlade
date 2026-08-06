@@ -6,7 +6,9 @@
  * ERC-1155) lands it becomes the source of truth and this stays the display layer.
  */
 
-export type ShopCategory = "supply" | "weapon" | "attachment" | "bomb" | "bag";
+import { FOX_GROW_STAGES } from "@/engine/config/fox";
+
+export type ShopCategory = "supply" | "weapon" | "attachment" | "bomb" | "bag" | "fox";
 
 /**
  * How special an item reads on the card — a worn-stone common through to the
@@ -45,6 +47,9 @@ export interface ShopItem {
   /** Consumables can be bought over and over; permanents once. This flag is the
    *  difference between a shop that empties and an economy that runs. */
   consumable?: boolean;
+  /** Another item's id that must already be owned before this one is buyable —
+   *  the fox's growth stages chain this way (Young before Adult before Prime). */
+  requires?: string;
 }
 
 export type WeaponId = "sidearm" | "smg" | "assault_rifle" | "marksman" | "legendary";
@@ -177,6 +182,29 @@ export const SHOP_ITEMS: ShopItem[] = [
   // ── Bags (raise how much loot you can hold before banking) ──
   { id: "g_satchel", category: "bag", name: "Satchel", desc: "Hold more treasure between bank runs.", price: 380, icon: "🎒", rarity: "rare" },
   { id: "g_rucksack", category: "bag", name: "Rucksack", desc: "Hold even more before you must bank.", price: 900, icon: "🧳", rarity: "epic" },
+  // ── Fox growth (DESIGN §2.5 / §11) ──
+  //
+  // Used to happen on its own as lifetime VILLE banked crossed thresholds — no
+  // choice in it, just a number climbing in the background. Growing the fox is
+  // now something you deliberately spend on, chained in order (buying Adult
+  // needs Young first — see `requires`, enforced in store.ts buyItem). The
+  // numbers themselves (FOX_GROW_STAGES, engine/config/fox.ts) are unchanged
+  // from the old thresholds, just spent instead of accrued.
+  ...FOX_GROW_STAGES.map(
+    (g): ShopItem => ({
+      id: g.id,
+      category: "fox" as const,
+      name: `Grow: ${g.name}`,
+      desc:
+        g.name === "Prime"
+          ? "Full grown. Its nose is never wrong."
+          : `Raise your fox to ${g.name} — bigger, and quicker to send out again.`,
+      price: g.price,
+      icon: "🦊",
+      rarity: g.name === "Prime" ? "epic" : g.name === "Adult" ? "rare" : "uncommon",
+      requires: g.requires ?? undefined,
+    })
+  ),
 ];
 
 export const CATEGORY_LABEL: Record<ShopCategory, string> = {
@@ -185,7 +213,8 @@ export const CATEGORY_LABEL: Record<ShopCategory, string> = {
   attachment: "Attachments",
   bomb: "Bombs",
   bag: "Bags",
+  fox: "Fox",
 };
 
 /** Supplies first: they're what you're here for on most visits. */
-export const CATEGORY_ORDER: ShopCategory[] = ["supply", "weapon", "attachment", "bomb", "bag"];
+export const CATEGORY_ORDER: ShopCategory[] = ["supply", "fox", "weapon", "attachment", "bomb", "bag"];

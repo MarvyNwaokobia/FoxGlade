@@ -1,11 +1,16 @@
 /**
- * Fox growth (DESIGN §2.5 / §11): the fox matures as you BANK loot — a persistent
- * raise-it loop that survives across runs. Growth is DERIVED from villeBanked (not
- * ticked), and it pays off in gameplay: a matured fox is visibly bigger AND its
- * sniff cooldown drops, so raising it is a real reason to bank treasure.
+ * Fox growth (DESIGN §2.5 / §11): a persistent raise-it loop that survives across
+ * runs. It pays off in gameplay: a matured fox is visibly bigger AND its sniff
+ * cooldown drops, so raising it is a real reason to keep playing.
  *
- * When the on-chain PetNFT lands, its growth stage replaces villeBanked as the
- * source here — the rest of the game reads foxGrowthFor() unchanged.
+ * Growth used to be DERIVED from lifetime VILLE banked — automatic, no choice
+ * involved. It's now something you deliberately BUY at the Shop (see
+ * FOX_GROW_STAGES below, spent from `owned` via the "fox_*" ids), same as a
+ * weapon or a bag: banking loot earns the VILLE, but growing the fox is its own
+ * decision, and it's the fox's, not the wallet's.
+ *
+ * When the on-chain PetNFT lands, its growth stage replaces `owned` as the
+ * source here — the rest of the game reads foxGrowthFor(stage) unchanged.
  */
 export interface FoxStage {
   stage: number; // 0..FOX_MAX_STAGE
@@ -23,22 +28,36 @@ export interface FoxStage {
   misreadChance: number;
 }
 
+/** Kit (stage 0) is free — where every fox starts. Every stage past it is a
+ *  Shop purchase, `id` matching a SHOP_ITEMS entry (config/shop.ts), gated on
+ *  owning the stage before it (store.ts buyItem enforces `requires`). */
 const TABLE: {
-  minBanked: number;
+  id: string | null;
+  growCost: number; // VILLE to buy INTO this stage from the one before it
   name: string;
   scale: number;
   sniffCooldownMult: number;
   misreadChance: number;
 }[] = [
-  { minBanked: 0, name: "Kit", scale: 0.6, sniffCooldownMult: 1.0, misreadChance: 0.45 },
-  { minBanked: 100, name: "Young", scale: 0.74, sniffCooldownMult: 0.82, misreadChance: 0.28 },
-  { minBanked: 300, name: "Adult", scale: 0.87, sniffCooldownMult: 0.66, misreadChance: 0.12 },
+  { id: null, growCost: 0, name: "Kit", scale: 0.6, sniffCooldownMult: 1.0, misreadChance: 0.45 },
+  { id: "fox_young", growCost: 100, name: "Young", scale: 0.74, sniffCooldownMult: 0.82, misreadChance: 0.28 },
+  { id: "fox_adult", growCost: 200, name: "Adult", scale: 0.87, sniffCooldownMult: 0.66, misreadChance: 0.12 },
   // Prime is never wrong. There has to be a top of this curve you can feel, and
   // "my fox is never wrong any more" is a better one than a slightly lower number.
-  { minBanked: 600, name: "Prime", scale: 1.0, sniffCooldownMult: 0.5, misreadChance: 0 },
+  { id: "fox_prime", growCost: 300, name: "Prime", scale: 1.0, sniffCooldownMult: 0.5, misreadChance: 0 },
 ];
 
 export const FOX_MAX_STAGE = TABLE.length - 1;
+
+/** The Shop-facing side of the table — what store.ts/shop.ts need to sell each
+ *  stage, without either of them reaching into fox.ts's internal TABLE shape. */
+export const FOX_GROW_STAGES: { id: string; name: string; price: number; requires: string | null }[] =
+  TABLE.filter((s): s is typeof TABLE[number] & { id: string } => s.id !== null).map((s, i, arr) => ({
+    id: s.id,
+    name: s.name,
+    price: s.growCost,
+    requires: i === 0 ? null : arr[i - 1].id,
+  }));
 
 /**
  * Fox BEHAVIOUR (Phase 3). The fox used to be a lerp to a fixed point beside the
@@ -131,10 +150,9 @@ export const FOX = {
   downTime: 18,
 } as const;
 
-/** The fox's current growth, derived from how much VILLE has been banked. */
-export function foxGrowthFor(villeBanked: number): FoxStage {
-  let idx = 0;
-  for (let i = 0; i < TABLE.length; i++) if (villeBanked >= TABLE[i].minBanked) idx = i;
+/** The fox's growth at a given stage index (clamped into range). */
+export function foxGrowthFor(stage: number): FoxStage {
+  const idx = Math.max(0, Math.min(FOX_MAX_STAGE, stage));
   const s = TABLE[idx];
   return {
     stage: idx,
@@ -145,8 +163,19 @@ export function foxGrowthFor(villeBanked: number): FoxStage {
   };
 }
 
-/** VILLE banked needed to reach the next stage (null if already at max). */
-export function foxNextThreshold(villeBanked: number): number | null {
-  for (const s of TABLE) if (villeBanked < s.minBanked) return s.minBanked;
-  return null;
+/** The fox's current stage, derived from which "fox_*" Shop items are owned. */
+export function foxStageOf(owned: string[]): number {
+  let stage = 0;
+  for (let i = 1; i < TABLE.length; i++) {
+    const id = TABLE[i].id;
+    if (id && owned.includes(id)) stage = i;
+  }
+  return stage;
+}
+
+/** The next stage up for sale — null once the fox is already Prime. */
+export function foxNextGrow(owned: string[]): { id: string; name: string; price: number } | null {
+  const stage = foxStageOf(owned);
+  const next = TABLE[stage + 1];
+  return next?.id ? { id: next.id, name: next.name, price: next.growCost } : null;
 }

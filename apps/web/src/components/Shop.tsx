@@ -120,6 +120,10 @@ export function Shop() {
     if (isEquipped(i)) return { label: "EQUIPPED", disabled: true, onClick: () => {} };
     if (isOwned(i) && i.gunId) return { label: "EQUIP", disabled: false, onClick: () => equipWeapon(i.gunId!) };
     if (isOwned(i)) return { label: "OWNED", disabled: true, onClick: () => {} };
+    if (i.requires && !owned.includes(i.requires)) {
+      const reqName = SHOP_ITEMS.find((x) => x.id === i.requires)?.name ?? "the stage before it";
+      return { label: `NEED ${reqName.toUpperCase()} FIRST`, disabled: true, onClick: () => {} };
+    }
     if (!canAfford(i)) return { label: `NEED ${i.price - villeBanked} MORE`, disabled: true, onClick: () => {} };
     const verb = i.category === "weapon" ? "SIGN & EQUIP" : "SIGN";
     return { label: `${verb} · ${i.price} VILLE`, disabled: false, onClick: () => setConfirmItem(i) };
@@ -189,6 +193,7 @@ export function Shop() {
                 // Can't afford it? Say so on the card, rather than making the player
                 // tap through to a dead Sign button to find out.
                 const short = !own && i.price > villeBanked ? i.price - villeBanked : 0;
+                const locked = !own && !!i.requires && !owned.includes(i.requires);
                 const carried = i.consumable ? stock(i) : null;
                 const rc = RARITY_COLOR[i.rarity];
                 return (
@@ -200,13 +205,15 @@ export function Shop() {
                       borderColor: selected ? GOLD : `${rc}45`,
                       background: `radial-gradient(120% 90% at 50% 0%, ${rc}14, rgba(255,255,255,0.03) 65%)`,
                       ...(selected ? styles.cardSelected : null),
-                      ...(short ? styles.cardUnaffordable : null),
+                      ...(short || locked ? styles.cardUnaffordable : null),
                     }}
                   >
                     {equipped ? (
                       <span style={styles.badgeEquipped}>EQUIPPED</span>
                     ) : own ? (
                       <span style={styles.badgeOwned}>OWNED</span>
+                    ) : locked ? (
+                      <span style={styles.badgeOwned}>LOCKED</span>
                     ) : i.consumable ? (
                       // Price AND what's already in your pack, so the decision ("do I
                       // need another?") is answerable from the card.
@@ -239,7 +246,7 @@ export function Shop() {
                         ⚔ {stats.damage.toFixed(2)}× · {Math.round(1 / stats.fireInterval)}/s
                       </span>
                     )}
-                    {short > 0 && <span style={styles.cardShort}>need {short} more</span>}
+                    {!locked && short > 0 && <span style={styles.cardShort}>need {short} more</span>}
                   </button>
                 );
               })}

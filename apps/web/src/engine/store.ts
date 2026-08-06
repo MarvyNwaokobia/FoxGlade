@@ -53,8 +53,10 @@ interface GameState {
 
   /** Loot on you (from claims, not yet banked) and your spendable bank balance.
       Placeholder for VilleToken until the chain is wired. Survives restarts.
-      `villeEarned` is the lifetime total banked — it only ever grows and drives the
-      fox — so spending in the market never shrinks your companion. */
+      `villeEarned` is the lifetime total banked — it only ever grows. The fox's
+      growth is a separate, deliberate Shop spend now (config/fox.ts) rather than
+      derived from this number, but it's still built the same way: a permanent
+      purchase, so spending elsewhere in the market never shrinks it back down. */
   villeCarrying: number;
   villeBanked: number;
   villeEarned: number;
@@ -373,6 +375,10 @@ export const useGame = create<GameState>((set, get) => {
       }
 
       if (s.owned.includes(id)) return s;
+      // Chained permanents (the fox's growth stages) can't be bought out of
+      // order — Adult needs Young owned first, same as the fox needed to be
+      // Young before it was Adult.
+      if (item.requires && !s.owned.includes(item.requires)) return s;
       const owned = [...s.owned, id];
       return {
         villeBanked: s.villeBanked - item.price,

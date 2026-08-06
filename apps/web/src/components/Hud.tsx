@@ -17,7 +17,7 @@ import { REST } from "@/engine/config/round";
 import { CHAPTERS, clockLabel, DAY } from "@/engine/config/day";
 import { WEAPON_STATS } from "@/engine/config/shop";
 import { FEEL } from "@/engine/config/feel";
-import { foxGrowthFor, foxNextThreshold } from "@/engine/config/fox";
+import { foxGrowthFor, foxNextGrow, foxStageOf } from "@/engine/config/fox";
 import { gameMode } from "@/engine/config/mode";
 import { thieves, MAX_THIEVES } from "@/engine/npc/thieves";
 import { isTouchDevice } from "@/engine/input/touch";
@@ -162,7 +162,7 @@ export function Hud() {
   const claimedRarity = useGame((s) => s.claimedRarity);
   const villeCarrying = useGame((s) => s.villeCarrying);
   const villeBanked = useGame((s) => s.villeBanked);
-  const villeEarned = useGame((s) => s.villeEarned);
+  const owned = useGame((s) => s.owned);
   const lockboxes = useGame((s) => s.lockboxes);
   const extraLives = useGame((s) => s.extraLives);
   const newGameNonce = useGame((s) => s.newGameNonce);
@@ -637,19 +637,24 @@ export function Hud() {
         {villeCarrying > 0 && <div style={styles.walletCarry}>◆ carrying {villeCarrying}, bank it</div>}
         {/* Growth stage is the fox's, and the fox IS the rank — so in a mode
             without one there is nothing here to report. */}
-        {gameMode().fox && (
-          <div style={styles.foxStage}>
-            🦊 {foxGrowthFor(villeEarned).name}
-            {/* Name the thing growth actually buys. "Bank 200 to grow" says
-                nothing about WHY you'd want to; its nose is the why.
-                On a phone this whole line ran nearly half the screen width, so
-                the threshold — the least urgent part — is dropped there. */}
-            <span style={styles.foxNext}>, {noseLabel(foxGrowthFor(villeEarned).misreadChance)}</span>
-            {!touchLayout && foxNextThreshold(villeEarned) !== null && (
-              <span style={styles.foxNext}>. Bank {foxNextThreshold(villeEarned)! - villeEarned} to grow</span>
-            )}
-          </div>
-        )}
+        {gameMode().fox && (() => {
+          const foxStage = foxStageOf(owned);
+          const growth = foxGrowthFor(foxStage);
+          const nextGrow = foxNextGrow(owned);
+          return (
+            <div style={styles.foxStage}>
+              🦊 {growth.name}
+              {/* Name the thing growth actually buys. "Grow it for 200 VILLE" says
+                  nothing about WHY you'd want to; its nose is the why.
+                  On a phone this whole line ran nearly half the screen width, so
+                  the price — the least urgent part — is dropped there. */}
+              <span style={styles.foxNext}>, {noseLabel(growth.misreadChance)}</span>
+              {!touchLayout && nextGrow && (
+                <span style={styles.foxNext}>. Grow it in the Market for {nextGrow.price} VILLE</span>
+              )}
+            </div>
+          );
+        })()}
         {/* The fox's status (cooldown / scouting / down), where the centre pill
             used to be but out of the way. */}
         {gameMode().fox && touchLayout && <div ref={sniffEl} style={styles.foxStatusTouch} />}

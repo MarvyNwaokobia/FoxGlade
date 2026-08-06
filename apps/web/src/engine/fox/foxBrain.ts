@@ -106,7 +106,7 @@ export function steerTowards(
  * It never knows it's wrong. It runs there, holds, and barks exactly the same —
  * which is the whole point, because that's what makes a Prime fox worth raising.
  */
-export function findScoutTarget(villeEarned: number): THREE.Vector3 | null {
+export function findScoutTarget(foxStage: number): THREE.Vector3 | null {
   const live = (i: number) => !runtime.hintStolen[i] && !runtime.hintClaimed[i];
   let realIdx = -1;
   const decoys: number[] = [];
@@ -117,7 +117,7 @@ export function findScoutTarget(villeEarned: number): THREE.Vector3 | null {
   }
   if (realIdx < 0) return null;
 
-  const growth = foxGrowthFor(villeEarned);
+  const growth = foxGrowthFor(foxStage);
   const familiar = spotFamiliarity(HINTS[realIdx].pos.x, HINTS[realIdx].pos.z);
   // Cloned, not the live HINTS Vector3: reseedHints() rewrites those objects IN
   // PLACE (a new board mid-chapter, or the very resolution this scout is about to

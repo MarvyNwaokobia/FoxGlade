@@ -16,7 +16,7 @@ beforeEach(forgetEverything);
 
 describe("the growth curve pays out in judgement", () => {
   it("gets steadily surer, and a Prime fox is never wrong", () => {
-    const stages = [0, 100, 300, 600].map(foxGrowthFor);
+    const stages = [0, 1, 2, 3].map(foxGrowthFor);
     for (let i = 1; i < stages.length; i++) {
       expect(stages[i].misreadChance).toBeLessThan(stages[i - 1].misreadChance);
     }

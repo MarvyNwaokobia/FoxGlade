@@ -9,7 +9,7 @@ import { runtime } from "@/engine/runtime";
 import { enemies, type Enemy } from "@/engine/combat/enemies";
 import { useGame } from "@/engine/store";
 import { audio } from "@/engine/audio/audio";
-import { FOX, foxGrowthFor } from "@/engine/config/fox";
+import { FOX, foxGrowthFor, foxStageOf } from "@/engine/config/fox";
 import { softShadowTexture } from "@/engine/world/softShadow";
 import { findPath } from "@/engine/world/navgrid";
 import { bearingTo, setLead } from "@/engine/world/leads";
@@ -149,13 +149,13 @@ export function FoxCompanion() {
       // "go find the treasure". One button that always does the sensible thing
       // beats two buttons the player has to choose between mid-fight.
       const threat = findAttackTarget();
-      const mult = foxGrowthFor(gs.villeEarned).sniffCooldownMult;
+      const mult = foxGrowthFor(foxStageOf(gs.owned)).sniffCooldownMult;
       if (threat) {
         attackTarget.current = threat;
         state.current = "attack";
         audio.play("foxGrowl");
       } else {
-        const t = findScoutTarget(gs.villeEarned);
+        const t = findScoutTarget(foxStageOf(gs.owned));
         if (!t) return;
         scoutTarget.current = t;
         scoutClock.current = 0;
@@ -198,8 +198,8 @@ export function FoxCompanion() {
     const active = gs.roundState === "playing" && !gs.isDead;
     pruneStagger();
 
-    // ── Growth (unchanged): the fox matures as you bank loot ──
-    const growth = foxGrowthFor(gs.villeEarned);
+    // ── Growth: the fox matures as you buy its growth stages in the Shop ──
+    const growth = foxGrowthFor(foxStageOf(gs.owned));
     foxScale.current += (growth.scale - foxScale.current) * Math.min(1, 3 * dt);
     if (inner.current) inner.current.scale.setScalar(foxScale.current);
     if (lastStage.current < 0) {
