@@ -17,7 +17,7 @@ import { REST } from "@/engine/config/round";
 import { CHAPTERS, clockLabel, DAY } from "@/engine/config/day";
 import { WEAPON_STATS } from "@/engine/config/shop";
 import { FEEL } from "@/engine/config/feel";
-import { foxGrowthFor, foxNextGrow, foxStageOf } from "@/engine/config/fox";
+import { foxGrowthFor, foxNextGrow, foxRustNow, foxStageOf } from "@/engine/config/fox";
 import { gameMode } from "@/engine/config/mode";
 import { thieves, MAX_THIEVES } from "@/engine/npc/thieves";
 import { isTouchDevice } from "@/engine/input/touch";
@@ -163,6 +163,8 @@ export function Hud() {
   const villeCarrying = useGame((s) => s.villeCarrying);
   const villeBanked = useGame((s) => s.villeBanked);
   const owned = useGame((s) => s.owned);
+  const foxHoursAway = useGame((s) => s.foxHoursAway);
+  const foxRustBanksLeft = useGame((s) => s.foxRustBanksLeft);
   const lockboxes = useGame((s) => s.lockboxes);
   const extraLives = useGame((s) => s.extraLives);
   const newGameNonce = useGame((s) => s.newGameNonce);
@@ -641,6 +643,8 @@ export function Hud() {
           const foxStage = foxStageOf(owned);
           const growth = foxGrowthFor(foxStage);
           const nextGrow = foxNextGrow(owned);
+          const rust = foxRustNow(foxHoursAway, foxRustBanksLeft);
+          const misread = Math.min(0.95, growth.misreadChance + rust.misreadAdd);
           return (
             <div style={styles.foxStage}>
               🦊 {growth.name}
@@ -648,7 +652,17 @@ export function Hud() {
                   nothing about WHY you'd want to; its nose is the why.
                   On a phone this whole line ran nearly half the screen width, so
                   the price — the least urgent part — is dropped there. */}
-              <span style={styles.foxNext}>, {noseLabel(growth.misreadChance)}</span>
+              <span style={styles.foxNext}>, {noseLabel(misread)}</span>
+              {/* Rust is a real, felt penalty (config/fox.ts FOX_RUST) — it must
+                  say so, or a slower, dumber fox just reads as the game being
+                  broken. Naming the cause AND the fix in one line is what makes
+                  a punishment feel like a mechanic. */}
+              {rust.speedMult < 1 && (
+                <span style={styles.foxNext}>
+                  {" "}
+                  · rusty from time away — bank {foxRustBanksLeft} more to shake it off
+                </span>
+              )}
               {!touchLayout && nextGrow && (
                 <span style={styles.foxNext}>. Grow it in the Market for {nextGrow.price} VILLE</span>
               )}

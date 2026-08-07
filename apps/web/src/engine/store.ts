@@ -16,9 +16,14 @@ import {
 } from "@/engine/config/shop";
 import { clearSave, loadSave, writeSave, NEW_SAVE } from "@/engine/save";
 import { claimOnChain } from "@/engine/chain/relay";
+import { FOX_RUST, foxRustFor } from "@/engine/config/fox";
 
 /** Read once at module load — the state below is seeded from it. */
 const SAVE = loadSave();
+
+/** Real hours you were away before THIS session started, frozen for its
+ *  duration — see save.ts `lastPlayedAt` and config/fox.ts FOX_RUST. */
+const HOURS_AWAY = Math.max(0, (Date.now() - SAVE.lastPlayedAt) / 3_600_000);
 
 /**
  * Reactive game state (as opposed to per-frame `runtime` data). Kept small — only
@@ -61,6 +66,13 @@ interface GameState {
   villeBanked: number;
   villeEarned: number;
   depositLoot: () => void;
+
+  /** Real hours you were away before this session started (config/fox.ts
+   *  FOX_RUST) — frozen for the session, not the in-game clock. */
+  foxHoursAway: number;
+  /** Secured bank runs still needed this session before the fox's rust (see
+   *  FOX_RUST) is fully worn off. 0 if it came back home rested. */
+  foxRustBanksLeft: number;
 
   /** Marketplace: items you own, the gun you have equipped, and the shop overlay. */
   owned: string[];
@@ -267,6 +279,8 @@ export const useGame = create<GameState>((set, get) => {
   villeCarrying: 0,
   villeBanked: SAVE.villeBanked,
   villeEarned: SAVE.villeEarned,
+  foxHoursAway: HOURS_AWAY,
+  foxRustBanksLeft: foxRustFor(HOURS_AWAY).misreadAdd > 0 ? FOX_RUST.recoverAfterBanks : 0,
   depositLoot: () => {
     const before = get();
     if (before.villeCarrying <= 0) return;
@@ -291,7 +305,14 @@ export const useGame = create<GameState>((set, get) => {
       villeEarned: s.villeEarned + s.villeCarrying, // lifetime — drives the fox
       villeCarrying: 0,
       ...(secured
-        ? { treasuresBanked: s.treasuresBanked + 1, treasuresResolved: resolved, treasureClaimed: false, claimedRarity: null }
+        ? {
+            treasuresBanked: s.treasuresBanked + 1,
+            treasuresResolved: resolved,
+            treasureClaimed: false,
+            claimedRarity: null,
+            // Coming home to a bank run is what wears rust off — see FOX_RUST.
+            foxRustBanksLeft: Math.max(0, s.foxRustBanksLeft - 1),
+          }
         : {}),
     }));
     // Today's quota isn't full yet — put the next treasure on the board right
@@ -692,6 +713,9 @@ export const useGame = create<GameState>((set, get) => {
       villeCarrying: 0,
       villeBanked: NEW_SAVE.villeBanked,
       villeEarned: NEW_SAVE.villeEarned,
+      // A fresh save has no history to be rusty from.
+      foxHoursAway: 0,
+      foxRustBanksLeft: 0,
       owned: [...NEW_SAVE.owned],
       equippedWeapon: NEW_SAVE.equippedWeapon,
       roundState: "playing",

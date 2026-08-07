@@ -9,7 +9,7 @@ import { runtime } from "@/engine/runtime";
 import { enemies, type Enemy } from "@/engine/combat/enemies";
 import { useGame } from "@/engine/store";
 import { audio } from "@/engine/audio/audio";
-import { FOX, foxGrowthFor, foxStageOf } from "@/engine/config/fox";
+import { FOX, foxGrowthFor, foxRustNow, foxStageOf } from "@/engine/config/fox";
 import { softShadowTexture } from "@/engine/world/softShadow";
 import { findPath } from "@/engine/world/navgrid";
 import { bearingTo, setLead } from "@/engine/world/leads";
@@ -149,13 +149,19 @@ export function FoxCompanion() {
       // "go find the treasure". One button that always does the sensible thing
       // beats two buttons the player has to choose between mid-fight.
       const threat = findAttackTarget();
-      const mult = foxGrowthFor(foxStageOf(gs.owned)).sniffCooldownMult;
+      const growth = foxGrowthFor(foxStageOf(gs.owned));
+      const rust = foxRustNow(gs.foxHoursAway, gs.foxRustBanksLeft);
+      const mult = growth.sniffCooldownMult * rust.cooldownMult;
       if (threat) {
         attackTarget.current = threat;
         state.current = "attack";
         audio.play("foxGrowl");
       } else {
-        const t = findScoutTarget(foxStageOf(gs.owned));
+        // Rust dulls its nose the same way a young fox's judgement is dull —
+        // stacked onto growth's own misreadChance, then capped short of certain
+        // failure (an always-wrong fox isn't tension, it's a broken button).
+        const misread = Math.min(0.95, growth.misreadChance + rust.misreadAdd);
+        const t = findScoutTarget(misread);
         if (!t) return;
         scoutTarget.current = t;
         scoutClock.current = 0;
@@ -200,6 +206,9 @@ export function FoxCompanion() {
 
     // ── Growth: the fox matures as you buy its growth stages in the Shop ──
     const growth = foxGrowthFor(foxStageOf(gs.owned));
+    // ── Rust: a temporary penalty from being away too long, worn off by play
+    // (see config/fox.ts FOX_RUST) — never touches growth itself. ──
+    const rust = foxRustNow(gs.foxHoursAway, gs.foxRustBanksLeft);
     foxScale.current += (growth.scale - foxScale.current) * Math.min(1, 3 * dt);
     if (inner.current) inner.current.scale.setScalar(foxScale.current);
     if (lastStage.current < 0) {
@@ -239,7 +248,7 @@ export function FoxCompanion() {
           path.current.length = 0;
           state.current = "heel";
         } else {
-          moveSpeed = travelTo(_enemyPos, FOX.attackSpeed, dt);
+          moveSpeed = travelTo(_enemyPos, FOX.attackSpeed * rust.speedMult, dt);
         }
       }
     } else if (state.current === "scout") {
@@ -287,7 +296,7 @@ export function FoxCompanion() {
             state.current = "heel";
           }
         } else {
-          moveSpeed = travelTo(t, FOX.scoutSpeed, dt);
+          moveSpeed = travelTo(t, FOX.scoutSpeed * rust.speedMult, dt);
         }
       }
     } else {
@@ -345,7 +354,7 @@ export function FoxCompanion() {
           wanderTarget.current = null;
           idleClock.current = FOX.idleWanderAfter * 0.35; // pause before the next
         } else {
-          moveSpeed = steerTowards(foxPos.current, wanderTarget.current, FOX.walkSpeed, dt);
+          moveSpeed = steerTowards(foxPos.current, wanderTarget.current, FOX.walkSpeed * rust.speedMult, dt);
         }
       } else {
         wanderTarget.current = null;
@@ -357,9 +366,10 @@ export function FoxCompanion() {
           // has to be fast enough for the worst case, which means it's far too
           // fast for the common one — the fox spent every ordinary moment moving
           // at emergency pace. Now it only hurries as much as it has to.
-          const spd = sprint
-            ? Math.min(FOX.chaseSpeed, FOX.runSpeed * (1 + (gap - FOX.sprintRadius) * FOX.chaseGain))
-            : FOX.walkSpeed;
+          const spd =
+            (sprint
+              ? Math.min(FOX.chaseSpeed, FOX.runSpeed * (1 + (gap - FOX.sprintRadius) * FOX.chaseGain))
+              : FOX.walkSpeed) * rust.speedMult;
           // Close by, steer directly (cheap, and it keeps the follow supple).
           // Far off — round a building, say — plan a route instead, or it gets
           // stuck on the far side of a wall exactly like the scout used to.

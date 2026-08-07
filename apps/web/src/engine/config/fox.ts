@@ -179,3 +179,48 @@ export function foxNextGrow(owned: string[]): { id: string; name: string; price:
   const next = TABLE[stage + 1];
   return next?.id ? { id: next.id, name: next.name, price: next.growCost } : null;
 }
+
+/**
+ * Rust: what a fox left alone too long IN THE REAL WORLD costs you.
+ *
+ * This is deliberately NOT a rollback of growth — a bought stage stays bought,
+ * same as a gun doesn't un-equip itself because you didn't log in. Punishing a
+ * purchase is just a way to make players distrust ever buying anything again.
+ * Instead it's a temporary layer on top: a rusty fox reads its nose worse, moves
+ * slower, and needs longer between commands — and it visibly wears off as you
+ * actually play with it again (bank a few treasures), the same shape as the
+ * growth loop itself: neglect it and it costs you; show up and it comes back.
+ */
+export const FOX_RUST = {
+  /** Real hours away before the mild penalty kicks in. */
+  mildAfterHours: 24,
+  /** Real hours away before the heavy penalty replaces the mild one. */
+  heavyAfterHours: 72,
+  mild: { misreadAdd: 0.1, speedMult: 0.9, cooldownMult: 1.15 },
+  heavy: { misreadAdd: 0.2, speedMult: 0.8, cooldownMult: 1.3 },
+  /** Treasures banked THIS session before rust is fully worn off. Counts down
+   *  regardless of which level it started at — a bad week and a bad month wear
+   *  off at the same rate once you're actually back and playing. */
+  recoverAfterBanks: 3,
+} as const;
+
+export interface FoxRust {
+  misreadAdd: number;
+  speedMult: number;
+  cooldownMult: number;
+}
+
+const NO_RUST: FoxRust = { misreadAdd: 0, speedMult: 1, cooldownMult: 1 };
+
+/** The rust a fox has coming back from `hoursAway` real hours untouched. */
+export function foxRustFor(hoursAway: number): FoxRust {
+  if (hoursAway >= FOX_RUST.heavyAfterHours) return FOX_RUST.heavy;
+  if (hoursAway >= FOX_RUST.mildAfterHours) return FOX_RUST.mild;
+  return NO_RUST;
+}
+
+/** The rust actually in effect right now: the severity it started the session
+ *  at, unless enough bank runs have already worn it off (`banksLeft <= 0`). */
+export function foxRustNow(hoursAway: number, banksLeft: number): FoxRust {
+  return banksLeft > 0 ? foxRustFor(hoursAway) : NO_RUST;
+}

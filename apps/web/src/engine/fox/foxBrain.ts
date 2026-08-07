@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { FOX, foxGrowthFor } from "@/engine/config/fox";
+import { FOX } from "@/engine/config/fox";
 import { pickWrongSlot, scoutIsCorrect, spotFamiliarity } from "./foxMemory";
 import { runtime } from "@/engine/runtime";
 import { enemies, type Enemy } from "@/engine/combat/enemies";
@@ -105,8 +105,12 @@ export function steerTowards(
  *
  * It never knows it's wrong. It runs there, holds, and barks exactly the same —
  * which is the whole point, because that's what makes a Prime fox worth raising.
+ *
+ * `misreadChance` is the caller's job to work out (growth stage, plus rust from
+ * time away — see FoxCompanion.tsx) — this function only needs the final number,
+ * not where it came from.
  */
-export function findScoutTarget(foxStage: number): THREE.Vector3 | null {
+export function findScoutTarget(misreadChance: number): THREE.Vector3 | null {
   const live = (i: number) => !runtime.hintStolen[i] && !runtime.hintClaimed[i];
   let realIdx = -1;
   const decoys: number[] = [];
@@ -117,13 +121,12 @@ export function findScoutTarget(foxStage: number): THREE.Vector3 | null {
   }
   if (realIdx < 0) return null;
 
-  const growth = foxGrowthFor(foxStage);
   const familiar = spotFamiliarity(HINTS[realIdx].pos.x, HINTS[realIdx].pos.z);
   // Cloned, not the live HINTS Vector3: reseedHints() rewrites those objects IN
   // PLACE (a new board mid-chapter, or the very resolution this scout is about to
   // cause), so holding the reference would let the fox's destination teleport out
   // from under it mid-run and send it chasing the new board forever.
-  if (scoutIsCorrect(growth.misreadChance, familiar)) return HINTS[realIdx].pos.clone();
+  if (scoutIsCorrect(misreadChance, familiar)) return HINTS[realIdx].pos.clone();
 
   const wrong = pickWrongSlot(decoys);
   // With no decoy left to be confused by, an unsure fox just gets it right.

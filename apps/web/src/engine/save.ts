@@ -57,6 +57,12 @@ export interface SaveData {
   villeEarned: number;
   owned: string[];
   equippedWeapon: WeaponId;
+  /** Date.now() the save was last written — i.e. the last time you actually
+   *  played. Real-world (not in-game) time; it's what the fox's rust (DESIGN
+   *  §2.5, engine/config/fox.ts FOX_RUST) is measured against. A brand-new save
+   *  gets "now" so a fox that's never existed isn't rusty from the day the
+   *  village itself was built. */
+  lastPlayedAt: number;
 }
 
 export const NEW_SAVE: SaveData = {
@@ -66,6 +72,7 @@ export const NEW_SAVE: SaveData = {
   villeEarned: 0,
   owned: ["w_rifle"], // the starter carbine is yours from the first morning
   equippedWeapon: DEFAULT_WEAPON,
+  lastPlayedAt: Date.now(),
 };
 
 /**
@@ -92,16 +99,22 @@ export function loadSave(): SaveData {
         ? [...new Set([...p.owned, "w_rifle"])]
         : [...NEW_SAVE.owned],
       equippedWeapon: (typeof p.equippedWeapon === "string" ? p.equippedWeapon : DEFAULT_WEAPON) as WeaponId,
+      // Never in the future (a clock-skewed or hand-edited save shouldn't be able
+      // to buy itself out of rust), and never missing (older saves predate this
+      // field — treat them as "just played" rather than maximally rusty).
+      lastPlayedAt: Math.min(num(p.lastPlayedAt, Date.now()), Date.now()),
     };
   } catch {
     return { ...NEW_SAVE };
   }
 }
 
-/** Write the save. Silently does nothing if storage is unavailable or full. */
-export function writeSave(data: Omit<SaveData, "version">): void {
+/** Write the save. Silently does nothing if storage is unavailable or full.
+ *  `lastPlayedAt` is stamped here, always "now" — callers don't set it, because
+ *  the moment you save IS the moment you were last actually playing. */
+export function writeSave(data: Omit<SaveData, "version" | "lastPlayedAt">): void {
   try {
-    backend().setItem(KEY, JSON.stringify({ version: VERSION, ...data }));
+    backend().setItem(KEY, JSON.stringify({ version: VERSION, lastPlayedAt: Date.now(), ...data }));
   } catch {
     /* private browsing, quota, or no storage at all. Play on unsaved. */
   }
