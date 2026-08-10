@@ -99,10 +99,15 @@ export const FEEL = {
   cameraMinHeight: 0.7, // camera never dips below this, so you can't see under the world
   // Must stay BELOW cameraDistance or the collision solve pushes the camera
   // outward into the wall it's meant to be avoiding.
-  // At 0.5 a wall swings him 93% of the way to the frame edge; 0.6 keeps that to
-  // ~82%, which reads as the camera crowding him rather than throwing him off
-  // screen. Below the fade band either way, so he thins out as it happens.
-  cameraMinDistance: 0.6, // closest the camera pulls in on collision
+  // How close the boom may be pulled by a wall.
+  //
+  // 0.6 was far too eager. `raycastBoxes` returns a hit for ANYTHING within the
+  // boom's length, and in a village street there is almost always something
+  // within 1.7m behind you — so the camera spent most of its time slammed to the
+  // floor, which is both why the character filled the frame and why he was
+  // permanently see-through (the fade band below starts at 0.85). At 0.95 the
+  // lens still gets out of the wall's way without ending up inside his back.
+  cameraMinDistance: 0.95, // closest the camera pulls in on collision
 
   // --- Aim-down-sights (hold right-mouse / AIM on touch) ---
   // Replaces the old V first-person toggle, which put the camera at the eyes with
@@ -120,13 +125,17 @@ export const FEEL = {
   adsLerp: 14, // how fast the rig eases between hip and aim
   // Instead of hard-hiding the character when the camera is close (which read as
   // "vanishing"), fade him out: fully visible past fadeStart, gone by fadeEnd.
-  // Retuned for the shoulder cam. The lens now rests ~1.25 m from the head at
-  // hip and ~0.88 m at ADS; at the old fadeStart of 1.5 the character would have
-  // been permanently ~70% transparent, because the rig's normal resting distance
-  // had moved inside the fade band. He's solid at both poses now, and only
-  // starts to go when a wall or a doorway genuinely jams the camera closer.
-  cameraFadeStart: 0.85, // distance (m) below which the character starts fading
-  cameraFadeEnd: 0.4, // distance (m) at which he's fully transparent (true near-first-person indoors)
+  // The fade is a LAST RESORT, not a normal state.
+  //
+  // It kept firing in ordinary play: with the pull-in floor at 0.6m the lens sat
+  // ~0.7m from the head down any tight street, which this band read as 67%
+  // opaque — so the character was see-through nearly all the time, which is not
+  // a fade, it's a ghost. The band now sits entirely BELOW the pull-in floor
+  // (0.95m → ~1.03m lens-to-head), so at every distance the camera can actually
+  // reach he is solid. It only engages if something ever forces the lens further
+  // in than the floor allows, which is exactly what it was for.
+  cameraFadeStart: 0.72, // distance (m) below which the character starts fading
+  cameraFadeEnd: 0.32, // distance (m) at which he's fully transparent
   cameraCollisionBuffer: 0.35, // gap kept in front of a wall the camera pulls up to
 
   // --- Damage feedback (screen shake + directional stagger) ---

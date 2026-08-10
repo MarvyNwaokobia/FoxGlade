@@ -21,23 +21,31 @@ const LOOK_SENS = 0.0055; // rad per screen px
 const STICK_ZONE = 0.44;
 
 /**
- * Put a button on the thumb's arc.
+ * Place a round control at a fixed offset from a bottom corner.
  *
- * `radius` is the reach from the corner the thumb pivots at; `angleDeg` sweeps
- * from 0 (straight along the bottom edge) to 90 (straight up the side). The
- * button is centred on that point, so its own size doesn't shift the arc.
+ * This replaced a geometric arc. Putting every button on one radius sounds fair
+ * — equal reach for all of them — and in practice means nothing is where the
+ * thumb already is. A shooter's pad is not a curve: one large primary under the
+ * thumb in the corner, the verbs you press mid-fight in a row beside it, and the
+ * occasional ones stacked up the edge, reachable but never underfoot.
+ *
+ * Offsets run from the screen edge to the button's own edge, not to its centre,
+ * so a row of different-sized buttons still lines up along the bottom — which is
+ * what the eye reads as "these belong together".
  */
-function arcAt(side: "left" | "right", radius: number, angleDeg: number): React.CSSProperties {
-  const a = (angleDeg * Math.PI) / 180;
+function at(side: "left" | "right", x: number, y: number, size: number): React.CSSProperties {
   return {
     position: "absolute",
-    [side]: Math.cos(a) * radius,
-    bottom: Math.sin(a) * radius,
-    transform: "translate(" + (side === "left" ? "-50%" : "50%") + ", 50%)",
+    [side]: `calc(env(safe-area-inset-${side}, 0px) + ${x}px)`,
+    bottom: `calc(env(safe-area-inset-bottom, 0px) + ${y}px)`,
+    width: size,
+    height: size,
   };
 }
-/** Height (px) reserved at the bottom-left for the verb buttons + safe area. */
-const VERB_ROW_H = 150;
+/** How far up the left edge the FOX button's underside sits (px from the bottom).
+ *  The floating stick's ring is kept below this so it can't be drawn over the one
+ *  button on that side. */
+const LEFT_BTN_BOTTOM = 158;
 
 /**
  * On-screen touch controls, rendered only on touch devices.
@@ -64,6 +72,12 @@ export function MobileControls() {
   const eBtn = useRef<HTMLButtonElement>(null); // context label: GRAB / BANK / CLAIM
   const knob = useRef<HTMLDivElement>(null);
   const joyRing = useRef<HTMLDivElement>(null); // follows the thumb (floating stick)
+  // The stick's resting HOME. A floating stick beats a fixed pad to play with,
+  // but it gives a first-time player nothing to aim at — the left half of the
+  // screen is simply blank until you happen to touch it. This is the affordance
+  // a fixed pad has, without giving up the floating behaviour: it shows where to
+  // start, and gets out of the way the moment the live ring appears.
+  const joyHome = useRef<HTMLDivElement>(null);
   const joyId = useRef<number | null>(null);
   const joyCenter = useRef({ x: 0, y: 0 });
   const lookId = useRef<number | null>(null);
@@ -155,7 +169,9 @@ export function MobileControls() {
     // them and you could no longer read the button you were about to press.
     // Clamping only the ring's ORIGIN (not the touch centre) means the stick
     // still tracks your actual thumb; it just doesn't render up in the verbs.
-    const ringY = Math.min(e.clientY, window.innerHeight - VERB_ROW_H - JOY_R);
+    // Clamping only the ring's ORIGIN (never the touch centre) means the stick
+    // still tracks your actual thumb; the drawing just doesn't ride up over FOX.
+    const ringY = Math.max(e.clientY, window.innerHeight - LEFT_BTN_BOTTOM + JOY_R);
     joyCenter.current = { x: e.clientX, y: e.clientY };
     const ring = joyRing.current;
     if (ring) {
@@ -163,6 +179,9 @@ export function MobileControls() {
       ring.style.top = `${ringY - JOY_R}px`;
       ring.style.opacity = "1";
     }
+    // Hand over from the resting ring to the live one — two rings on screen at
+    // once would read as two sticks.
+    if (joyHome.current) joyHome.current.style.opacity = "0";
     moveJoy(e.clientX, e.clientY);
   };
   const onJoyMove = (e: React.PointerEvent) => {
@@ -175,8 +194,10 @@ export function MobileControls() {
     touch.moveX = touch.moveY = 0;
     touch.run = false;
     if (knob.current) knob.current.style.transform = "translate(0px, 0px)";
-    // Fade the ring out rather than leaving a dot where your thumb used to be.
+    // Fade the ring out rather than leaving a dot where your thumb used to be,
+    // and bring the resting ring back so there's somewhere to aim for next time.
     if (joyRing.current) joyRing.current.style.opacity = "0";
+    if (joyHome.current) joyHome.current.style.opacity = "1";
   };
   function moveJoy(px: number, py: number) {
     let dx = (px - joyCenter.current.x) / JOY_R;
@@ -277,70 +298,66 @@ export function MobileControls() {
         <div ref={knob} style={styles.joyKnob} />
       </div>
 
-      {/* ── Right thumb: an ARC, not a row ──
-          A thumb doesn't travel in straight lines. It pivots at the corner of the
-          phone and sweeps an arc, so buttons laid out in a row or a column are
-          each a different reach — the far one needs a whole hand shift. These sit
-          ON that arc, at a constant radius from the corner the thumb roots at,
-          which also frees the middle of the screen because the cluster hugs the
-          corner instead of marching inward.
-          FIRE takes the inner radius (shortest, most-used reach); the two verbs
-          ride a wider arc either side of it. */}
-      <div style={styles.arcRight}>
-        <button
-          style={{ ...styles.btn, ...styles.fire, ...arcAt("right", 104, 40) }}
-          {...hold((v) => (touch.fire = v))}
-        >
-          FIRE
-        </button>
-        {/* Hold to aim, like the desktop right-mouse. */}
-        <button style={{ ...styles.btn, ...arcAt("right", 178, 72) }} {...holdKey("KeyV")}>
-          AIM
-        </button>
-        <button style={{ ...styles.btn, ...arcAt("right", 182, 16) }} {...bomb}>
-          BOMB
-        </button>
-      </div>
+      {/* ── The right thumb ──
+          Laid out like a shooter's pad rather than a geometric curve: one large
+          primary under the thumb in the corner, the two verbs you press mid-fight
+          in a row beside it, and the occasional ones stacked up the edge where
+          they're reachable but never in the way. The previous arc put everything
+          at the same reach, which sounds fair and in practice means nothing is
+          where your thumb already is. */}
+      <button style={{ ...styles.btnRound, ...styles.fire, ...at("right", 18, 18, 90) }} {...hold((v) => (touch.fire = v))}>
+        FIRE
+      </button>
 
-      {/* ── Left thumb: the mirror arc ──
-          The contextual verb takes the inner reach because it is the one you
-          press under pressure (BANK / GRAB / ROLL / VAULT). JUMP is no longer a
-          button of its own — it's the same contextual key. */}
-      <div style={styles.arcLeft}>
-        {/* A real press-and-release, not a tap: VAULT and ROLL ride on Space, and
-            a keydown/keyup fired in the same microsecond is gone before the next
-            frame ever samples it. */}
-        <button
-          ref={eBtn}
-          style={{ ...styles.btnSm, ...styles.action, ...arcAt("left", 100, 42) }}
-          onPointerDown={(e) => {
-            e.stopPropagation();
-            e.currentTarget.setPointerCapture(e.pointerId);
-            heldAction.current = actionKey.current;
-            key(heldAction.current, "keydown");
-          }}
-          onPointerUp={(e) => {
-            e.stopPropagation();
-            if (heldAction.current) key(heldAction.current, "keyup");
-            heldAction.current = null;
-          }}
-          onPointerCancel={() => {
-            if (heldAction.current) key(heldAction.current, "keyup");
-            heldAction.current = null;
-          }}
-        >
-          JUMP
+      {/* The contextual verb sits closest to FIRE because it's the one you press
+          under pressure — BANK, GRAB, ROLL, VAULT are all the same key. */}
+      <button
+        ref={eBtn}
+        style={{ ...styles.btnRound, ...styles.action, ...at("right", 118, 20, 66) }}
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          e.currentTarget.setPointerCapture(e.pointerId);
+          heldAction.current = actionKey.current;
+          key(heldAction.current, "keydown");
+        }}
+        onPointerUp={(e) => {
+          e.stopPropagation();
+          if (heldAction.current) key(heldAction.current, "keyup");
+          heldAction.current = null;
+        }}
+        onPointerCancel={() => {
+          if (heldAction.current) key(heldAction.current, "keyup");
+          heldAction.current = null;
+        }}
+      >
+        JUMP
+      </button>
+
+      {/* Hold to aim, like the desktop right-mouse. */}
+      <button style={{ ...styles.btnRound, ...at("right", 194, 20, 66) }} {...holdKey("KeyV")}>
+        AIM
+      </button>
+
+      {/* Up the right edge: used, but never mid-burst. Kept clear of the minimap. */}
+      <button style={{ ...styles.btnRound, ...styles.btnSmall, ...at("right", 30, 116, 56) }} {...bomb}>
+        BOMB
+      </button>
+      <button style={{ ...styles.btnRound, ...styles.btnSmall, ...at("right", 30, 176, 56) }} {...tap("KeyC")}>
+        CROUCH
+      </button>
+
+      {/* ── The left thumb ──
+          Nothing but the stick and the companion. The stick is still FLOATING —
+          it spawns under wherever the thumb lands, which beats a fixed pad — but
+          it now has a visible home ring so there is something to aim for on a
+          first play, which is what the fixed-pad layouts get right. */}
+      <div ref={joyHome} style={styles.joyHome} />
+      {/* Nighthaul has no companion, so the button would command nothing. */}
+      {gameMode().fox && (
+        <button style={{ ...styles.btnRound, ...styles.btnSmall, ...at("left", 34, 158, 56) }} {...tap("KeyQ")}>
+          FOX
         </button>
-        {/* Nighthaul has no companion, so the button would command nothing. */}
-        {gameMode().fox && (
-          <button style={{ ...styles.btnSm, ...arcAt("left", 172, 74) }} {...tap("KeyQ")}>
-            FOX
-          </button>
-        )}
-        <button style={{ ...styles.btnSm, ...arcAt("left", 176, 14) }} {...tap("KeyC")}>
-          CROUCH
-        </button>
-      </div>
+      )}
 
       {/* Contextual respawn / restart */}
       {isDead && (
@@ -428,29 +445,35 @@ const styles: Record<string, React.CSSProperties> = {
     border: "1.5px solid rgba(255,255,255,0.5)",
     pointerEvents: "none",
   },
-  // Both clusters are anchored AT the bottom corner and lowered — the buttons
-  // used to start 92px up, well into the frame, which pushed the whole cluster
-  // toward the middle of the screen. The arc rises away from the corner on its
-  // own, so the anchor can sit much lower without anything colliding with the
-  // centred HUD strip.
-  arcRight: {
-    position: "absolute",
-    right: "calc(env(safe-area-inset-right, 0px) + 6px)",
-    bottom: "calc(env(safe-area-inset-bottom, 0px) + 10px)",
-    width: 0,
-    height: 0,
+  /** Every control on the pad is a circle. One shape is one language, and a
+   *  circle is the shape a thumb actually lands on — a rounded rectangle has
+   *  corners you keep missing. Size comes from `at()`, so these carry no
+   *  dimensions of their own. */
+  btnRound: { ...btnBase, borderRadius: 999, fontSize: 12, padding: 0 },
+  btnSmall: { fontSize: 11 },
+  /** The contextual verb. Its colour is set live, because its meaning changes. */
+  action: { fontSize: 12 },
+  /** FIRE. The one control that must be findable without looking, so it's the
+   *  only red thing on the pad and the only one this size. */
+  fire: {
+    fontSize: 15,
+    fontWeight: 700,
+    background: "rgba(178,59,59,0.55)",
+    borderColor: "rgba(255,255,255,0.55)",
   },
-  arcLeft: {
+  /** Where the stick rests before you touch it (see the joyHome ref). */
+  joyHome: {
     position: "absolute",
-    left: "calc(env(safe-area-inset-left, 0px) + 6px)",
-    bottom: "calc(env(safe-area-inset-bottom, 0px) + 10px)",
-    width: 0,
-    height: 0,
+    left: "calc(env(safe-area-inset-left, 0px) + 30px)",
+    bottom: "calc(env(safe-area-inset-bottom, 0px) + 26px)",
+    width: JOY_R * 2,
+    height: JOY_R * 2,
+    borderRadius: 999,
+    border: "2px dashed rgba(255,255,255,0.28)",
+    background: "rgba(20,20,24,0.2)",
+    pointerEvents: "none",
+    transition: "opacity 0.15s ease",
   },
-  /** The contextual verb: gold, because it's the one that changes meaning. */
-  action: { width: 74, height: 56, fontSize: 12 },
-  btn: { ...btnBase, width: 78, height: 58, fontSize: 13 },
-  btnSm: { ...btnBase, width: 62, height: 46, fontSize: 11 },
   center: {
     ...btnBase,
     position: "absolute",

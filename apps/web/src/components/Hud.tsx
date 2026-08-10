@@ -694,18 +694,26 @@ export function Hud() {
       {/* Mute toggle, bottom-right (the one interactive HUD element) */}
       <button
         type="button"
-        // pointerdown, not click. The touch overlay calls preventDefault on its
-        // zones and the browser can swallow the synthesised click that follows a
-        // tap; acting on the press itself makes the button respond the instant
-        // it's touched, which is also what every other control here does.
-        onPointerDown={(e) => {
-          e.stopPropagation();
+        // pointerdown, not click: the touch zones preventDefault, and the
+        // synthesised click after a tap can be swallowed.
+        //
+        // NOTE there is deliberately no stopPropagation here. Browsers hold the
+        // AudioContext suspended until a user gesture, and the resume is bound to
+        // a `pointerdown` listener on WINDOW (see Game.tsx). Stopping propagation
+        // meant that if the speaker was the first thing you touched, the context
+        // never resumed — you'd unmute a graph that was still suspended and hear
+        // nothing at all. Unlock explicitly too, so this button can always turn
+        // the sound back ON rather than only off.
+        onPointerDown={() => {
+          audio.unlock();
           audio.toggleMute();
         }}
         style={{
           ...styles.muteBtn,
           ...(touchLayout ? styles.muteBtnTouch : null),
-          opacity: muted ? 0.6 : 1,
+          opacity: muted ? 0.75 : 1,
+          color: muted ? "rgba(232,238,242,0.5)" : "#f2c14e",
+          borderColor: muted ? "rgba(232,238,242,0.25)" : "rgba(242,193,78,0.75)",
         }}
         title="Mute / unmute (M)"
       >
