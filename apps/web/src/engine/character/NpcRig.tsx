@@ -98,6 +98,26 @@ const MODEL_PATHS: Record<NpcModelId, string> = {
 
 // Our FBX→GLB conversions carry the ~90° Z-up→Y-up root-pitch offset the mixer
 // clips don't account for (same as the player rig) — cancel it each frame.
+// Aim traverse for armed NPCs — the same treatment the player rig gets.
+//
+// Once the weapon is socketed to the HAND (see GunMesh.handGunWorldMatrix) the
+// barrel points wherever the animation clip happens to leave it. For the player
+// the spine is turned onto the aim so the held gun tracks the crosshair; without
+// the same thing here, an armed NPC stands with its rifle at some idle angle
+// while rounds leave the barrel tip toward you — the weapon and the shot
+// visibly disagreeing, which is exactly the fault that was fixed on the player.
+//
+// The body already yaws to face you when aware, so this is mostly ELEVATION plus
+// whatever yaw the facing lerp hasn't caught up on yet.
+const SPINE_AIM_PITCH_GAIN = -0.6;
+const SPINE_AIM_YAW_GAIN = 0.7;
+const SPINE_AIM_YAW_CLAMP = 0.7; // radians (~40°) — past this the body turns
+const _npcSpineQ = new THREE.Quaternion();
+const _npcSpineYawQ = new THREE.Quaternion();
+const _npcAimLocal = new THREE.Vector3();
+const _npcPitchAxis = new THREE.Vector3(1, 0, 0);
+const _npcYawAxis = new THREE.Vector3(0, 1, 0);
+
 const HIPS_PITCH_FIX = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
 const HIPS_PITCH_FIX_INV = HIPS_PITCH_FIX.clone().invert();
 
@@ -153,6 +173,9 @@ export const NpcRig = memo(function NpcRig({
   const kitRef = useRef<{ piece: KitPiece; node: THREE.Object3D }[]>([]);
   const gunRef = useRef<THREE.Object3D | null>(null);
   const hipsFixApplied = useRef(false);
+  const spineBoneRef = useRef<THREE.Object3D | null>(null);
+  const spineAimApplied = useRef(false);
+  const spineAimUndo = useRef(new THREE.Quaternion());
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
   const initDone = useRef(false);
   const mixamoApplied = useRef(false);
@@ -209,6 +232,9 @@ export const NpcRig = memo(function NpcRig({
           if (!hipsBone && /hips/i.test(child.name)) {
             hipsBone = child;
             hipsBoneRef.current = child;
+          }
+          if (!spineBoneRef.current && /spine1$/i.test(child.name)) {
+            spineBoneRef.current = child;
           }
           if (!handBoneRef.current && /righthand$/i.test(child.name)) handBoneRef.current = child;
           if (!kitBones.current.head && /head$/i.test(child.name)) kitBones.current.head = child;
@@ -347,6 +373,10 @@ export const NpcRig = memo(function NpcRig({
       m.emissiveIntensity = p * 1.6;
     }
 
+    if (spineBoneRef.current && spineAimApplied.current) {
+      spineBoneRef.current.quaternion.premultiply(spineAimUndo.current);
+      spineAimApplied.current = false;
+    }
     if (hipsBoneRef.current && hipsFixApplied.current) {
       hipsBoneRef.current.quaternion.premultiply(HIPS_PITCH_FIX_INV);
     }
@@ -356,6 +386,30 @@ export const NpcRig = memo(function NpcRig({
     if (hipsBoneRef.current) {
       hipsBoneRef.current.quaternion.premultiply(HIPS_PITCH_FIX);
       hipsFixApplied.current = true;
+    }
+
+    // Turn the upper body onto the aim, so the HELD weapon actually points where
+    // the rounds go (see the note by SPINE_AIM_PITCH_GAIN). Suppressed while
+    // dead — a corpse doesn't track you.
+    if (spineBoneRef.current && groupRef.current && state.aimDir && !state.dead) {
+      // The aim arrives in world space; the correction is applied on a bone, so
+      // it has to be expressed relative to the body's own facing.
+      _npcAimLocal.copy(state.aimDir);
+      const bodyYaw = groupRef.current.rotation.y;
+      const aimYaw = Math.atan2(_npcAimLocal.x, _npcAimLocal.z);
+      let yawErr = aimYaw - bodyYaw;
+      while (yawErr > Math.PI) yawErr -= Math.PI * 2;
+      while (yawErr < -Math.PI) yawErr += Math.PI * 2;
+      const aimPitch = Math.asin(THREE.MathUtils.clamp(_npcAimLocal.y, -1, 1));
+      _npcSpineQ.setFromAxisAngle(_npcPitchAxis, SPINE_AIM_PITCH_GAIN * aimPitch);
+      _npcSpineYawQ.setFromAxisAngle(
+        _npcYawAxis,
+        THREE.MathUtils.clamp(yawErr * SPINE_AIM_YAW_GAIN, -SPINE_AIM_YAW_CLAMP, SPINE_AIM_YAW_CLAMP)
+      );
+      _npcSpineQ.premultiply(_npcSpineYawQ);
+      spineBoneRef.current.quaternion.premultiply(_npcSpineQ);
+      spineAimUndo.current.copy(_npcSpineQ).invert();
+      spineAimApplied.current = true;
     }
 
     // Drive the silhouette kit off its bones, after the mixer has posed them.

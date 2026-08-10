@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { touch } from "@/engine/input/touch";
 import { useGame } from "@/engine/store";
 import { runtime } from "@/engine/runtime";
@@ -19,6 +19,23 @@ const RUN_AT = 1.45;
 const LOOK_SENS = 0.0055; // rad per screen px
 /** Fraction of the screen width that belongs to the move thumb. */
 const STICK_ZONE = 0.44;
+
+/**
+ * Put a button on the thumb's arc.
+ *
+ * `radius` is the reach from the corner the thumb pivots at; `angleDeg` sweeps
+ * from 0 (straight along the bottom edge) to 90 (straight up the side). The
+ * button is centred on that point, so its own size doesn't shift the arc.
+ */
+function arcAt(side: "left" | "right", radius: number, angleDeg: number): React.CSSProperties {
+  const a = (angleDeg * Math.PI) / 180;
+  return {
+    position: "absolute",
+    [side]: Math.cos(a) * radius,
+    bottom: Math.sin(a) * radius,
+    transform: "translate(" + (side === "left" ? "-50%" : "50%") + ", 50%)",
+  };
+}
 /** Height (px) reserved at the bottom-left for the verb buttons + safe area. */
 const VERB_ROW_H = 150;
 
@@ -69,17 +86,6 @@ export function MobileControls() {
   /** Phone on its side: only ~393pt of height, so the action cluster goes into a
    *  single row along the bottom instead of a stack that reaches up into the
    *  clock and the minimap. */
-  const [shortScreen, setShortScreen] = useState(false);
-  useEffect(() => {
-    const measure = () => setShortScreen(window.innerHeight < 460);
-    measure();
-    window.addEventListener("resize", measure);
-    window.addEventListener("orientationchange", measure);
-    return () => {
-      window.removeEventListener("resize", measure);
-      window.removeEventListener("orientationchange", measure);
-    };
-  }, []);
 
   const actionKey = useRef("KeyE");
   /** Which key the in-flight press is holding down (so the release matches it,
@@ -271,78 +277,42 @@ export function MobileControls() {
         <div ref={knob} style={styles.joyKnob} />
       </div>
 
-      {/* Right action cluster. FIRE sits proud of the rest; the verbs are one
-          row beneath it. This used to be three stacked rows that reached far
-          enough up and left to sit on top of the ammo counter, the health bar
-          and whatever toast was showing — see `styles.right` for the budget. */}
-      <div
-        style={{
-          ...styles.right,
-          flexDirection: shortScreen ? "row" : "column",
-          alignItems: shortScreen ? "flex-end" : "flex-end",
-          bottom: shortScreen
-            ? "calc(env(safe-area-inset-bottom, 0px) + 74px)"
-            : "calc(env(safe-area-inset-bottom, 0px) + 92px)",
-        }}
-      >
-        {shortScreen ? (
-          <>
-            {/* Hold to aim, like the desktop right-mouse. */}
-            <button style={styles.btn} {...holdKey("KeyV")}>
-              AIM
-            </button>
-            <button style={styles.btn} {...bomb}>
-              BOMB
-            </button>
-            <button style={{ ...styles.btn, ...styles.fire }} {...hold((v) => (touch.fire = v))}>
-              FIRE
-            </button>
-          </>
-        ) : (
-          <>
-            <button style={{ ...styles.btn, ...styles.fire }} {...hold((v) => (touch.fire = v))}>
-              FIRE
-            </button>
-            <div style={styles.row}>
-              <button style={styles.btn} {...holdKey("KeyV")}>
-                AIM
-              </button>
-              <button style={styles.btn} {...bomb}>
-                BOMB
-              </button>
-            </div>
-          </>
-        )}
+      {/* ── Right thumb: an ARC, not a row ──
+          A thumb doesn't travel in straight lines. It pivots at the corner of the
+          phone and sweeps an arc, so buttons laid out in a row or a column are
+          each a different reach — the far one needs a whole hand shift. These sit
+          ON that arc, at a constant radius from the corner the thumb roots at,
+          which also frees the middle of the screen because the cluster hugs the
+          corner instead of marching inward.
+          FIRE takes the inner radius (shortest, most-used reach); the two verbs
+          ride a wider arc either side of it. */}
+      <div style={styles.arcRight}>
+        <button
+          style={{ ...styles.btn, ...styles.fire, ...arcAt("right", 104, 40) }}
+          {...hold((v) => (touch.fire = v))}
+        >
+          FIRE
+        </button>
+        {/* Hold to aim, like the desktop right-mouse. */}
+        <button style={{ ...styles.btn, ...arcAt("right", 178, 72) }} {...holdKey("KeyV")}>
+          AIM
+        </button>
+        <button style={{ ...styles.btn, ...arcAt("right", 182, 16) }} {...bomb}>
+          BOMB
+        </button>
       </div>
 
-      {/* Left verb cluster, above the stick zone and clear of the HUD strip.
-          JUMP is gone as a button: the arena is flat with nothing to platform
-          over, and its one real use — hurdling cover — is now folded into the
-          contextual action so it costs no thumb space. */}
-      <div
-        style={{
-          ...styles.left,
-          // Portrait is only ~393pt wide: a row of three here and a cluster of
-          // three on the right add up to more than the screen, and they met in
-          // the middle. Stacked, the left verbs occupy one button's width.
-          flexDirection: shortScreen ? "row" : "column-reverse",
-          bottom: shortScreen
-            ? "calc(env(safe-area-inset-bottom, 0px) + 74px)"
-            : "calc(env(safe-area-inset-bottom, 0px) + 92px)",
-        }}
-      >
-        {/* Nighthaul has no companion, so the button would command nothing. */}
-        {gameMode().fox && (
-          <button style={styles.btnSm} {...tap("KeyQ")}>
-            FOX
-          </button>
-        )}
-        {/* A real press-and-release, not a tap: VAULT rides on Space, and a
-            keydown/keyup fired in the same microsecond is gone before the next
+      {/* ── Left thumb: the mirror arc ──
+          The contextual verb takes the inner reach because it is the one you
+          press under pressure (BANK / GRAB / ROLL / VAULT). JUMP is no longer a
+          button of its own — it's the same contextual key. */}
+      <div style={styles.arcLeft}>
+        {/* A real press-and-release, not a tap: VAULT and ROLL ride on Space, and
+            a keydown/keyup fired in the same microsecond is gone before the next
             frame ever samples it. */}
         <button
           ref={eBtn}
-          style={styles.btnSm}
+          style={{ ...styles.btnSm, ...styles.action, ...arcAt("left", 100, 42) }}
           onPointerDown={(e) => {
             e.stopPropagation();
             e.currentTarget.setPointerCapture(e.pointerId);
@@ -359,9 +329,15 @@ export function MobileControls() {
             heldAction.current = null;
           }}
         >
-          —
+          JUMP
         </button>
-        <button style={styles.btnSm} {...tap("KeyC")}>
+        {/* Nighthaul has no companion, so the button would command nothing. */}
+        {gameMode().fox && (
+          <button style={{ ...styles.btnSm, ...arcAt("left", 172, 74) }} {...tap("KeyQ")}>
+            FOX
+          </button>
+        )}
+        <button style={{ ...styles.btnSm, ...arcAt("left", 176, 14) }} {...tap("KeyC")}>
           CROUCH
         </button>
       </div>
@@ -452,33 +428,27 @@ const styles: Record<string, React.CSSProperties> = {
     border: "1.5px solid rgba(255,255,255,0.5)",
     pointerEvents: "none",
   },
-  // The HUD strip (ammo, health, status) owns the bottom ~86px of the screen.
-  // Both clusters clear it — the buttons used to sit right on top of the ammo
-  // counter and the health bar, and on a 393pt phone nothing was legible.
-  right: {
+  // Both clusters are anchored AT the bottom corner and lowered — the buttons
+  // used to start 92px up, well into the frame, which pushed the whole cluster
+  // toward the middle of the screen. The arc rises away from the corner on its
+  // own, so the anchor can sit much lower without anything colliding with the
+  // centred HUD strip.
+  arcRight: {
     position: "absolute",
-    right: "calc(env(safe-area-inset-right, 0px) + 18px)",
-    bottom: "calc(env(safe-area-inset-bottom, 0px) + 92px)",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "flex-end",
-    gap: 10,
+    right: "calc(env(safe-area-inset-right, 0px) + 6px)",
+    bottom: "calc(env(safe-area-inset-bottom, 0px) + 10px)",
+    width: 0,
+    height: 0,
   },
-  left: {
+  arcLeft: {
     position: "absolute",
-    left: "calc(env(safe-area-inset-left, 0px) + 16px)",
-    bottom: "calc(env(safe-area-inset-bottom, 0px) + 92px)",
-    display: "flex",
-    gap: 8,
+    left: "calc(env(safe-area-inset-left, 0px) + 6px)",
+    bottom: "calc(env(safe-area-inset-bottom, 0px) + 10px)",
+    width: 0,
+    height: 0,
   },
-  row: { display: "flex", gap: 10 },
-  fire: {
-    width: 92,
-    height: 92,
-    fontSize: 16,
-    background: "rgba(178,59,59,0.5)",
-    alignSelf: "center",
-  },
+  /** The contextual verb: gold, because it's the one that changes meaning. */
+  action: { width: 74, height: 56, fontSize: 12 },
   btn: { ...btnBase, width: 78, height: 58, fontSize: 13 },
   btnSm: { ...btnBase, width: 62, height: 46, fontSize: 11 },
   center: {

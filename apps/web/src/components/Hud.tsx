@@ -694,8 +694,19 @@ export function Hud() {
       {/* Mute toggle, bottom-right (the one interactive HUD element) */}
       <button
         type="button"
-        onClick={() => audio.toggleMute()}
-        style={{ ...styles.muteBtn, opacity: muted ? 0.6 : 1 }}
+        // pointerdown, not click. The touch overlay calls preventDefault on its
+        // zones and the browser can swallow the synthesised click that follows a
+        // tap; acting on the press itself makes the button respond the instant
+        // it's touched, which is also what every other control here does.
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          audio.toggleMute();
+        }}
+        style={{
+          ...styles.muteBtn,
+          ...(touchLayout ? styles.muteBtnTouch : null),
+          opacity: muted ? 0.6 : 1,
+        }}
         title="Mute / unmute (M)"
       >
         {muted ? "🔇" : "🔊"}
@@ -1265,6 +1276,12 @@ const styles: Record<string, React.CSSProperties> = {
     position: "absolute",
     right: 18,
     bottom: 18,
+    // ABOVE the touch controls. MobileControls is a fixed overlay at zIndex 40
+    // whose two thumb zones tile the whole screen with pointerEvents:auto, so
+    // every tap aimed at this button was being swallowed by the look-zone before
+    // it ever arrived — the button had pointerEvents:auto and was simply
+    // underneath. It is not enough for a control to be visible.
+    zIndex: 60,
     width: 40,
     height: 40,
     borderRadius: 999,
@@ -1276,6 +1293,17 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     pointerEvents: "auto",
     userSelect: "none",
+  },
+  /** Touch placement: the bottom-right corner now belongs to the FIRE arc, so
+   *  the speaker moves up beside the compass, where nothing else lives. */
+  muteBtnTouch: {
+    right: "auto",
+    bottom: "auto",
+    top: 18,
+    left: "calc(50% + 46px)",
+    width: 36,
+    height: 36,
+    fontSize: 16,
   },
   lockPrompt: { position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" },
   promptCard: {

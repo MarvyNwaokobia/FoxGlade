@@ -16,8 +16,19 @@ import { runtime } from "@/engine/runtime";
 const MODELS = {
   tavern: "/models/buildings/tavern.glb",
   hall: "/models/buildings/stone_hall.glb",
+  // The BANK. `hall` was a roofless stone shell with open window frames — as a
+  // vault it read as a ruin you happened to be able to bank in, which is the
+  // opposite of what a strongroom should look like. This is a substantial,
+  // roofed, realistic house: it stands out from the tavern-lined streets by
+  // being visibly a better building, which is exactly the right signal for the
+  // one place in the village where money is kept.
+  bank: "/models/buildings/house_timber.glb",
 } as const;
-Object.values(MODELS).forEach((u) => useGLTF.preload(u));
+// Preload only what the STREET needs. `bank` is a 15MB asset used by exactly one
+// building, and `hall` is unused on the street too — preloading either would put
+// them on the critical path of every single load, on mobile connections, for a
+// single mesh apiece. They are fetched by the component that actually wants them.
+useGLTF.preload(MODELS.tavern);
 
 export type ModelKey = keyof typeof MODELS;
 

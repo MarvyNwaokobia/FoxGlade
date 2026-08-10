@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { runtime } from "@/engine/runtime";
-import { VILLAGE, BUILDINGS } from "@/engine/world/village";
+import { VILLAGE, BUILDINGS, doorOpening } from "@/engine/world/village";
 import { useGame } from "@/engine/store";
 
 /**
@@ -52,33 +52,119 @@ export function Minimap() {
     const draw = () => {
       ctx.clearRect(0, 0, SIZE, SIZE);
 
-      // GROUND first, then buildings on top of it.
+      // ── The town, not a scatter of boxes ────────────────────────────────────
       //
-      // Everything used to be one hue: pale grey rectangles at 0.10 and 0.20
-      // alpha over a translucent, backdrop-BLURRED panel. With the village
-      // showing through the blur there was no figure/ground at all — the map
-      // read as a scatter of grey squares rather than as a town, and the streets
-      // between the buildings (the thing you actually navigate by) were invisible.
-      // Ground is now a solid dark plate and buildings are a warm stone that
-      // clearly sits on it, so the NEGATIVE space reads as the streets.
-      roundRect(ctx, mx(-HALF), mz(-HALF), HALF * 2 * SCALE, HALF * 2 * SCALE, 6);
-      ctx.fillStyle = "rgba(26,24,22,0.95)";
-      ctx.fill();
-      ctx.strokeStyle = "rgba(242,193,78,0.45)";
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
+      // This drew flat grey rectangles on a flat grey plate, so the map read as
+      // abstract blocks with no sense of place. It's still a plan view — that's
+      // what a map is — but everything now matches what you actually see out
+      // there: grass beyond the walls, cobbled streets inside them, roofs with a
+      // ridge and a cast shadow so buildings read as VOLUMES, ramparts with
+      // corner towers, and the marketplace as the open courtyard it is.
+      const TOWN = HALF * 2 * SCALE;
 
-      // Building footprints — solids as stone, micro-cover crates barely there.
+      // Grass beyond the ramparts.
+      ctx.fillStyle = "#2f3a26";
+      ctx.fillRect(0, 0, SIZE, SIZE);
+
+      // The cobbled town floor inside the walls.
+      roundRect(ctx, mx(-HALF), mz(-HALF), TOWN, TOWN, 6);
+      ctx.fillStyle = "#4a453f";
+      ctx.fill();
+
+      // Worn dirt through the middle of the streets — the routes between the
+      // gate, the plaza and the deep north, drawn as one soft spine so the map
+      // suggests where people walk rather than only where they can't.
+      ctx.save();
+      roundRect(ctx, mx(-HALF), mz(-HALF), TOWN, TOWN, 6);
+      ctx.clip();
+      ctx.strokeStyle = "rgba(122,104,80,0.55)";
+      ctx.lineCap = "round";
+      ctx.lineWidth = 7 * SCALE;
+      ctx.beginPath();
+      ctx.moveTo(mx(0), mz(HALF));
+      ctx.lineTo(mx(0), mz(14));
+      ctx.lineTo(mx(-6), mz(2));
+      ctx.lineTo(mx(-2), mz(-14));
+      ctx.lineTo(mx(2), mz(-30));
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(mx(-6), mz(2));
+      ctx.lineTo(mx(-22), mz(4)); // west, to the market and the vault
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(mx(-2), mz(-14));
+      ctx.lineTo(mx(18), mz(-10)); // east courtyard
+      ctx.stroke();
+      ctx.restore();
+
+      // Ramparts + corner towers.
+      roundRect(ctx, mx(-HALF), mz(-HALF), TOWN, TOWN, 6);
+      ctx.strokeStyle = "#6b6155";
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      ctx.strokeStyle = "rgba(242,193,78,0.35)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      for (const [cx, cz] of [
+        [-HALF, -HALF], [HALF, -HALF], [-HALF, HALF], [HALF, HALF],
+      ] as [number, number][]) {
+        ctx.beginPath();
+        ctx.arc(mx(cx), mz(cz), 4, 0, Math.PI * 2);
+        ctx.fillStyle = "#6b6155";
+        ctx.strokeStyle = "rgba(18,16,14,0.9)";
+        ctx.lineWidth = 1;
+        ctx.fill();
+        ctx.stroke();
+      }
+
       for (const b of BUILDINGS) {
         const crate = b.w <= 2.5 && b.d <= 2.5;
-        ctx.fillStyle = crate ? "rgba(150,140,126,0.35)" : "rgba(186,172,150,0.82)";
-        ctx.fillRect(mx(b.x - b.w / 2), mz(b.z - b.d / 2), b.w * SCALE, b.d * SCALE);
-        if (!crate) {
-          // A dark edge separates neighbouring buildings that would otherwise
-          // merge into one blob at this scale.
-          ctx.strokeStyle = "rgba(26,24,22,0.9)";
-          ctx.lineWidth = 0.75;
-          ctx.strokeRect(mx(b.x - b.w / 2), mz(b.z - b.d / 2), b.w * SCALE, b.d * SCALE);
+        const x = mx(b.x - b.w / 2);
+        const y = mz(b.z - b.d / 2);
+        const w = b.w * SCALE;
+        const h = b.d * SCALE;
+
+        if (crate) {
+          ctx.fillStyle = "rgba(120,108,92,0.5)";
+          ctx.fillRect(x, y, w, h);
+          continue;
+        }
+
+        // The marketplace is a walled courtyard with no roof — drawn hollow, so
+        // it reads as somewhere you go INTO rather than another solid block.
+        if (b.kind === "market") {
+          ctx.fillStyle = "rgba(90,78,60,0.55)";
+          ctx.fillRect(x, y, w, h);
+          ctx.strokeStyle = "#8a7a5e";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(x, y, w, h);
+          continue;
+        }
+
+        // Cast shadow to the south-east, as if the sun were off the top-left.
+        ctx.fillStyle = "rgba(12,10,9,0.45)";
+        ctx.fillRect(x + 2, y + 2, w, h);
+
+        // Roof, with a lighter ridge along its LONG axis — two tones is all it
+        // takes for a rectangle to read as a pitched roof seen from above.
+        ctx.fillStyle = b.door ? "#8d7b5c" : "#7a6a55";
+        ctx.fillRect(x, y, w, h);
+        ctx.strokeStyle = "rgba(18,16,14,0.85)";
+        ctx.lineWidth = 0.8;
+        ctx.strokeRect(x, y, w, h);
+        ctx.fillStyle = "rgba(232,214,180,0.32)";
+        if (w >= h) ctx.fillRect(x, y + h / 2 - 0.9, w, 1.8);
+        else ctx.fillRect(x + w / 2 - 0.9, y, 1.8, h);
+
+        // A doored building is one you can walk into: mark the opening.
+        if (b.door) {
+          const o = doorOpening(b);
+          if (o) {
+            ctx.fillStyle = "#f2c14e";
+            ctx.beginPath();
+            ctx.arc(mx(o.cx), mz(o.cz), 1.8, 0, Math.PI * 2);
+            ctx.fill();
+          }
         }
       }
 

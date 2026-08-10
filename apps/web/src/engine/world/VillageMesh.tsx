@@ -273,13 +273,13 @@ function EnterableHouse({ b, eIndex, mats }: { b: Building; eIndex: number; mats
     if (interior.current) interior.current.visible = runtime.shelterIndex === eIndex;
   });
 
-  // The bank house uses the grand stone hall; others pick by size.
+  // The bank gets its own building (see MODELS.bank); others pick by size.
   const bank =
     VILLAGE.bank.x >= b.x - b.w / 2 &&
     VILLAGE.bank.x <= b.x + b.w / 2 &&
     VILLAGE.bank.z >= b.z - b.d / 2 &&
     VILLAGE.bank.z <= b.z + b.d / 2;
-  const model = bank ? "hall" : chooseModel(b, eIndex);
+  const model = bank ? "bank" : chooseModel(b, eIndex);
 
   // The doorway timber is tinted to MATCH this building's weathering (the same tint
   // the model is rendered with), so the door belongs to the building rather than

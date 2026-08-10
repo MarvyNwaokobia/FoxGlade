@@ -22,6 +22,12 @@ const BODY_R = 0.45;
 
 /** Scratch goal point fed to the shared steering routine. */
 const _goal = new THREE.Vector3();
+/** Scratch for the telegraph beam (muzzle → target, in the NPC's local space). */
+const _beamFrom = new THREE.Vector3();
+const _beamTo = new THREE.Vector3();
+const _beamDir = new THREE.Vector3();
+/** The cylinder's own long axis. */
+const _beamAxis = new THREE.Vector3(0, 1, 0);
 
 type Awareness = "idle" | "alert" | "engaged";
 
@@ -318,14 +324,33 @@ export function Blocker({
     if (telegraph.current) {
       telegraph.current.visible = aiming;
       if (aiming) {
-        // Stretch a thin beam from the muzzle to the player, and swell it as the
-        // shot approaches so the timing is readable, not just the direction.
+        // Stretch a thin beam from the BARREL TIP to the player, and swell it as
+        // the shot approaches so the timing is readable, not just the direction.
+        //
+        // It used to start at a fixed (0, 1.0) on the body — the chest — while
+        // the round itself leaves the published muzzle. Now that the weapon is
+        // held in the hand rather than aimed by code, that gap is visible: you
+        // were reading a warning line that didn't come from the gun and didn't
+        // quite go where the bullet went. Warning, muzzle flash, round and
+        // barrel all agree now.
+        //
         // The cylinder's length runs along its LOCAL Y; the mesh is then rotated
         // to lie along Z. So the length scale goes on Y — scaling Z just fattened
         // the radius and left a stub floating in the air.
         const t = 1 - (telegraphUntil.current - nowMs) / (S.telegraphTime * 1000);
-        telegraph.current.scale.set(1, dist, 1);
-        telegraph.current.position.set(0, 1.0, dist / 2);
+        const origin = anim.current.muzzleOut
+          ? group.current!.worldToLocal(_beamFrom.copy(anim.current.muzzleOut))
+          : _beamFrom.set(0, 1.0, 0);
+        // Local target: the player, in this group's space (the group faces them,
+        // so this is essentially straight ahead plus any elevation).
+        _beamTo.copy(to);
+        group.current!.worldToLocal(_beamTo);
+        const len = _beamFrom.distanceTo(_beamTo);
+        telegraph.current.scale.set(1, len, 1);
+        telegraph.current.position.copy(origin).lerp(_beamTo, 0.5);
+        // Point the beam down the firing line instead of assuming it's +Z.
+        _beamDir.copy(_beamTo).sub(origin).normalize();
+        telegraph.current.quaternion.setFromUnitVectors(_beamAxis, _beamDir);
         const mat = telegraph.current.material as THREE.MeshBasicMaterial;
         mat.opacity = 0.12 + 0.4 * t * t;
       }
@@ -399,7 +424,7 @@ export function Blocker({
           shown during the aim beat before each shot. The group already faces the
           player, so a unit-length beam along +Z scaled by distance lands on them. */}
       {!dead && (
-        <mesh ref={telegraph} visible={false} rotation={[Math.PI / 2, 0, 0]} renderOrder={3}>
+        <mesh ref={telegraph} visible={false} renderOrder={3}>
           <cylinderGeometry args={[0.018, 0.018, 1, 6]} />
           <meshBasicMaterial color="#ff7a4a" transparent opacity={0.3} depthWrite={false} toneMapped={false} />
         </mesh>
