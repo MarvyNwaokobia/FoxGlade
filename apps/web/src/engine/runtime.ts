@@ -66,6 +66,8 @@ export const runtime = {
   foxFoundTreasure: false,
   /** performance.now the fox last barked on finding something (HUD toast). */
   foxFoundAt: -1,
+  /** True while the fox is uneasy — it's in a place it saw you go down before. */
+  foxWary: false,
   /** performance.now the fox last grew a stage (drives the HUD toast). */
   foxGrewAt: -1,
   /** Name of the stage the fox just grew INTO (for the toast). */
@@ -85,6 +87,8 @@ export const runtime = {
    *  much — the downed screen names the number so the cost lands. */
   lootLostAt: -1,
   lootLostAmount: 0,
+  /** How much of that a Lockbox bought back (0 if you weren't carrying one). */
+  lootSalvaged: 0,
   /** Per-hint: true once a bomb blast has cracked that (real) treasure (§13.5). */
   hintCracked: HINTS.map(() => false),
   /** Timestamps for HUD toasts: a theft / a crack just happened. */

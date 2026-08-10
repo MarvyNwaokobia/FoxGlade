@@ -2,6 +2,8 @@ import { create } from "zustand";
 import { runtime } from "@/engine/runtime";
 import { LOOT, REST } from "@/engine/config/round";
 import { HINTS, reseedHints, clearHintHistory, type Rarity } from "@/engine/world/hints";
+import { bearingTo, clearLeads, setLead } from "@/engine/world/leads";
+import { rememberDanger } from "@/engine/fox/foxMemory";
 import { DAY, CHAPTERS, chapterAt } from "@/engine/config/day";
 import {
   SHOP_ITEMS,
@@ -9,6 +11,7 @@ import {
   WEAPON_STATS,
   BAG_CAP,
   BOMB_CAP,
+  SUPPLY_CAP,
   type WeaponId,
 } from "@/engine/config/shop";
 
@@ -71,6 +74,11 @@ interface GameState {
   closeShop: () => void;
   buyItem: (id: string) => void;
   equipWeapon: (gunId: WeaponId) => void;
+
+  /** Lockboxes carried. One is spent automatically when you go down, and it buys
+   *  back half the loot you were carrying. Insurance you bought BEFORE the risk,
+   *  which is the only kind worth selling. */
+  lockboxes: number;
 
   playerHealth: number;
   maxPlayerHealth: number;
@@ -186,7 +194,39 @@ export const useGame = create<GameState>((set, get) => ({
   buyItem: (id) =>
     set((s) => {
       const item = SHOP_ITEMS.find((i) => i.id === id);
-      if (!item || s.owned.includes(id) || s.villeBanked < item.price) return s;
+      if (!item || s.villeBanked < item.price) return s;
+
+      // Consumables: buy as often as you can afford, up to a per-run cap. These
+      // are the sink — see the note at the top of SHOP_ITEMS.
+      if (item.consumable) {
+        switch (id) {
+          case "s_restore":
+            if (s.restoresLeft >= SUPPLY_CAP.restores) return s;
+            return { villeBanked: s.villeBanked - item.price, restoresLeft: s.restoresLeft + 1 };
+          case "s_bomb":
+            if (s.bombsLeft >= bombCapacity(s.owned)) return s;
+            return { villeBanked: s.villeBanked - item.price, bombsLeft: s.bombsLeft + 1 };
+          case "s_lockbox":
+            if (s.lockboxes >= SUPPLY_CAP.lockboxes) return s;
+            return { villeBanked: s.villeBanked - item.price, lockboxes: s.lockboxes + 1 };
+          case "s_chart": {
+            // Reading it at the stall IS the purchase. Nothing to carry, and the
+            // bearing is drawn from where you're standing.
+            const real = HINTS.findIndex((h, i) => h.real && !runtime.hintStolen[i] && !runtime.hintClaimed[i]);
+            if (real < 0) return s; // nothing left on the board to chart
+            setLead(
+              "chart",
+              bearingTo(runtime.playerPos.x, runtime.playerPos.z, HINTS[real].pos.x, HINTS[real].pos.z),
+              performance.now()
+            );
+            return { villeBanked: s.villeBanked - item.price };
+          }
+          default:
+            return s;
+        }
+      }
+
+      if (s.owned.includes(id)) return s;
       const owned = [...s.owned, id];
       return {
         villeBanked: s.villeBanked - item.price,
@@ -212,6 +252,7 @@ export const useGame = create<GameState>((set, get) => ({
         : s;
     }),
 
+  lockboxes: 0,
   playerHealth: MAX_PLAYER_HEALTH,
   maxPlayerHealth: MAX_PLAYER_HEALTH,
   restoresLeft: REST.charges,
@@ -227,12 +268,20 @@ export const useGame = create<GameState>((set, get) => ({
   damagePlayer: (amount) =>
     set((s) => {
       if (s.isDead || s.roundState !== "playing") return s;
-      // Indoors is a SAFE ROOM (Marvy's design): once you're through the doorway
-      // nothing can hurt you until you step back out — not a blocker lined up on
-      // the door, not your own bomb. The other half of that deal is enforced in
-      // PlayerController: you can't shoot or throw from in here either. Safety
-      // both ways, or the doorway becomes a free firing position.
-      if (runtime.sheltered) return s;
+      // Indoors used to be a total SAFE ROOM: through the doorway and nothing
+      // could touch you, the clock stopped, the thieves froze. Anything that is
+      // free gets used constantly, and this was free — so the optimal line was
+      // sprint out, grab, sprint to the nearest doorway, wait, repeat. A pause
+      // button dressed as a building.
+      //
+      // Interiors now do what a building should do and no more: they break line
+      // of sight (walls + roof are already in BOXES3D, so this needs no special
+      // case) and they muffle you. They do not stop bullets that have an angle
+      // through the door, they do not stop the sun, and a blocker that watched
+      // you go in will come in after you (BLOCKER.breachDelay).
+      //
+      // A hiding place you can be found in is tense. One that you can't be is
+      // furniture.
       const next = Math.max(0, s.playerHealth - amount);
       if (next > 0) return { playerHealth: next, isDead: false };
       // Going down DROPS the treasure you were carrying but hadn't banked.
@@ -243,9 +292,18 @@ export const useGame = create<GameState>((set, get) => ({
       // exists to create — had no downside and was never really a decision. It's
       // also the cost that keeps the refuge checkpoint honest: you come back
       // close to where you fell, but you come back empty-handed.
+      // The fox watched this happen, and it will remember the place. Recorded
+      // here rather than in the fox component so it survives the fox being
+      // downed, unmounted, or absent in a mode that has none.
+      rememberDanger(runtime.playerPos.x, runtime.playerPos.z);
+      // A lockbox buys back half of what you were carrying. It's spent whether
+      // or not you had much on you — insurance you don't claim is still bought.
+      const insured = s.lockboxes > 0 && s.villeCarrying > 0;
+      const salvaged = insured ? Math.floor(s.villeCarrying / 2) : 0;
       if (s.villeCarrying > 0) {
         runtime.lootLostAt = performance.now();
-        runtime.lootLostAmount = s.villeCarrying;
+        runtime.lootLostAmount = s.villeCarrying - salvaged;
+        runtime.lootSalvaged = salvaged;
       }
       // Any treasure claimed but not yet banked goes back on the board, where it
       // can be found again — or taken by a thief while you're picking yourself up.
@@ -255,7 +313,8 @@ export const useGame = create<GameState>((set, get) => ({
       return {
         playerHealth: 0,
         isDead: true,
-        villeCarrying: 0,
+        villeCarrying: salvaged,
+        lockboxes: insured ? s.lockboxes - 1 : s.lockboxes,
         ...(s.treasureClaimed ? { treasureClaimed: false, claimedRarity: null } : {}),
       };
     }),
@@ -279,6 +338,10 @@ export const useGame = create<GameState>((set, get) => ({
       // instead of the board being solved once and then static.
       if (chapter !== s.chapter) {
         reseedHints(chapter >= 2);
+        // Everything you were told was about the LAST board. Keeping those
+        // wedges up would be worse than showing nothing — it would be lying to
+        // you with the game's own voice.
+        clearLeads();
         runtime.hintSilenced.fill(false);
         runtime.hintStolen.fill(false);
         runtime.hintClaimed.fill(false);
@@ -314,6 +377,7 @@ export const useGame = create<GameState>((set, get) => ({
     runtime.hintBanked.fill(false);
     runtime.hintCracked.fill(false);
     reseedHints(s.chapter >= 2);
+    clearLeads();
     get().advanceDay(DAY.theftPenalty);
   },
 
@@ -335,10 +399,12 @@ export const useGame = create<GameState>((set, get) => ({
     runtime.hintCracked.fill(false);
     runtime.refugeIndex = -1; // a new run starts with no claimed refuge
     runtime.lootLostAt = -1;
+    runtime.lootSalvaged = 0;
     runtime.treasureStolenAt = -1;
     runtime.chapterAt = -1;
     clearHintHistory();
     reseedHints(false);
+    clearLeads();
     runtime.treasureCrackedAt = -1;
     runtime.revealRealUntil = -1;
     runtime.sniffReadyAt = 0;
@@ -349,6 +415,7 @@ export const useGame = create<GameState>((set, get) => ({
       bombsLeft: bombCapacity(s.owned),
       playerHealth: MAX_PLAYER_HEALTH,
       restoresLeft: REST.charges,
+      lockboxes: 0, // supplies are per-run: you re-kit at the market every day
       ammoInMag: WEAPON_STATS[s.equippedWeapon].magSize,
       reloadEndsAt: -1,
       isDead: false,

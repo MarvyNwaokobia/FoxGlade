@@ -11,6 +11,7 @@ import { audio } from "@/engine/audio/audio";
 import { steerTowards } from "@/engine/fox/foxBrain";
 import { NpcRig, type NpcRigState, DEATH_LINGER_MS } from "@/engine/character/NpcRig";
 import { makeClaim, type VillagerClaim } from "./villagerLines";
+import { bearingTo, setRumour } from "@/engine/world/leads";
 
 const MAX_HEALTH = 2;
 const BODY_H = 1.8;
@@ -133,6 +134,14 @@ export function Distractor({
           mood.current = "speaking";
           speakClock.current = SPEAK_TIME;
           setBubble(claim.current.line);
+          // Paint what it claims onto the compass as a RUMOUR wedge — beside the
+          // guardian's lead, never on top of it. A liar's bearing looks exactly
+          // like an honest one; the choice of which to walk toward stays yours,
+          // and that choice is the mechanic.
+          setRumour(
+            bearingTo(pos.current.x, pos.current.z, claim.current.target.x, claim.current.target.z),
+            performance.now()
+          );
           audio.playAt("villagerLine", pos.current.x, pos.current.z, 8, 34);
         } else {
           _goal.set(runtime.playerPos.x, 0, runtime.playerPos.z);

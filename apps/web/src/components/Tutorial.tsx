@@ -64,8 +64,8 @@ const BEATS: Beat[] = [
     when: () => runtime.sheltered,
     text: (t) =>
       t
-        ? "Inside you're safe and the world holds. Tap REST to spend a restore."
-        : "Inside you're safe and the world holds. Press X to spend a restore.",
+        ? "Walls break their sight — they don't stop time, and they will follow. Tap REST to patch up."
+        : "Walls break their sight — they don't stop time, and they will follow. Press X to patch up.",
   },
   {
     id: "reload",

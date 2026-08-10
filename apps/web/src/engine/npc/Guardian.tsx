@@ -12,6 +12,7 @@ import { HINTS } from "@/engine/world/hints";
 import { steerTowards } from "@/engine/fox/foxBrain";
 import { NpcRig, type NpcRigState } from "@/engine/character/NpcRig";
 import { guardianBrief } from "./villagerLines";
+import { bearingTo, setLead } from "@/engine/world/leads";
 
 /**
  * The guardian (Marvy's design, Phase 6).
@@ -104,6 +105,16 @@ export function Guardian() {
           setLine(guardianBrief(pos.current, real?.pos ?? runtime.playerPos, first));
           runtime.guardianBriefed = true;
           runtime.guardianSpokeAt = performance.now();
+          // Put the bearing it just named on the compass as a SECTOR that fades
+          // (see world/leads.ts). Not a pin: you still have to go and look, and
+          // in a minute you'll only half-remember which way it said.
+          if (real) {
+            setLead(
+              "guardian",
+              bearingTo(pos.current.x, pos.current.z, real.pos.x, real.pos.z),
+              performance.now()
+            );
+          }
           audio.playAt("villagerLine", pos.current.x, pos.current.z, 8, 40);
         } else {
           _goal.set(runtime.playerPos.x, 0, runtime.playerPos.z);

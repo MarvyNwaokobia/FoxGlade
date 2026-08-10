@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useGame } from "@/engine/store";
+import { bombCapacity, useGame } from "@/engine/store";
 import { weaponThumb } from "./weaponThumb";
 import {
   SHOP_ITEMS,
   CATEGORY_ORDER,
   CATEGORY_LABEL,
+  SUPPLY_CAP,
   WEAPON_STATS,
   type ShopCategory,
   type ShopItem,
@@ -28,7 +29,13 @@ export function Shop() {
   const equipWeapon = useGame((s) => s.equipWeapon);
   const closeShop = useGame((s) => s.closeShop);
 
-  const [cat, setCat] = useState<ShopCategory>("weapon");
+  const restoresLeft = useGame((s) => s.restoresLeft);
+  const bombsLeft = useGame((s) => s.bombsLeft);
+  const lockboxes = useGame((s) => s.lockboxes);
+
+  // Supplies open the stall. On most visits that's what you're here for — the
+  // permanents are a once-every-few-runs purchase.
+  const [cat, setCat] = useState<ShopCategory>("supply");
   const [selId, setSelId] = useState<string | null>(null);
 
   // Release the mouse from pointer-lock so it can click the overlay.
@@ -64,12 +71,35 @@ export function Shop() {
   const items = SHOP_ITEMS.filter((i) => i.category === cat);
   const sel = SHOP_ITEMS.find((i) => i.id === selId) ?? null;
 
-  const isOwned = (i: ShopItem) => owned.includes(i.id);
+  // Consumables are never "owned" — they're carried, spent, and bought again.
+  const isOwned = (i: ShopItem) => !i.consumable && owned.includes(i.id);
   const isEquipped = (i: ShopItem) => !!i.gunId && equippedWeapon === i.gunId;
   const canAfford = (i: ShopItem) => villeBanked >= i.price;
 
+  /** How many of a consumable you're carrying, and the most you may carry.
+   *  The chart has no count: buying it is reading it, so it's always available. */
+  function stock(i: ShopItem): { have: number; cap: number } | null {
+    switch (i.id) {
+      case "s_restore":
+        return { have: restoresLeft, cap: SUPPLY_CAP.restores };
+      case "s_bomb":
+        return { have: bombsLeft, cap: bombCapacity(owned) };
+      case "s_lockbox":
+        return { have: lockboxes, cap: SUPPLY_CAP.lockboxes };
+      default:
+        return null;
+    }
+  }
+
   // The footer's primary action depends on the selected item's state.
   function action(i: ShopItem) {
+    if (i.consumable) {
+      const s = stock(i);
+      if (s && s.have >= s.cap) return { label: "PACK FULL", disabled: true, onClick: () => {} };
+      if (!canAfford(i)) return { label: `NEED ${i.price - villeBanked} MORE`, disabled: true, onClick: () => {} };
+      const verb = i.id === "s_chart" ? "READ IT" : "BUY";
+      return { label: `${verb} · ${i.price} VILLE`, disabled: false, onClick: () => buyItem(i.id) };
+    }
     if (isEquipped(i)) return { label: "EQUIPPED", disabled: true, onClick: () => {} };
     if (isOwned(i) && i.gunId) return { label: "EQUIP", disabled: false, onClick: () => equipWeapon(i.gunId!) };
     if (isOwned(i)) return { label: "OWNED", disabled: true, onClick: () => {} };
@@ -123,6 +153,7 @@ export function Shop() {
             // Can't afford it? Say so on the card, rather than making the player
             // tap through to a dead Sign button to find out.
             const short = !own && i.price > villeBanked ? i.price - villeBanked : 0;
+            const carried = i.consumable ? stock(i) : null;
             return (
               <button
                 key={i.id}
@@ -137,6 +168,12 @@ export function Shop() {
                   <span style={styles.badgeEquipped}>EQUIPPED</span>
                 ) : own ? (
                   <span style={styles.badgeOwned}>OWNED</span>
+                ) : i.consumable ? (
+                  // Price AND what's already in your pack, so the decision ("do I
+                  // need another?") is answerable from the card.
+                  <span style={{ ...styles.badgePrice, ...(short ? styles.badgeShort : null) }}>
+                    {carried ? `${carried.have}/${carried.cap} · ${i.price}` : `${i.price}`}
+                  </span>
                 ) : (
                   <span style={{ ...styles.badgePrice, ...(short ? styles.badgeShort : null) }}>
                     {i.price === 0 ? "FREE" : `${i.price}`}

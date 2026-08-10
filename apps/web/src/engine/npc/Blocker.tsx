@@ -15,6 +15,7 @@ import { AUDIO } from "@/engine/config/audio";
 import { BLOCKER } from "@/engine/config/round";
 import { NpcRig, type NpcRigState, DEATH_LINGER_MS } from "@/engine/character/NpcRig";
 import { foxPinnedBlocker, steerTowards } from "@/engine/fox/foxBrain";
+import { findPath } from "@/engine/world/navgrid";
 
 const BODY_H = 1.8;
 const BODY_R = 0.45;
@@ -49,6 +50,9 @@ export function Blocker({ position }: { position: [number, number, number] }) {
   const awareness = useRef<Awareness>("idle");
   const alertClock = useRef(0); // reaction beat during ALERT
   const lostClock = useRef(0); // time out of sight during ENGAGED (→ idle)
+  const breachClock = useRef(0); // time spent locked out by a door (→ routes inside)
+  const breachPath = useRef<THREE.Vector3[]>([]);
+  const breachRepath = useRef(0);
   const anim = useRef<NpcRigState>({
     moving: false,
     running: false,
@@ -143,6 +147,28 @@ export function Blocker({ position }: { position: [number, number, number] }) {
         lostClock.current = 0;
       }
     }
+
+    // Breaching. If we're engaged, we've lost sight, and the player is standing
+    // inside a building within reach, the answer is not to stand in the street
+    // waiting for them to come out — it's to walk in after them. Without this the
+    // doorway is still a sanctuary; the only thing the safe-room rewrite would
+    // have changed is that the sun keeps moving while you use it.
+    //
+    // The delay is deliberate and generous (BLOCKER.breachDelay): ducking inside
+    // has to genuinely buy you a reload and a decision, or cover is worthless.
+    const breaching =
+      awareness.current === "engaged" &&
+      runtime.sheltered &&
+      !hasLOS &&
+      dist < BLOCKER.breachRange;
+    if (breaching) {
+      breachClock.current += dt;
+      lostClock.current = 0; // committed: it isn't going to lose interest mid-entry
+    } else {
+      breachClock.current = 0;
+      breachPath.current.length = 0;
+    }
+    const entering = breaching && breachClock.current >= BLOCKER.breachDelay;
     const aware = awareness.current !== "idle";
     // Level the weapon at the player whenever aware — the rig aims the gun along
     // this, so an enemy that has noticed you is visibly pointing a rifle at you
@@ -155,7 +181,11 @@ export function Blocker({ position }: { position: [number, number, number] }) {
     // Move only once ENGAGED (idle/alert hold position — the alert beat is a
     // telegraph, not a lunge).
     let moved = false;
-    if (awareness.current === "engaged" && dist > 0.01) {
+    // While it's locked out but not yet committed, it HOLDS — a stakeout outside
+    // the door, not a jog around the building. That stillness is the tell: you
+    // can see through a window that it hasn't left, and you know what the wait
+    // ends in.
+    if (awareness.current === "engaged" && dist > 0.01 && (!breaching || entering)) {
       moved = true;
       const nx = dx / dist;
       const nz = dz / dist;
@@ -187,7 +217,24 @@ export function Blocker({ position }: { position: [number, number, number] }) {
       // and jitter. One shared implementation, one place to get it right.
       const startX = pos.current.x;
       const startZ = pos.current.z;
-      _goal.set(startX + mx * 4, 0, startZ + mz * 4); // a point along the desired heading
+      if (entering) {
+        // Going in. Local steering cannot solve a doorway — a building is a
+        // concave obstacle and a greedy agent slides along the outside wall
+        // forever (the exact failure documented in world/navgrid.ts). So the
+        // breach routes on the same A* grid the fox and the thieves use, whose
+        // clearance leaves the door opening walkable.
+        breachRepath.current -= dt;
+        if (breachPath.current.length === 0 || breachRepath.current <= 0) {
+          breachRepath.current = BLOCKER.breachRepath;
+          breachPath.current = findPath(pos.current, runtime.playerPos) ?? [];
+        }
+        while (breachPath.current.length && breachPath.current[0].distanceTo(pos.current) < 0.9) {
+          breachPath.current.shift();
+        }
+        _goal.copy(breachPath.current[0] ?? runtime.playerPos).setY(0);
+      } else {
+        _goal.set(startX + mx * 4, 0, startZ + mz * 4); // a point along the desired heading
+      }
       const travelled = steerTowards(pos.current, _goal, BLOCKER.moveSpeed, dt, BODY_R);
       const stepX = pos.current.x - startX;
       const stepZ = pos.current.z - startZ;

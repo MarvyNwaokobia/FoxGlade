@@ -64,7 +64,12 @@ export function guardianBrief(at: THREE.Vector3, target: THREE.Vector3, first: b
   const d = bearingWord(at, target);
   return first
     ? `Listen once, I'll not repeat it. The treasure lies ${d} of this gate. ` +
-      `Others will tell you different — they lie. If your memory fails, trust the fox; it cannot.`
+      // It used to promise the fox "cannot lie". It can't — but a kit can be
+      // honestly, confidently wrong (fox/foxBrain.findScoutTarget), and a
+      // briefing that oversells it teaches the player the wrong lesson on the
+      // one occasion they're guaranteed to be listening.
+      `Others will tell you different — they lie. Send the kit if your memory fails; ` +
+      `it means well, though it's young yet.`
     : `New light, new prize. This one lies ${d} of the gate. Go.`;
 }
 

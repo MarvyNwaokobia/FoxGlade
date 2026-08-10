@@ -6,7 +6,7 @@
  * ERC-1155) lands it becomes the source of truth and this stays the display layer.
  */
 
-export type ShopCategory = "weapon" | "attachment" | "bomb" | "bag";
+export type ShopCategory = "supply" | "weapon" | "attachment" | "bomb" | "bag";
 
 export interface ShopItem {
   id: string;
@@ -16,6 +16,9 @@ export interface ShopItem {
   price: number; // VILLE (0 = owned from the start)
   icon: string; // emoji glyph for the card (procedural gun renders come later)
   gunId?: WeaponId; // weapons only — which gun model + stats to equip
+  /** Consumables can be bought over and over; permanents once. This flag is the
+   *  difference between a shop that empties and an economy that runs. */
+  consumable?: boolean;
 }
 
 export type WeaponId = "sidearm" | "smg" | "assault_rifle" | "marksman" | "legendary";
@@ -49,7 +52,63 @@ export const BAG_CAP = { none: 350, g_satchel: 750, g_rucksack: 1300 } as const;
 /** Bombs carried per run, before/after the satchel upgrade. */
 export const BOMB_CAP = { base: 2, upgraded: 4 } as const;
 
+/**
+ * Consumable caps. A run can't stockpile past these, so the answer to "what do
+ * I do with 900 VILLE" is never "buy fourteen bandages".
+ */
+export const SUPPLY_CAP = { restores: 4, lockboxes: 2 } as const;
+
 export const SHOP_ITEMS: ShopItem[] = [
+  // ── Supplies (the SINK) ─────────────────────────────────────────────────────
+  //
+  // The shop used to be eleven permanent unlocks and nothing else: ~2,650 VILLE
+  // of one-time purchases against a rare treasure paying 300. Ten or fifteen good
+  // runs bought the entire catalogue, and after that VILLE was a number that went
+  // up in the corner of the screen for no reason — which is exactly the dead
+  // currency DESIGN §13.1 warned about, arriving on schedule.
+  //
+  // These four are bought EVERY run and spent WITHIN it, so the market is
+  // somewhere you come back to rather than somewhere you finish. Permanents are
+  // still here; they're now the rare spike rather than the whole economy.
+  {
+    id: "s_restore",
+    category: "supply",
+    name: "Bandages",
+    desc: "One more patch-up this run.",
+    price: 60,
+    icon: "✚",
+    consumable: true,
+  },
+  {
+    id: "s_bomb",
+    category: "supply",
+    name: "Powder Charge",
+    desc: "One more bomb this run.",
+    price: 45,
+    icon: "💣",
+    consumable: true,
+  },
+  {
+    // Buying it IS using it — no inventory, no extra keybind. You pay at the
+    // stall and walk out with a fresh bearing on your compass, which makes the
+    // market a place you visit for INFORMATION and not just for guns.
+    id: "s_chart",
+    category: "supply",
+    name: "Surveyor's Chart",
+    desc: "Read it here: a fresh, narrow bearing on the treasure.",
+    price: 75,
+    icon: "🗺️",
+    consumable: true,
+  },
+  {
+    id: "s_lockbox",
+    category: "supply",
+    name: "Lockbox",
+    desc: "Go down and you keep half your carried loot instead of losing it all.",
+    price: 90,
+    icon: "🔒",
+    consumable: true,
+  },
   // ── Weapons (equip one; the Carbine is owned from the start) ──
   //
   // Named for the world, not for a modern shooter's tier list. "SMG",
@@ -57,26 +116,34 @@ export const SHOP_ITEMS: ShopItem[] = [
   // reading them in a walled medieval market — from a trader standing under a
   // canvas awning — pulled you straight out of the fiction. The stats and the
   // ladder are untouched; only the fiction changed.
-  { id: "w_sidearm", category: "weapon", name: "Flintlock", desc: "Snappy, light hit — a backup piece.", price: 80, icon: "🔫", gunId: "sidearm" },
-  { id: "w_smg", category: "weapon", name: "Repeater", desc: "Spits lead. Little weight behind it.", price: 220, icon: "🔫", gunId: "smg" },
+  //
+  // REPRICED alongside the supplies above. The principle: a permanent should
+  // cost several runs' SURPLUS — what's left after you've kept yourself in
+  // bandages and charges — so unlocking one is a stretch you saved toward, not
+  // something you trip over on run three. These are a first pass off the loot
+  // table (common 100 / rare 300) and want a playtest before they're trusted.
+  { id: "w_sidearm", category: "weapon", name: "Flintlock", desc: "Snappy, light hit — a backup piece.", price: 110, icon: "🔫", gunId: "sidearm" },
+  { id: "w_smg", category: "weapon", name: "Repeater", desc: "Spits lead. Little weight behind it.", price: 300, icon: "🔫", gunId: "smg" },
   { id: "w_rifle", category: "weapon", name: "Carbine", desc: "The balanced all-rounder.", price: 0, icon: "🔫", gunId: "assault_rifle" },
-  { id: "w_marksman", category: "weapon", name: "Long Rifle", desc: "Heavy hit, slow cadence. One shot, one thief.", price: 400, icon: "🎯", gunId: "marksman" },
-  { id: "w_exotic", category: "weapon", name: "The Relic", desc: "Nobody will say where it came from.", price: 800, icon: "⚡", gunId: "legendary" },
+  { id: "w_marksman", category: "weapon", name: "Long Rifle", desc: "Heavy hit, slow cadence. One shot, one thief.", price: 600, icon: "🎯", gunId: "marksman" },
+  { id: "w_exotic", category: "weapon", name: "The Relic", desc: "Nobody will say where it came from.", price: 1500, icon: "⚡", gunId: "legendary" },
   // ── Attachments (global feel upgrades, bought once) ──
-  { id: "a_sight", category: "attachment", name: "Brass Sight", desc: "Cuts recoil — steadier aim.", price: 150, icon: "🔭" },
-  { id: "a_grip", category: "attachment", name: "Wrapped Grip", desc: "Faster fire on any gun.", price: 180, icon: "✊" },
+  { id: "a_sight", category: "attachment", name: "Brass Sight", desc: "Cuts recoil — steadier aim.", price: 240, icon: "🔭" },
+  { id: "a_grip", category: "attachment", name: "Wrapped Grip", desc: "Faster fire on any gun.", price: 260, icon: "✊" },
   // ── Bombs ──
-  { id: "b_satchel", category: "bomb", name: "Bomb Satchel", desc: "Carry 4 bombs per run instead of 2.", price: 120, icon: "💣" },
+  { id: "b_satchel", category: "bomb", name: "Bomb Satchel", desc: "Carry 4 bombs per run instead of 2.", price: 200, icon: "💣" },
   // ── Bags (raise how much loot you can hold before banking) ──
-  { id: "g_satchel", category: "bag", name: "Satchel", desc: "Hold more treasure between bank runs.", price: 200, icon: "🎒" },
-  { id: "g_rucksack", category: "bag", name: "Rucksack", desc: "Hold even more before you must bank.", price: 500, icon: "🧳" },
+  { id: "g_satchel", category: "bag", name: "Satchel", desc: "Hold more treasure between bank runs.", price: 380, icon: "🎒" },
+  { id: "g_rucksack", category: "bag", name: "Rucksack", desc: "Hold even more before you must bank.", price: 900, icon: "🧳" },
 ];
 
 export const CATEGORY_LABEL: Record<ShopCategory, string> = {
+  supply: "Supplies",
   weapon: "Weapons",
   attachment: "Attachments",
   bomb: "Bombs",
   bag: "Bags",
 };
 
-export const CATEGORY_ORDER: ShopCategory[] = ["weapon", "attachment", "bomb", "bag"];
+/** Supplies first: they're what you're here for on most visits. */
+export const CATEGORY_ORDER: ShopCategory[] = ["supply", "weapon", "attachment", "bomb", "bag"];

@@ -12,6 +12,9 @@ import { audio } from "@/engine/audio/audio";
 import { FOX, foxGrowthFor } from "@/engine/config/fox";
 import { softShadowTexture } from "@/engine/world/softShadow";
 import { findPath } from "@/engine/world/navgrid";
+import { bearingTo, setLead } from "@/engine/world/leads";
+import { HINTS } from "@/engine/world/hints";
+import { nearestDanger, rememberSpot } from "./foxMemory";
 import {
   applyLunge,
   findAttackTarget,
@@ -80,6 +83,7 @@ export function FoxCompanion() {
   // Brain state.
   const state = useRef<FoxState>("heel");
   const scoutTarget = useRef<THREE.Vector3 | null>(null);
+  const waryGrowlAt = useRef(0);
   const scoutClock = useRef(0); // counts up while scouting (timeout guard)
   const holdClock = useRef(0); // waiting at the find, barking
   const attackTarget = useRef<Enemy | null>(null);
@@ -151,7 +155,7 @@ export function FoxCompanion() {
         state.current = "attack";
         audio.play("foxGrowl");
       } else {
-        const t = findScoutTarget();
+        const t = findScoutTarget(gs.villeEarned);
         if (!t) return;
         scoutTarget.current = t;
         scoutClock.current = 0;
@@ -248,11 +252,31 @@ export function FoxCompanion() {
       } else {
         const d = Math.hypot(t.x - foxPos.current.x, t.z - foxPos.current.z);
         if (d <= FOX.scoutArriveDist) {
-          // Found it. Hold position, bark, dig — this is the fox telling you
-          // something true, and it's the only thing in the game that can't lie.
+          // Arrived at what it BELIEVES is the treasure — which, for a young fox,
+          // is sometimes a decoy (see foxBrain.findScoutTarget). It barks and digs
+          // identically either way, because a fox that hedged would be useless and
+          // a fox that signalled its own doubt would just be the old oracle with
+          // an extra step.
           if (!runtime.foxFoundTreasure) {
             runtime.foxFoundTreasure = true;
             runtime.foxFoundAt = now;
+            // Its conviction goes on the compass as the tightest wedge in the
+            // game. Whether that wedge is TRUE is the question the whole raise-it
+            // loop is asking, and a Prime fox is the answer.
+            setLead(
+              "fox",
+              bearingTo(runtime.playerPos.x, runtime.playerPos.z, t.x, t.z),
+              now
+            );
+            // Standing on a real one teaches it this nook. That's the memory that
+            // makes the next visit here surer — and it persists across runs.
+            const onReal = HINTS.some(
+              (h, i) =>
+                h.real &&
+                !runtime.hintStolen[i] &&
+                Math.hypot(h.pos.x - t.x, h.pos.z - t.z) <= FOX.scoutArriveDist
+            );
+            if (onReal) rememberSpot(t.x, t.z);
             holdClock.current = FOX.scoutHoldTime;
             audio.playAt("foxYip", foxPos.current.x, foxPos.current.z, 8, 50);
           }
@@ -273,11 +297,24 @@ export function FoxCompanion() {
       const fz = -Math.cos(yaw);
       const rx = Math.cos(yaw);
       const rz = -Math.sin(yaw);
+      // It remembers where it watched you go down (fox/foxMemory.ts). Walking
+      // back into one of those places, it stops LEADING and drops in behind you
+      // — the same animal, reading differently, with no UI to explain it. This is
+      // the cheapest emotional beat in the game and it costs one lerp.
+      const wary = nearestDanger(runtime.playerPos, FOX.waryRange) !== null;
+      runtime.foxWary = wary;
+      const lead = wary ? -FOX.waryLagOffset : FOX.leadOffset;
       _target.set(
-        runtime.playerPos.x + fx * FOX.leadOffset + rx * FOX.sideOffset,
+        runtime.playerPos.x + fx * lead + rx * FOX.sideOffset,
         0,
-        runtime.playerPos.z + fz * FOX.leadOffset + rz * FOX.sideOffset
+        runtime.playerPos.z + fz * lead + rz * FOX.sideOffset
       );
+      // A low warning growl, on a cadence, while it's uneasy — a tell you learn
+      // to read before you consciously recognise the street.
+      if (wary && now > waryGrowlAt.current) {
+        waryGrowlAt.current = now + 5200 + Math.random() * 2600;
+        audio.playAt("foxGrowl", foxPos.current.x, foxPos.current.z, 6, 26);
+      }
 
       idleClock.current = runtime.playerMoving ? 0 : idleClock.current + dt;
 

@@ -1,5 +1,6 @@
 import * as THREE from "three";
-import { FOX } from "@/engine/config/fox";
+import { FOX, foxGrowthFor } from "@/engine/config/fox";
+import { pickWrongSlot, scoutIsCorrect, spotFamiliarity } from "./foxMemory";
 import { runtime } from "@/engine/runtime";
 import { enemies, type Enemy } from "@/engine/combat/enemies";
 import { HINTS } from "@/engine/world/hints";
@@ -93,12 +94,36 @@ export function steerTowards(
   return Math.hypot(bestX, bestZ);
 }
 
-/** The real, unclaimed, unstolen treasure the fox would lead you to (or null). */
-export function findScoutTarget(): THREE.Vector3 | null {
+/**
+ * Where the fox BELIEVES the treasure is.
+ *
+ * Note the verb. This used to return the real one, always, unconditionally — the
+ * fox was an oracle, and an oracle you can consult on a cooldown isn't a
+ * companion, it's a hint button. Now a young fox can be honestly wrong: it reads
+ * the board, and its judgement improves with growth and with how well it knows
+ * the particular nook (fox/foxMemory.ts).
+ *
+ * It never knows it's wrong. It runs there, holds, and barks exactly the same —
+ * which is the whole point, because that's what makes a Prime fox worth raising.
+ */
+export function findScoutTarget(villeEarned: number): THREE.Vector3 | null {
+  const live = (i: number) => !runtime.hintStolen[i] && !runtime.hintClaimed[i];
+  let realIdx = -1;
+  const decoys: number[] = [];
   for (let i = 0; i < HINTS.length; i++) {
-    if (HINTS[i].real && !runtime.hintStolen[i] && !runtime.hintClaimed[i]) return HINTS[i].pos;
+    if (!live(i)) continue;
+    if (HINTS[i].real) realIdx = i;
+    else if (!runtime.hintSilenced[i]) decoys.push(i);
   }
-  return null;
+  if (realIdx < 0) return null;
+
+  const growth = foxGrowthFor(villeEarned);
+  const familiar = spotFamiliarity(HINTS[realIdx].pos.x, HINTS[realIdx].pos.z);
+  if (scoutIsCorrect(growth.misreadChance, familiar)) return HINTS[realIdx].pos;
+
+  const wrong = pickWrongSlot(decoys);
+  // With no decoy left to be confused by, an unsure fox just gets it right.
+  return wrong === null ? HINTS[realIdx].pos : HINTS[wrong].pos;
 }
 
 /** Nearest threat to the player the fox could be sent at (blockers + thieves). */

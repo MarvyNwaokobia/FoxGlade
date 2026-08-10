@@ -127,4 +127,16 @@ export const BLOCKER = {
   /** Minimum seconds before a blocker can fire again after being hit. Landing a
    *  shot staggers it and cancels a telegraphed shot, so shooting first pays. */
   hitStagger: 0.7,
+  // --- Breaching (indoors is cover, not sanctuary) ---
+  /** Seconds an engaged blocker will stand outside, having lost sight of a player
+   *  it knows went indoors, before it routes in through the door.
+   *
+   *  This number IS the value of a house. Too short and ducking inside buys
+   *  nothing; too long and it's the old pause button with a countdown on it.
+   *  ~5s is enough to break a telegraph, reload, and decide — not enough to camp. */
+  breachDelay: 5,
+  /** Seconds between route recalculations while breaching. */
+  breachRepath: 0.9,
+  /** Beyond this it won't bother coming in after you — it lost you properly. */
+  breachRange: 30,
 } as const;

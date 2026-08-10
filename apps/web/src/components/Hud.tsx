@@ -4,7 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import { runtime } from "@/engine/runtime";
 import { useGame } from "@/engine/store";
 import { audio } from "@/engine/audio/audio";
-import { HINTS } from "@/engine/world/hints";
+import {
+  bearingTo,
+  compassAngle,
+  leads,
+  leadView,
+  type LeadSource,
+  type LeadView,
+} from "@/engine/world/leads";
 import { VILLAGE } from "@/engine/world/village";
 import { REST } from "@/engine/config/round";
 import { CHAPTERS, clockLabel, DAY } from "@/engine/config/day";
@@ -15,9 +22,73 @@ import { gameMode } from "@/engine/config/mode";
 import { thieves, MAX_THIEVES } from "@/engine/npc/thieves";
 import { isTouchDevice } from "@/engine/input/touch";
 
-const HINT_DEFAULT = "#8fd0e0"; // pale cyan ping
-const HINT_REAL = "#f2c14e"; // gold
-const HINT_FAKE = "#7a4a4a"; // dim decoy
+const HINT_DEFAULT = "#8fd0e0"; // pale cyan ping (the fox pill, at rest)
+const HINT_REAL = "#f2c14e"; // gold (the fox pill, once it's digging)
+// HINT_FAKE went with the candidate dots: nothing on the HUD is allowed to know
+// which pings are decoys any more, so there is nothing left to colour "decoy".
+
+/** Wedge colour per source. A villager's rumour is deliberately NOT red or
+ *  otherwise marked as suspect — a liar on the compass has to look exactly like
+ *  an honest one, or the deduction is done for you. It's simply a different,
+ *  less authoritative voice: hearsay green against the guardian's gold. */
+const LEAD_COLOR: Record<LeadSource, string> = {
+  guardian: "#f2c14e",
+  fox: "#f0a860",
+  chart: "#8fd0e0",
+  villager: "#9fd6a4",
+};
+
+/** Plain-language read on how much the fox's nose can be trusted. */
+function noseLabel(misread: number): string {
+  if (misread <= 0) return "never wrong";
+  if (misread < 0.2) return "good nose";
+  if (misread < 0.35) return "learning";
+  return "still a pup — check its work";
+}
+
+/** Annular-sector path for a compass wedge, in the 58×58 compass box. */
+const WEDGE_INNER = 13;
+const WEDGE_OUTER = 27;
+
+function wedgePath(rel: number, spread: number, c: number): string {
+  const a0 = rel - spread;
+  const a1 = rel + spread;
+  // Screen space: x = c + sin(a)·r, y = c − cos(a)·r, so increasing `a` sweeps
+  // clockwise (SVG sweep-flag 1). Spread is capped below 90° in leads.ts, so the
+  // arc can never exceed a half-turn and large-arc-flag stays 0.
+  const p = (a: number, r: number) =>
+    `${(c + Math.sin(a) * r).toFixed(2)} ${(c - Math.cos(a) * r).toFixed(2)}`;
+  return (
+    `M ${p(a0, WEDGE_OUTER)} A ${WEDGE_OUTER} ${WEDGE_OUTER} 0 0 1 ${p(a1, WEDGE_OUTER)} ` +
+    `L ${p(a1, WEDGE_INNER)} A ${WEDGE_INNER} ${WEDGE_INNER} 0 0 0 ${p(a0, WEDGE_INNER)} Z`
+  );
+}
+
+/** Place a blip on the compass ring at a world position. */
+function placeBlip(
+  el: HTMLDivElement | null,
+  x: number,
+  z: number,
+  c: number,
+  r: number
+): void {
+  if (!el) return;
+  const a = compassAngle(bearingTo(runtime.playerPos.x, runtime.playerPos.z, x, z), runtime.yaw);
+  el.style.left = `${c + Math.sin(a) * r}px`;
+  el.style.top = `${c - Math.cos(a) * r}px`;
+}
+
+/** Point a wedge at a lead, or hide it if that lead has been forgotten. */
+function drawWedge(el: SVGPathElement | null, view: LeadView | null, yaw: number, c: number): void {
+  if (!el) return;
+  if (!view) {
+    el.style.opacity = "0";
+    return;
+  }
+  el.setAttribute("d", wedgePath(compassAngle(view.bearing, yaw), view.spread, c));
+  el.setAttribute("fill", LEAD_COLOR[view.source]);
+  el.style.opacity = String(0.12 + view.alpha * 0.5);
+}
 
 /**
  * DOM overlay. Reads `runtime` on its own rAF (never re-rendering from the game
@@ -25,7 +96,8 @@ const HINT_FAKE = "#7a4a4a"; // dim decoy
  * fox's sniff (Q) reveals which is real (DESIGN §2/§3).
  */
 export function Hud() {
-  const arrows = useRef<(HTMLDivElement | null)[]>([]);
+  const leadArc = useRef<SVGPathElement>(null);
+  const rumourArc = useRef<SVGPathElement>(null);
   const thiefBlips = useRef<(HTMLDivElement | null)[]>([]);
   const bankBlip = useRef<HTMLDivElement>(null);
   const sniffEl = useRef<HTMLDivElement>(null);
@@ -62,6 +134,7 @@ export function Hud() {
   const villeCarrying = useGame((s) => s.villeCarrying);
   const villeBanked = useGame((s) => s.villeBanked);
   const villeEarned = useGame((s) => s.villeEarned);
+  const lockboxes = useGame((s) => s.lockboxes);
   const roundNonce = useGame((s) => s.roundNonce);
 
   // The control legend: up while you settle in, then out of the way. Bound to H
@@ -112,30 +185,17 @@ export function Hud() {
     const tick = () => {
       const now = performance.now();
 
-      // One radar blip per hint, placed AROUND the compass ring at its bearing
-      // (top = ahead). Its position around the ring shows direction; color shows
-      // whether the fox has revealed it.
       const C = 29; // compass centre (px)
       const R = 20; // ring radius (px)
-      for (let i = 0; i < HINTS.length; i++) {
-        const el = arrows.current[i];
-        if (!el) continue;
-        const h = HINTS[i];
-        if ((h.real && (runtime.hintClaimed[i] || runtime.hintStolen[i])) || (!h.real && runtime.hintSilenced[i])) {
-          el.style.opacity = "0";
-          continue;
-        }
-        const dx = h.pos.x - runtime.playerPos.x;
-        const dz = h.pos.z - runtime.playerPos.z;
-        const rel = Math.atan2(dx, dz) - runtime.yaw;
-        el.style.left = `${C + Math.sin(rel) * R}px`;
-        el.style.top = `${C - Math.cos(rel) * R}px`;
-        // All candidates look identical, always. The old "sniff" recoloured these
-        // to give the answer away on the HUD; now the fox physically runs to the
-        // real one and you follow it, so the compass stays honest.
-        el.style.background = HINT_DEFAULT;
-        el.style.opacity = "1";
-      }
+
+      // The compass knows NOTHING about where the treasure is. It only draws what
+      // you've been TOLD — see engine/world/leads.ts for why the four
+      // always-on candidate dots that used to live here had to go.
+      //
+      // Two sectors: the lead you trust (guardian / fox) and the last rumour a
+      // villager pushed on you. Both fade as you forget them.
+      drawWedge(leadArc.current, leadView(leads.lead, now), runtime.yaw, C);
+      drawWedge(rumourArc.current, leadView(leads.rumour, now), runtime.yaw, C);
 
       // A red blip per live thief on the compass ring (they keep racing for any
       // treasure you haven't taken yet).
@@ -145,9 +205,7 @@ export function Hud() {
         if (!el) continue;
         if (i < live.length) {
           const p = live[i].getPos();
-          const rel = Math.atan2(p.x - runtime.playerPos.x, p.z - runtime.playerPos.z) - runtime.yaw;
-          el.style.left = `${C + Math.sin(rel) * R}px`;
-          el.style.top = `${C - Math.cos(rel) * R}px`;
+          placeBlip(el, p.x, p.z, C, R);
           el.style.opacity = "1";
         } else {
           el.style.opacity = "0";
@@ -159,9 +217,7 @@ export function Hud() {
       if (bankBlip.current) {
         const carrying = useGame.getState().villeCarrying;
         if (carrying > 0 && useGame.getState().roundState === "playing") {
-          const rel = Math.atan2(VILLAGE.bank.x - runtime.playerPos.x, VILLAGE.bank.z - runtime.playerPos.z) - runtime.yaw;
-          bankBlip.current.style.left = `${C + Math.sin(rel) * R}px`;
-          bankBlip.current.style.top = `${C - Math.cos(rel) * R}px`;
+          placeBlip(bankBlip.current, VILLAGE.bank.x, VILLAGE.bank.z, C, R);
           bankBlip.current.style.opacity = String(0.55 + 0.45 * Math.sin(now / 260)); // gentle pulse
         } else {
           bankBlip.current.style.opacity = "0";
@@ -200,9 +256,7 @@ export function Hud() {
       if (foxBlip.current) {
         const tracking = runtime.foxState === "scout" || runtime.foxState === "attack";
         if (tracking) {
-          const rel = Math.atan2(runtime.foxPos.x - runtime.playerPos.x, runtime.foxPos.z - runtime.playerPos.z) - runtime.yaw;
-          foxBlip.current.style.left = `${C + Math.sin(rel) * R}px`;
-          foxBlip.current.style.top = `${C - Math.cos(rel) * R}px`;
+          placeBlip(foxBlip.current, runtime.foxPos.x, runtime.foxPos.z, C, R);
           foxBlip.current.style.opacity = runtime.foxFoundTreasure
             ? String(0.6 + 0.4 * Math.sin(now / 180)) // urgent pulse once it's found it
             : "1";
@@ -221,7 +275,12 @@ export function Hud() {
           sniffEl.current.style.color = "#ff8a7a";
           sniffEl.current.style.borderColor = "rgba(232,86,63,0.7)";
         } else if (st === "scout") {
-          sniffEl.current.textContent = runtime.foxFoundTreasure ? "🦊 found it — follow!" : "🦊 scouting…";
+          // "found IT" was a promise the fox can no longer keep — a kit digs at
+          // decoys with total conviction. The HUD reports what it's doing, not
+          // whether it's right; finding that out is the player's job.
+          sniffEl.current.textContent = runtime.foxFoundTreasure
+            ? "🦊 it's digging — follow!"
+            : "🦊 scouting…";
           sniffEl.current.style.color = HINT_REAL;
           sniffEl.current.style.borderColor = HINT_REAL;
         } else if (st === "attack") {
@@ -296,7 +355,9 @@ export function Hud() {
         }
       }
 
-      // Shelter / rest prompt while inside a house (the world is paused here).
+      // Shelter / rest prompt while inside a house. The copy no longer promises
+      // safety: the room breaks line of sight and nothing more, the day keeps
+      // moving, and anyone who watched you come in is on their way.
       if (shelterEl.current) {
         const canBank = runtime.nearBank && useGame.getState().villeCarrying > 0;
         if (canBank) {
@@ -306,27 +367,27 @@ export function Hud() {
           shelterEl.current.innerHTML = "at the market — press <b>E</b> to shop";
           shelterEl.current.style.opacity = "1";
         } else if (runtime.resting) {
-          shelterEl.current.innerHTML = "resting — world paused · recovering";
+          shelterEl.current.innerHTML = "patching up — <b>stay still</b>";
           shelterEl.current.style.opacity = "1";
         } else if (runtime.sheltered) {
           const left = useGame.getState().restoresLeft;
           const atCap =
             useGame.getState().playerHealth >= useGame.getState().maxPlayerHealth * REST.healCap;
           shelterEl.current.innerHTML = atCap
-            ? "safe inside — world paused · you're patched up"
+            ? "out of sight — they'll come looking"
             : left > 0
-              ? `safe inside — world paused · <b>X</b> to use a restore (${left} left)`
-              : "safe inside — world paused · <b>no restores left</b> — buy more at the market";
+              ? `out of sight — <b>X</b> to patch up (${left} left)`
+              : "out of sight — <b>no restores left</b> — buy more at the market";
           shelterEl.current.style.opacity = "1";
         } else {
           shelterEl.current.style.opacity = "0";
         }
       }
 
-      // Dim the countdown while indoors to signal it's frozen.
-      if (timerEl.current) {
-        timerEl.current.style.opacity = runtime.sheltered ? "0.4" : "1";
-      }
+      // The clock used to dim indoors to signal it had stopped. It hasn't
+      // stopped any more — the whole point of the safe-room rewrite is that the
+      // light keeps going while you hide — so it must read at full strength in
+      // there. Dimming it now would be the HUD telling you a lie.
       // Damage flash, PLUS a sustained low-health pulse. The two share one element:
       // a hit spikes it, and below the critical threshold it never fully clears —
       // it breathes instead, harder the closer to death you are. Health bars are
@@ -439,6 +500,9 @@ export function Hud() {
         <div ref={ammoEl} style={styles.ammoPill} />
         <div style={{ ...styles.restorePill, opacity: restoresLeft > 0 ? 1 : 0.35 }}>✚ ×{restoresLeft}</div>
         <div style={{ ...styles.bombPill, opacity: bombsLeft > 0 ? 1 : 0.35 }}>💣 ×{bombsLeft}</div>
+        {/* Only shown when you've actually bought insurance — an always-on "×0"
+            is a permanent reminder of a thing you didn't do. */}
+        {lockboxes > 0 && <div style={styles.lockPill}>🔒 ×{lockboxes}</div>}
       </div>
 
       {/* Directional damage indicator: an arc pointing at whoever just hit you.
@@ -457,6 +521,9 @@ export function Hud() {
         {gameMode().fox && (
           <div style={styles.foxStage}>
             🦊 {foxGrowthFor(villeEarned).name}
+            {/* Name the thing growth actually buys. "Bank 200 to grow" says
+                nothing about WHY you'd want to; its nose is the why. */}
+            <span style={styles.foxNext}> · {noseLabel(foxGrowthFor(villeEarned).misreadChance)}</span>
             {foxNextThreshold(villeEarned) !== null && (
               <span style={styles.foxNext}> · bank {foxNextThreshold(villeEarned)! - villeEarned} to grow</span>
             )}
@@ -480,6 +547,11 @@ export function Hud() {
           {runtime.lootLostAmount > 0 && (
             <div style={styles.deathLoss}>
               you dropped {runtime.lootLostAmount} VILLE — the treasure is back on the board
+            </div>
+          )}
+          {runtime.lootSalvaged > 0 && (
+            <div style={styles.deathSalvage}>
+              🔒 the lockbox held — {runtime.lootSalvaged} VILLE still on you
             </div>
           )}
           <div style={styles.deathHint}>
@@ -510,19 +582,18 @@ export function Hud() {
         </div>
       )}
 
-      {/* Compass, top-center — one radar blip per candidate hint + the thief */}
+      {/* Compass, top-center. It shows what you've been TOLD (two fading sectors),
+          the thieves, the vault while you're carrying, and the fox while it's
+          out — but never where the treasure is. */}
       <div style={styles.compassWrap}>
         <div style={styles.compass}>
+          <svg width={58} height={58} style={styles.compassSvg}>
+            {/* Rumour under the lead, so a fresh lie can't paint over the
+                guardian's bearing — it can only sit next to it. */}
+            <path ref={rumourArc} d="" fill="none" style={{ opacity: 0, transition: "opacity 0.25s ease" }} />
+            <path ref={leadArc} d="" fill="none" style={{ opacity: 0, transition: "opacity 0.25s ease" }} />
+          </svg>
           <div style={styles.compassCenter} />
-          {HINTS.map((_, i) => (
-            <div
-              key={i}
-              ref={(el) => {
-                arrows.current[i] = el;
-              }}
-              style={styles.hintDot}
-            />
-          ))}
           {Array.from({ length: MAX_THIEVES }).map((_, i) => (
             <div
               key={i}
@@ -645,18 +716,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: "rgba(11,13,16,0.5)",
     margin: "0 auto",
   },
-  hintDot: {
-    position: "absolute",
-    left: "50%",
-    top: "50%",
-    width: 9,
-    height: 9,
-    borderRadius: "50%",
-    transform: "translate(-50%, -50%)",
-    background: HINT_DEFAULT,
-    boxShadow: "0 0 0 1px rgba(0,0,0,0.55)",
-    transition: "background 0.2s ease",
-  },
+  compassSvg: { position: "absolute", left: 0, top: 0, pointerEvents: "none" },
   compassCenter: {
     position: "absolute",
     left: "50%",
@@ -913,6 +973,18 @@ const styles: Record<string, React.CSSProperties> = {
     pointerEvents: "none",
     userSelect: "none",
   },
+  lockPill: {
+    padding: "3px 10px",
+    borderRadius: 999,
+    background: "rgba(11,13,16,0.6)",
+    border: "1px solid rgba(242,193,78,0.45)",
+    color: "#f2c14e",
+    fontSize: 13,
+    letterSpacing: 0.5,
+    whiteSpace: "nowrap",
+    pointerEvents: "none",
+    userSelect: "none",
+  },
   healthLabel: {
     position: "absolute",
     inset: 0,
@@ -938,6 +1010,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   deathTitle: { fontSize: 34, fontWeight: 700, letterSpacing: 1, color: "#e8563f" },
   deathLoss: { fontSize: 15, color: "#ffb054", letterSpacing: 0.3 },
+  deathSalvage: { fontSize: 15, color: "#f2c14e", letterSpacing: 0.3 },
   deathHint: { fontSize: 16, color: "rgba(232,238,242,0.85)" },
   crosshairWrap: {
     position: "absolute",

@@ -186,7 +186,9 @@ export function PlayerController() {
       }
       if (e.code === "KeyG" && !e.repeat) {
         // Start aiming a bomb throw (needs the mouse captured, a bomb, live play,
-        // and being OUTSIDE — the safe room cuts both ways, see below).
+        // and being OUTSIDE). The indoor ban survives the safe-room rewrite for a
+        // different reason: you cannot lob a 11m arc inside a 7×5 room, and a 6m
+        // blast from in there is just suicide with extra steps.
         const st = useGame.getState();
         if (
           (document.pointerLockElement || touch.enabled) &&
@@ -333,13 +335,13 @@ export function PlayerController() {
     const dt = Math.min(rawDt, 1 / 30); // clamp big frame gaps so physics stays sane
     const k = keys.current;
 
-    // The world pauses while you're INDOORS or in the shop (Marvy's design): the
-    // round clock holds, thieves stop where they are, projectiles freeze. Resting
-    // should never cost you the race. What stops "duck in and top up" from being
-    // strictly dominant isn't a time penalty — it's that restores are a limited
-    // resource (REST.charges), so each rest spends something finite.
+    // The world pauses for MENUS only — the shop overlay and the map. Being
+    // indoors used to pause it too, which turned every doorway into a pause
+    // button (see store.damagePlayer for the full reasoning). The day now runs
+    // while you shelter, the thieves keep racing, and resting is three real
+    // seconds of sitting down in a building someone watched you enter.
     const shopOpen = useGame.getState().shopOpen;
-    runtime.paused = runtime.sheltered || shopOpen || runtime.mapOpen;
+    runtime.paused = shopOpen || runtime.mapOpen;
     if (useGame.getState().roundState === "playing" && runtime.paused) {
       runtime.roundStartAt += dt * 1000;
     }
@@ -431,7 +433,16 @@ export function PlayerController() {
     // come back to when downed. No prompt, no interaction: stepping inside is the
     // act of claiming it.
     if (runtime.shelterIndex >= 0) runtime.refugeIndex = runtime.shelterIndex;
-    if (resting.current && (wish.lengthSq() > 0 || k.jump || touch.jump || frozen || !runtime.sheltered)) {
+    // Standing up: moving, jumping, leaving the house — or being SHOT. Resting is
+    // no longer three free seconds in a frozen world; it's three seconds sitting
+    // down with your back to a door, and anyone who finds you interrupts it. The
+    // charge is still spent, which is the whole risk of choosing to rest here
+    // rather than somewhere quieter.
+    const hitWhileResting = resting.current && performance.now() - runtime.damageAt < 400;
+    if (
+      resting.current &&
+      (wish.lengthSq() > 0 || k.jump || touch.jump || frozen || !runtime.sheltered || hitWhileResting)
+    ) {
       resting.current = false;
     }
     runtime.resting = resting.current;
@@ -882,11 +893,12 @@ export function PlayerController() {
     cam.fov += (targetFov - cam.fov) * Math.min(1, FEEL.fovLerp * dt);
     cam.updateProjectionMatrix();
 
-    // Fire (hold left-click or F) — uses the just-updated camera aim. Not while
-    // sheltered: the house is a safe room, and safety has to cut both ways. If you
-    // were untouchable in there but could still shoot out, the doorway would be a
-    // free firing position and holding it would beat playing the map. Step out to
-    // fight.
+    // Fire (hold left-click or F) — uses the just-updated camera aim. You CAN
+    // now shoot from indoors. That used to be banned as the other half of the
+    // safe-room bargain ("untouchable in there, so you don't get to shoot out").
+    // With the immunity gone the ban is just a punishment: you'd be standing in a
+    // room a blocker is walking into, unable to answer. Holding a doorway is a
+    // legitimate position now, and a contestable one.
     // Reload bookkeeping: land the pending reload, and auto-start one the moment
     // the magazine runs dry so holding the trigger never just silently stops.
     {
@@ -903,7 +915,6 @@ export function PlayerController() {
       !frozen &&
       !resting.current &&
       !runtime.paused &&
-      !runtime.sheltered &&
       fireCd.current <= 0 &&
       useGame.getState().spendAmmo()
     ) {

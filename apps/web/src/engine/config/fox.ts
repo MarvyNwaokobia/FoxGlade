@@ -12,13 +12,30 @@ export interface FoxStage {
   name: string;
   scale: number; // rendered size (1 = full adult)
   sniffCooldownMult: number; // multiplies SNIFF_COOLDOWN (lower = sniffs more often)
+  /** Chance a scout goes to the WRONG nook — the fox's judgement, not its speed.
+   *
+   *  This is the growth curve that matters. A shorter cooldown is a number; a kit
+   *  that trots off confidently to a decoy and digs at nothing is a character,
+   *  and the run where you finally stop double-checking it is the payoff the
+   *  whole raise-it loop was supposed to have. Familiarity with a nook cuts this
+   *  further (see fox/foxMemory.ts) so growth is felt as "it knows this village"
+   *  rather than as a percentage. */
+  misreadChance: number;
 }
 
-const TABLE: { minBanked: number; name: string; scale: number; sniffCooldownMult: number }[] = [
-  { minBanked: 0, name: "Kit", scale: 0.6, sniffCooldownMult: 1.0 },
-  { minBanked: 100, name: "Young", scale: 0.74, sniffCooldownMult: 0.82 },
-  { minBanked: 300, name: "Adult", scale: 0.87, sniffCooldownMult: 0.66 },
-  { minBanked: 600, name: "Prime", scale: 1.0, sniffCooldownMult: 0.5 },
+const TABLE: {
+  minBanked: number;
+  name: string;
+  scale: number;
+  sniffCooldownMult: number;
+  misreadChance: number;
+}[] = [
+  { minBanked: 0, name: "Kit", scale: 0.6, sniffCooldownMult: 1.0, misreadChance: 0.45 },
+  { minBanked: 100, name: "Young", scale: 0.74, sniffCooldownMult: 0.82, misreadChance: 0.28 },
+  { minBanked: 300, name: "Adult", scale: 0.87, sniffCooldownMult: 0.66, misreadChance: 0.12 },
+  // Prime is never wrong. There has to be a top of this curve you can feel, and
+  // "my fox is never wrong any more" is a better one than a slightly lower number.
+  { minBanked: 600, name: "Prime", scale: 1.0, sniffCooldownMult: 0.5, misreadChance: 0 },
 ];
 
 export const FOX_MAX_STAGE = TABLE.length - 1;
@@ -53,6 +70,10 @@ export const FOX = {
   /** How far ahead it likes to be. It LEADS: a companion you follow reads as
    *  alive, one that trails behind you is furniture. */
   leadOffset: 1.6,
+  /** …except where it watched you go down. Within this range of a remembered
+   *  danger it stops leading and tucks in behind you instead. */
+  waryRange: 9,
+  waryLagOffset: 1.1,
 
   // --- Idle flavour (only when you're standing still) ---
   /** Seconds of you standing still before it wanders off to nose at something. */
@@ -97,7 +118,13 @@ export function foxGrowthFor(villeBanked: number): FoxStage {
   let idx = 0;
   for (let i = 0; i < TABLE.length; i++) if (villeBanked >= TABLE[i].minBanked) idx = i;
   const s = TABLE[idx];
-  return { stage: idx, name: s.name, scale: s.scale, sniffCooldownMult: s.sniffCooldownMult };
+  return {
+    stage: idx,
+    name: s.name,
+    scale: s.scale,
+    sniffCooldownMult: s.sniffCooldownMult,
+    misreadChance: s.misreadChance,
+  };
 }
 
 /** VILLE banked needed to reach the next stage (null if already at max). */
