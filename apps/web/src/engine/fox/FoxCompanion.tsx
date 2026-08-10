@@ -353,7 +353,13 @@ export function FoxCompanion() {
         // difference between a companion and a tethered prop.
         if (gap > FOX.followRadius) {
           const sprint = gap > FOX.sprintRadius;
-          const spd = sprint ? FOX.runSpeed : FOX.walkSpeed;
+          // Catching up is proportional to how far behind it is. A flat run speed
+          // has to be fast enough for the worst case, which means it's far too
+          // fast for the common one — the fox spent every ordinary moment moving
+          // at emergency pace. Now it only hurries as much as it has to.
+          const spd = sprint
+            ? Math.min(FOX.chaseSpeed, FOX.runSpeed * (1 + (gap - FOX.sprintRadius) * FOX.chaseGain))
+            : FOX.walkSpeed;
           // Close by, steer directly (cheap, and it keeps the follow supple).
           // Far off — round a building, say — plan a route instead, or it gets
           // stuck on the far side of a wall exactly like the scout used to.
@@ -420,6 +426,17 @@ export function FoxCompanion() {
     else if (alerting) clip = CLIP.angry;
     else clip = CLIP.idle;
     play(clip);
+
+    // Tie the legs to the ground speed. The locomotion clips used to play at a
+    // fixed rate whatever the fox was doing, so the same four-beat gait had to
+    // cover anything from an idle amble to a 9 m/s scout — which is most of why
+    // it read as "too fast": the animal wasn't running faster, it was sliding.
+    // Nominal walk/run speed is 1×, and anything either side scales the playback.
+    if (clip === CLIP.walk || clip === CLIP.run) {
+      const nominal = clip === CLIP.run ? FOX.runSpeed : FOX.walkSpeed;
+      const a = actions[clip];
+      if (a) a.timeScale = THREE.MathUtils.clamp(s / nominal, 0.65, 1.5);
+    }
 
     if (group.current) {
       group.current.position.copy(foxPos.current);

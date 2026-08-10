@@ -60,9 +60,23 @@ export const FOX = {
   /** Beyond this it has genuinely lost you — teleports back (a stuck fox is
    *  worse than a briefly-implausible one). */
   leashRadius: 34,
-  walkSpeed: 3.2,
-  runSpeed: 8.5,
-  accel: 9,
+  // Slowed across the board (Marvy: "the fox moves too fast"). It used to RUN at
+  // 8.5 — faster than the player's own sprint (FEEL.runSpeed 7.5) — so at any
+  // pace below a full sprint it shot around you like a wind-up toy rather than
+  // keeping you company.
+  //
+  // Everyday pace is now well under yours, which is what you actually watch for
+  // most of a run. It can still close a real gap: past `sprintRadius` the trot
+  // scales up with how far behind it is (chaseGain, capped at chaseSpeed), so
+  // being slow at heel never turns into being permanently lost.
+  walkSpeed: 2.3,
+  runSpeed: 6.4,
+  /** Extra speed per metre of gap beyond `sprintRadius`, while catching up. */
+  chaseGain: 0.07,
+  /** Ceiling on that catch-up. Above the player's sprint, so it can always get
+   *  back to you, but only ever while it's genuinely behind. */
+  chaseSpeed: 8.2,
+  accel: 7,
   /** Metres to the side of the player it prefers to walk. Negative = the player's
    *  LEFT, deliberately opposite the camera's over-the-shoulder offset — on the
    *  same side it sat directly under the camera and was cropped off-screen. */
@@ -81,7 +95,9 @@ export const FOX = {
   idleWanderRadius: 4.5,
 
   // --- Scout: sent to find the real treasure ---
-  scoutSpeed: 9.5,
+  // Still the quickest it moves — it's on an errand, and you're meant to hurry
+  // after it — but no longer a blur you can't follow.
+  scoutSpeed: 7.2,
   /** How close it needs to get to call it found. */
   scoutArriveDist: 2.2,
   /** Seconds it waits at the treasure, barking, before heading back. */
@@ -90,7 +106,9 @@ export const FOX = {
   scoutTimeout: 22,
 
   // --- Attack: sent at a threat ---
-  attackSpeed: 11,
+  // The lunge stays the fastest thing it does — it's a charge, and it should
+  // read as one — just no longer teleport-fast.
+  attackSpeed: 8.6,
   /** Range from the player within which a threat can be assigned. */
   attackAcquireRange: 18,
   /** How close it must get to land the lunge. */

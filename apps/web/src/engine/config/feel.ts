@@ -54,29 +54,56 @@ export const FEEL = {
    *  hand jitter stops swimming the camera without adding any input latency. */
   aimDeadzonePx: 1.2,
   aimDeadzoneDamp: 0.35, // how much of a sub-deadzone delta still gets through
-  cameraDistance: 2.4, // hip-fire orbit distance
+  // The rig was always an over-the-shoulder ORBIT, but at 2.4 m back it was a
+  // chase boom: the character sat small in frame with a lot of empty street
+  // between you and him, which is a follow camera, not a shoulder camera.
+  //
+  // The lens now sits just behind and a little above the shoulder — close enough
+  // that his shoulder and head fill the lower-left of the frame and you are
+  // sighting past him, the way an over-the-shoulder camera is supposed to read.
+  //
+  // Framing is the RATIO, not the distance: the character's angular offset from
+  // the reticle is atan(cameraShoulder / cameraDistance) across and
+  // atan(cameraHeadroom / cameraDistance) down. At 0.46/1.15 that's ~22° left
+  // and ~9° below centre — he holds the lower-left quadrant while the crosshair
+  // stays in clear air. Change the distance and these two must move with it or
+  // the framing goes with it.
+  cameraDistance: 1.15, // hip-fire orbit distance — just off the shoulder
   cameraHeight: 2.6, // (unused by the shoulder cam; kept for reference)
-  cameraShoulder: 0.62, // over-the-shoulder side offset of the PIVOT (frames him left of centre)
-  cameraHeadroom: 0.28, // pivot lift above the eye — drops him below the reticle
+  cameraShoulder: 0.46, // over-the-shoulder side offset of the PIVOT (frames him left of centre)
+  cameraHeadroom: 0.18, // pivot lift above the eye — drops him below the reticle
   cameraConverge: 25, // metres out along the aim line the camera converges on
   cameraMinHeight: 0.7, // camera never dips below this, so you can't see under the world
-  cameraMinDistance: 1.2, // closest the camera pulls in on collision (kept back so the character stays framed, not slammed against his back)
+  // Must stay BELOW cameraDistance or the collision solve pushes the camera
+  // outward into the wall it's meant to be avoiding.
+  // At 0.5 a wall swings him 93% of the way to the frame edge; 0.6 keeps that to
+  // ~82%, which reads as the camera crowding him rather than throwing him off
+  // screen. Below the fade band either way, so he thins out as it happens.
+  cameraMinDistance: 0.6, // closest the camera pulls in on collision
 
   // --- Aim-down-sights (hold right-mouse / AIM on touch) ---
   // Replaces the old V first-person toggle, which put the camera at the eyes with
   // no arms, no hands and no weapon (the gun is a child of the faded body, so it
   // vanished too) — a floating camera, not a viewpoint. ADS gets the precision
   // without ever hiding the character or the fox.
-  adsDistance: 1.75,
-  adsShoulder: 0.34,
+  // Aiming tightens IN from the shoulder. These have to stay below the hip
+  // numbers above: at the old 1.75 they now sit further back than hip-fire, so
+  // raising the sights would shove the camera AWAY from the shoulder.
+  adsDistance: 0.8,
+  adsShoulder: 0.32,
   adsFov: 48, // narrower lens while aiming
   adsSensitivityMult: 0.62, // slower look while aiming — steadier
   adsSpeedMult: 0.6, // you walk while aiming, you don't sprint
   adsLerp: 14, // how fast the rig eases between hip and aim
   // Instead of hard-hiding the character when the camera is close (which read as
   // "vanishing"), fade him out: fully visible past fadeStart, gone by fadeEnd.
-  cameraFadeStart: 1.5, // distance (m) below which the character starts fading
-  cameraFadeEnd: 0.6, // distance (m) at which he's fully transparent (true near-first-person indoors)
+  // Retuned for the shoulder cam. The lens now rests ~1.25 m from the head at
+  // hip and ~0.88 m at ADS; at the old fadeStart of 1.5 the character would have
+  // been permanently ~70% transparent, because the rig's normal resting distance
+  // had moved inside the fade band. He's solid at both poses now, and only
+  // starts to go when a wall or a doorway genuinely jams the camera closer.
+  cameraFadeStart: 0.85, // distance (m) below which the character starts fading
+  cameraFadeEnd: 0.4, // distance (m) at which he's fully transparent (true near-first-person indoors)
   cameraCollisionBuffer: 0.35, // gap kept in front of a wall the camera pulls up to
 
   // --- Damage feedback (screen shake + directional stagger) ---
