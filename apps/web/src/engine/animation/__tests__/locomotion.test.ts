@@ -127,6 +127,39 @@ describe("the diagonal blend", () => {
   });
 });
 
+describe("the blend must never disarm the clip that's actually playing", () => {
+  it("keeps the active action running when the dominant axis takes over its clip", () => {
+    // The failure: walking forward-right, the blend is strafeRight. Tip the
+    // travel over to right-dominant and `transition` picks strafeRight as the
+    // DOMINANT clip — mixer.clipAction() returns the very same action object the
+    // blend was holding. The blend then saw "secondary == active", called
+    // clearLocoBlend, and stopped and zero-weighted the action now driving the
+    // whole body. Nothing drove the bones, the rig fell back to its bind pose —
+    // which for these Blender GLBs is the flat, Z-up orientation that
+    // HIPS_PITCH_FIX exists to cancel. On screen: floating and horizontal.
+    travel(AnimState.Walk, 1, 0.8); // forward-dominant, strafeRight blended in
+    travel(AnimState.Walk, 0.8, 1); // now right-dominant — same clip, new role
+
+    const strafe = mixer.clipAction(CLIPS.find((c) => c.name === CLIP_NAMES.strafeRight)!);
+    expect(machine.currentClipName).toBe(CLIP_NAMES.strafeRight);
+    expect(strafe.isRunning()).toBe(true);
+    expect(strafe.getEffectiveWeight()).toBeGreaterThan(0);
+  });
+
+  it("leaves SOME clip driving the skeleton in every travel direction", () => {
+    for (const [f, r] of [
+      [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1],
+      [1, 0.8], [0.8, 1], [-0.9, 1], [1, -0.9],
+    ] as [number, number][]) {
+      travel(AnimState.Walk, f, r);
+      const name = machine.currentClipName!;
+      const action = mixer.clipAction(CLIPS.find((c) => c.name === name)!);
+      expect(action.isRunning(), `${f},${r} → ${name} not running`).toBe(true);
+      expect(action.getEffectiveWeight(), `${f},${r} → ${name} zero weight`).toBeGreaterThan(0);
+    }
+  });
+});
+
 describe("stride phase", () => {
   it("survives a walk→strafe swap instead of re-planting from time 0", () => {
     travel(AnimState.Walk, 1, 0);

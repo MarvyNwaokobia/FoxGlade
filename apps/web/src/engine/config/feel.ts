@@ -86,10 +86,15 @@ export const FEEL = {
   // and ~9° below centre — he holds the lower-left quadrant while the crosshair
   // stays in clear air. Change the distance and these two must move with it or
   // the framing goes with it.
-  cameraDistance: 1.15, // hip-fire orbit distance — just off the shoulder
+  // 1.15 m was too tight in practice. The framing angle was right, but on a
+  // landscape phone (a ~2.16:1 frame, where the VERTICAL field is narrow) a
+  // character that close simply owns the lower-left quadrant, and there is no
+  // street left to read. Backed off to 1.7 m with the offsets scaled by the same
+  // factor, so the angles — and therefore the framing — are unchanged.
+  cameraDistance: 1.7, // hip-fire orbit distance — over the shoulder
   cameraHeight: 2.6, // (unused by the shoulder cam; kept for reference)
-  cameraShoulder: 0.46, // over-the-shoulder side offset of the PIVOT (frames him left of centre)
-  cameraHeadroom: 0.18, // pivot lift above the eye — drops him below the reticle
+  cameraShoulder: 0.68, // over-the-shoulder side offset of the PIVOT (frames him left of centre)
+  cameraHeadroom: 0.27, // pivot lift above the eye — drops him below the reticle
   cameraConverge: 25, // metres out along the aim line the camera converges on
   cameraMinHeight: 0.7, // camera never dips below this, so you can't see under the world
   // Must stay BELOW cameraDistance or the collision solve pushes the camera
@@ -107,8 +112,8 @@ export const FEEL = {
   // Aiming tightens IN from the shoulder. These have to stay below the hip
   // numbers above: at the old 1.75 they now sit further back than hip-fire, so
   // raising the sights would shove the camera AWAY from the shoulder.
-  adsDistance: 0.8,
-  adsShoulder: 0.32,
+  adsDistance: 1.15,
+  adsShoulder: 0.46,
   adsFov: 48, // narrower lens while aiming
   adsSensitivityMult: 0.62, // slower look while aiming — steadier
   adsSpeedMult: 0.6, // you walk while aiming, you don't sprint

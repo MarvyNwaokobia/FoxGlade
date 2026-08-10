@@ -19,6 +19,8 @@ const RUN_AT = 1.45;
 const LOOK_SENS = 0.0055; // rad per screen px
 /** Fraction of the screen width that belongs to the move thumb. */
 const STICK_ZONE = 0.44;
+/** Height (px) reserved at the bottom-left for the verb buttons + safe area. */
+const VERB_ROW_H = 150;
 
 /**
  * On-screen touch controls, rendered only on touch devices.
@@ -118,10 +120,13 @@ export function MobileControls() {
                     ? "STAND"
                     : canRoll
                       ? "ROLL"
-                      : "—";
+                      // Standing still with nothing to interact with, this used
+                      // to show a dead "—" — a button occupying thumb space and
+                      // doing nothing. Space always jumps, so say so.
+                      : "JUMP";
         btn.textContent = label;
         actionKey.current =
-          canBank || canGrab || canShop ? "KeyE" : canVault || (canRoll && !canRest) ? "Space" : "KeyX";
+          canBank || canGrab || canShop ? "KeyE" : canRest || runtime.resting ? "KeyX" : "Space";
         const hot = canBank || canGrab || canShop || canVault || canRest || runtime.resting || canRoll;
         btn.style.borderColor = hot ? "rgba(242,193,78,0.95)" : "rgba(255,255,255,0.35)";
         btn.style.background = hot ? "rgba(242,193,78,0.42)" : "rgba(20,20,24,0.42)";
@@ -138,11 +143,18 @@ export function MobileControls() {
     if (joyId.current !== null) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     joyId.current = e.pointerId;
+    // Keep the ring clear of the verb row above it. The stick spawns wherever
+    // the thumb lands, and the natural resting place for a left thumb in
+    // landscape is exactly where FOX / ROLL / CROUCH sit — so the ring drew over
+    // them and you could no longer read the button you were about to press.
+    // Clamping only the ring's ORIGIN (not the touch centre) means the stick
+    // still tracks your actual thumb; it just doesn't render up in the verbs.
+    const ringY = Math.min(e.clientY, window.innerHeight - VERB_ROW_H - JOY_R);
     joyCenter.current = { x: e.clientX, y: e.clientY };
     const ring = joyRing.current;
     if (ring) {
       ring.style.left = `${e.clientX - JOY_R}px`;
-      ring.style.top = `${e.clientY - JOY_R}px`;
+      ring.style.top = `${ringY - JOY_R}px`;
       ring.style.opacity = "1";
     }
     moveJoy(e.clientX, e.clientY);

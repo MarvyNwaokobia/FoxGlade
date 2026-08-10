@@ -52,23 +52,43 @@ export function Minimap() {
     const draw = () => {
       ctx.clearRect(0, 0, SIZE, SIZE);
 
-      // Walled bounds (the town square).
-      ctx.strokeStyle = "rgba(232,238,242,0.28)";
-      ctx.lineWidth = 1.5;
+      // GROUND first, then buildings on top of it.
+      //
+      // Everything used to be one hue: pale grey rectangles at 0.10 and 0.20
+      // alpha over a translucent, backdrop-BLURRED panel. With the village
+      // showing through the blur there was no figure/ground at all — the map
+      // read as a scatter of grey squares rather than as a town, and the streets
+      // between the buildings (the thing you actually navigate by) were invisible.
+      // Ground is now a solid dark plate and buildings are a warm stone that
+      // clearly sits on it, so the NEGATIVE space reads as the streets.
       roundRect(ctx, mx(-HALF), mz(-HALF), HALF * 2 * SCALE, HALF * 2 * SCALE, 6);
+      ctx.fillStyle = "rgba(26,24,22,0.95)";
+      ctx.fill();
+      ctx.strokeStyle = "rgba(242,193,78,0.45)";
+      ctx.lineWidth = 1.5;
       ctx.stroke();
 
-      // Building footprints — solids brighter, micro-cover crates dimmer.
+      // Building footprints — solids as stone, micro-cover crates barely there.
       for (const b of BUILDINGS) {
         const crate = b.w <= 2.5 && b.d <= 2.5;
-        ctx.fillStyle = crate ? "rgba(232,238,242,0.10)" : "rgba(232,238,242,0.20)";
+        ctx.fillStyle = crate ? "rgba(150,140,126,0.35)" : "rgba(186,172,150,0.82)";
         ctx.fillRect(mx(b.x - b.w / 2), mz(b.z - b.d / 2), b.w * SCALE, b.d * SCALE);
+        if (!crate) {
+          // A dark edge separates neighbouring buildings that would otherwise
+          // merge into one blob at this scale.
+          ctx.strokeStyle = "rgba(26,24,22,0.9)";
+          ctx.lineWidth = 0.75;
+          ctx.strokeRect(mx(b.x - b.w / 2), mz(b.z - b.d / 2), b.w * SCALE, b.d * SCALE);
+        }
       }
 
       // Bank + Market landmarks.
       const t = performance.now() / 1000;
-      marker(ctx, mx(VILLAGE.bank.x), mz(VILLAGE.bank.z), "#ffd873", "🏦", "BANK", false, t);
-      marker(ctx, mx(VILLAGE.market.x), mz(VILLAGE.market.z), "#4e93f2", "🛒", "MARKET", true, t);
+      // The bank labels ABOVE its pin and the market BELOW: they sit ~11 map-px
+      // apart vertically, so with both labels underneath, "BANK" landed directly
+      // on the market's marker and the two were unreadable together.
+      marker(ctx, mx(VILLAGE.bank.x), mz(VILLAGE.bank.z), "#ffd873", "🏦", "BANK", false, t, true);
+      marker(ctx, mx(VILLAGE.market.x), mz(VILLAGE.market.z), "#4e93f2", "🛒", "MARKET", true, t, false);
 
       // Player heading arrow.
       const px = mx(runtime.playerPos.x);
@@ -127,7 +147,8 @@ function marker(
   icon: string,
   label: string,
   pulse: boolean,
-  t: number
+  t: number,
+  labelAbove = false
 ) {
   if (pulse) {
     const r = 7 + Math.sin(t * 3) * 2.5;
@@ -146,10 +167,14 @@ function marker(
   ctx.font = "8px system-ui, sans-serif";
   ctx.textAlign = "center";
   ctx.fillText(icon, x, y + 2.7);
-  // Label just below.
+  // Label clear of the pin, on the side that isn't occupied.
   ctx.font = "700 8px system-ui, sans-serif";
+  // A dark halo, so a label crossing a pale building footprint stays readable.
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = "rgba(16,14,12,0.9)";
+  ctx.strokeText(label, x, y + (labelAbove ? -9 : 15));
   ctx.fillStyle = color;
-  ctx.fillText(label, x, y + 15);
+  ctx.fillText(label, x, y + (labelAbove ? -9 : 15));
 }
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
@@ -177,10 +202,13 @@ const styles: Record<string, React.CSSProperties> = {
     height: SIZE,
     padding: 0,
     borderRadius: 12,
-    background: "linear-gradient(180deg, rgba(24,20,15,0.62), rgba(14,12,10,0.62))",
-    border: "1px solid rgba(242,193,78,0.28)",
-    boxShadow: "0 6px 22px rgba(0,0,0,0.4)",
-    backdropFilter: "blur(3px)",
+    // Opaque, and NO backdrop blur. The blur was smearing the village through a
+    // 62%-transparent panel, which is most of why the map looked like a foggy
+    // grey mess in play — and on mobile it is an expensive per-frame filter for
+    // an effect that actively hurt legibility.
+    background: "rgba(16,14,12,0.94)",
+    border: "1px solid rgba(242,193,78,0.4)",
+    boxShadow: "0 6px 22px rgba(0,0,0,0.5)",
     overflow: "hidden",
     zIndex: 30,
     pointerEvents: "none",

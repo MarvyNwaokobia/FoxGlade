@@ -23,6 +23,17 @@ import { useGame } from "@/engine/store";
 import type { WeaponId } from "@/engine/config/shop";
 import { makeGunMesh, handGunWorldMatrix, muzzleWorldPos } from "./GunMesh";
 
+/** Every material on an object, so the camera fade can reach them. */
+function collectMaterials(obj: THREE.Object3D): THREE.Material[] {
+  const out: THREE.Material[] = [];
+  obj.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    (Array.isArray(m.material) ? m.material : [m.material]).forEach((mat) => mat && out.push(mat));
+  });
+  return out;
+}
+
 /** Free a swapped-out procedural gun's geometry + materials (no leaks on re-equip). */
 function disposeGroup(obj: THREE.Object3D) {
   obj.traverse((o) => {
@@ -395,6 +406,12 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
           groupRef.current.add(gun);
           gunRef.current = gun;
           currentGunId.current = id;
+          // The weapon has to fade with the man holding it. `materials.current`
+          // is built in the clonedScene memo, which runs long before this — so
+          // the gun was never in the fade list, and every time the camera closed
+          // in (a wall, a doorway) you got a solid rifle and a pair of solid
+          // hands hanging in the air over an invisible body.
+          materials.current.push(...collectMaterials(gun));
         }
 
       }
@@ -416,6 +433,14 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
       m.transparent = op < 0.99;
       m.opacity = op;
       m.depthWrite = op >= 0.99;
+    }
+    // The held bomb is JSX, so it never went through the material collection
+    // above — it would hang in the air like the gun did.
+    const bombMat = heldBombRef.current?.material as THREE.Material | undefined;
+    if (bombMat) {
+      bombMat.transparent = op < 0.99;
+      bombMat.opacity = op;
+      bombMat.depthWrite = op >= 0.99;
     }
 
     // ── Choose the animation state from gameplay flags ──
@@ -617,6 +642,8 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
     if (SHOW_GUN && gunRef.current && groupRef.current) {
       const id = useGame.getState().equippedWeapon;
       if (id !== currentGunId.current) {
+        const stale = new Set(collectMaterials(gunRef.current));
+        materials.current = materials.current.filter((m) => !stale.has(m));
         groupRef.current.remove(gunRef.current);
         disposeGroup(gunRef.current);
         const gun = makeGunMesh(id);
@@ -624,6 +651,9 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
         groupRef.current.add(gun);
         gunRef.current = gun;
         currentGunId.current = id;
+        // Swap the fade registration too, or the new gun stays solid and the old
+        // one's disposed materials linger in the list forever.
+        materials.current.push(...collectMaterials(gun));
       }
     }
 

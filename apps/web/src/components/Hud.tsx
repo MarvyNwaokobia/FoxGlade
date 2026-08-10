@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { runtime } from "@/engine/runtime";
 import { useGame } from "@/engine/store";
 import { audio } from "@/engine/audio/audio";
@@ -100,6 +100,7 @@ export function Hud() {
   const rumourArc = useRef<SVGPathElement>(null);
   const thiefBlips = useRef<(HTMLDivElement | null)[]>([]);
   const bankBlip = useRef<HTMLDivElement>(null);
+  const northTick = useRef<HTMLDivElement>(null);
   const sniffEl = useRef<HTMLDivElement>(null);
   const foxBlip = useRef<HTMLDivElement>(null);
   const promptEl = useRef<HTMLDivElement>(null);
@@ -121,6 +122,10 @@ export function Hud() {
   const ammoEl = useRef<HTMLDivElement>(null);
   const [locked, setLocked] = useState(false);
   const [muted, setMuted] = useState(false);
+  // Resolved once. The touch layout is a different arrangement, not just a
+  // smaller one: the right-hand third of a landscape phone belongs to the
+  // thumb cluster, so nothing informational may live there.
+  const touchLayout = useMemo(() => isTouchDevice(), []);
   const health = useGame((s) => s.playerHealth);
   const maxHealth = useGame((s) => s.maxPlayerHealth);
   const isDead = useGame((s) => s.isDead);
@@ -196,6 +201,16 @@ export function Hud() {
       // villager pushed on you. Both fade as you forget them.
       drawWedge(leadArc.current, leadView(leads.lead, now), runtime.yaw, C);
       drawWedge(rumourArc.current, leadView(leads.rumour, now), runtime.yaw, C);
+
+      // The N tick rides the rim, so the dial turns as you do. Without it an
+      // empty compass is a featureless black disc that reads as broken UI rather
+      // than as "nobody has told you anything yet".
+      if (northTick.current) {
+        const a = compassAngle(0, runtime.yaw); // world north, screen-relative
+        northTick.current.style.left = `${C + Math.sin(a) * 26}px`;
+        northTick.current.style.top = `${C - Math.cos(a) * 26}px`;
+        northTick.current.style.transform = `translate(-50%, -50%) rotate(${a}rad)`;
+      }
 
       // A red blip per live thief on the compass ring (they keep racing for any
       // treasure you haven't taken yet).
@@ -522,20 +537,39 @@ export function Hud() {
           <div style={styles.foxStage}>
             🦊 {foxGrowthFor(villeEarned).name}
             {/* Name the thing growth actually buys. "Bank 200 to grow" says
-                nothing about WHY you'd want to; its nose is the why. */}
+                nothing about WHY you'd want to; its nose is the why.
+                On a phone this whole line ran nearly half the screen width, so
+                the threshold — the least urgent part — is dropped there. */}
             <span style={styles.foxNext}> · {noseLabel(foxGrowthFor(villeEarned).misreadChance)}</span>
-            {foxNextThreshold(villeEarned) !== null && (
+            {!touchLayout && foxNextThreshold(villeEarned) !== null && (
               <span style={styles.foxNext}> · bank {foxNextThreshold(villeEarned)! - villeEarned} to grow</span>
             )}
           </div>
         )}
+        {/* The fox's status (cooldown / scouting / down), where the centre pill
+            used to be but out of the way. */}
+        {gameMode().fox && touchLayout && <div ref={sniffEl} style={styles.foxStatusTouch} />}
+        {touchLayout && (
+          <div style={styles.timerTouch}>
+            <div ref={timerEl} style={styles.timerNum}>06:00</div>
+            <div ref={chapterEl} style={styles.timerLabel}>Dawn</div>
+          </div>
+        )}
       </div>
 
-      {/* Time of day + chapter, top-right */}
-      <div style={styles.timer}>
-        <div ref={timerEl} style={styles.timerNum}>06:00</div>
-        <div ref={chapterEl} style={styles.timerLabel}>Dawn</div>
-      </div>
+      {/* Time of day + chapter.
+          On DESKTOP it sits top-right under the minimap. On TOUCH it moves to the
+          left, under the wallet: `top: 176, right: 20` was chosen against the
+          desktop minimap, and on a landscape phone that is exactly where the FIRE
+          button lives — the clock was rendering behind it, in red, unreadable.
+          The time of day IS the round timer now, so it is the one number that
+          can't be allowed to hide under a thumb. */}
+      {!touchLayout && (
+        <div style={styles.timer}>
+          <div ref={timerEl} style={styles.timerNum}>06:00</div>
+          <div ref={chapterEl} style={styles.timerLabel}>Dawn</div>
+        </div>
+      )}
 
       {/* Chapter banner — text set from the game loop */}
       <div ref={bannerEl} style={styles.chapterBanner} />
@@ -593,6 +627,7 @@ export function Hud() {
             <path ref={rumourArc} d="" fill="none" style={{ opacity: 0, transition: "opacity 0.25s ease" }} />
             <path ref={leadArc} d="" fill="none" style={{ opacity: 0, transition: "opacity 0.25s ease" }} />
           </svg>
+          <div ref={northTick} style={styles.compassNorth} />
           <div style={styles.compassCenter} />
           {Array.from({ length: MAX_THIEVES }).map((_, i) => (
             <div
@@ -610,7 +645,12 @@ export function Hud() {
         </div>
         {/* The send-the-fox pill and its compass blip only exist where a fox does.
             The frame loop above guards on the same refs being null. */}
-        {gameMode().fox && (
+        {/* DESKTOP only. On touch this pill hung under the centre compass — a
+            bright cyan bar parked in the middle of the view for the entire run,
+            duplicating a FOX button that is already on screen and already says
+            what it does. The touch build gets the same text down beside the
+            wallet instead (see foxStatusTouch), out of the sightline. */}
+        {gameMode().fox && !touchLayout && (
           <div ref={sniffEl} style={styles.sniffPill}>
             🦊 sniff — Q
           </div>
@@ -712,9 +752,26 @@ const styles: Record<string, React.CSSProperties> = {
     width: 58,
     height: 58,
     borderRadius: "50%",
-    border: "2px solid rgba(232,238,242,0.35)",
-    background: "rgba(11,13,16,0.5)",
+    border: "2px solid rgba(232,238,242,0.45)",
+    // Nearly opaque. At 0.5 the village showed straight through the dial — walk
+    // past a building and a chunk of timber frame appeared inside the ring,
+    // which reads as a rendering fault rather than an instrument. A compass with
+    // nothing on it should look like an empty compass, not a hole in the HUD.
+    background: "rgba(11,13,16,0.86)",
+    boxShadow: "0 2px 10px rgba(0,0,0,0.45)",
     margin: "0 auto",
+  },
+  /** Fixed N tick on the rim: gives the dial an orientation even with no lead on
+   *  it, so an empty compass reads as "nobody has told you anything yet". */
+  compassNorth: {
+    position: "absolute",
+    left: "50%",
+    top: "50%",
+    width: 2,
+    height: 7,
+    borderRadius: 1,
+    transform: "translate(-50%, -50%)",
+    background: "rgba(232,238,242,0.8)",
   },
   compassSvg: { position: "absolute", left: 0, top: 0, pointerEvents: "none" },
   compassCenter: {
@@ -776,6 +833,15 @@ const styles: Record<string, React.CSSProperties> = {
     pointerEvents: "none",
     userSelect: "none",
   },
+  timerTouch: {
+    // In the wallet's FLOW, not absolutely placed: the block above it grows a
+    // "carrying" line and a fox line, and any fixed offset would eventually be
+    // sat on by one of them.
+    marginTop: 10,
+    textAlign: "left",
+    pointerEvents: "none",
+    userSelect: "none",
+  },
   timerNum: {
     fontSize: 30,
     fontWeight: 700,
@@ -784,7 +850,7 @@ const styles: Record<string, React.CSSProperties> = {
     letterSpacing: 1,
     lineHeight: 1,
   },
-  timerLabel: { fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", color: "rgba(232,238,242,0.5)", marginTop: 2 },
+  timerLabel: { fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", color: "rgba(232,238,242,0.5)", marginTop: 2, whiteSpace: "nowrap" },
   chapterBanner: {
     position: "absolute",
     left: "50%",
@@ -873,6 +939,19 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     color: "#f0a860",
     letterSpacing: 0.3,
+  },
+  foxStatusTouch: {
+    marginTop: 4,
+    display: "inline-block",
+    padding: "2px 8px",
+    borderRadius: 999,
+    border: `1px solid ${HINT_DEFAULT}`,
+    color: HINT_DEFAULT,
+    fontSize: 12,
+    letterSpacing: 0.3,
+    whiteSpace: "nowrap",
+    pointerEvents: "none",
+    userSelect: "none",
   },
   foxNext: {
     fontSize: 11,

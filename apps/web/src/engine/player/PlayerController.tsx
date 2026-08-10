@@ -834,35 +834,56 @@ export function PlayerController() {
       // standing on it — which is the whole difference between "I can see what I'm
       // shooting" and the old rig, where his back filled the middle of the screen.
       const camDistance = THREE.MathUtils.lerp(FEEL.cameraDistance, FEEL.adsDistance, aimBlend);
-      const camShoulder = THREE.MathUtils.lerp(FEEL.cameraShoulder, FEEL.adsShoulder, aimBlend);
+      const wantShoulder = THREE.MathUtils.lerp(FEEL.cameraShoulder, FEEL.adsShoulder, aimBlend);
 
+      // ── Collision, solved from the HEAD ──
+      //
+      // The ray used to be cast from the PIVOT, which sits `cameraShoulder` out to
+      // the side of the head. Walk along a building and that pivot is already
+      // INSIDE the wall — so the ray started in solid geometry, the solve was
+      // meaningless, and the lens ended up buried in masonry with a blurred wall
+      // filling half the screen. The head can never be inside a wall (the player
+      // capsule collides), so it is the only honest place to cast from.
+      //
+      // Two rays, because the boom has two components. First: how far back can we
+      // actually go? Then: at that distance, is there room to step out to the
+      // shoulder — and if not, ease the offset toward zero so the camera swings
+      // BEHIND the character instead of sliding sideways into the wall.
+      const headPivot = head.clone().addScaledVector(UP, FEEL.cameraHeadroom);
+      const backTarget = headPivot.clone().addScaledVector(aim, -camDistance);
+      // CAMERA_BOXES, not BOXES3D: chest-high cover is excluded so the lens rides
+      // over a crate instead of being jammed against its face (see village.ts).
+      const tBack = raycastBoxes(headPivot, backTarget, CAMERA_BOXES);
+      const backDist =
+        tBack < 1
+          ? Math.max(
+              FEEL.cameraMinDistance,
+              Math.min(camDistance, camDistance * tBack - FEEL.cameraCollisionBuffer)
+            )
+          : camDistance;
+
+      const behind = headPivot.clone().addScaledVector(aim, -backDist);
+      const shoulderTarget = behind.clone().addScaledVector(rightV, wantShoulder);
+      const tSide = Math.abs(wantShoulder) > 0.01 ? raycastBoxes(behind, shoulderTarget, CAMERA_BOXES) : 1;
+      // Keep the framing PROPORTIONAL as the boom shortens: the character's
+      // on-screen offset is atan(shoulder / distance), so a shoulder held at its
+      // full width on a boom pulled to half length throws him twice as far across
+      // the frame — which is how a wall used to fling him off the side.
+      const boomScale = backDist / camDistance;
+      const camShoulder = wantShoulder * boomScale * (tSide < 1 ? Math.max(0, tSide - 0.15) : 1);
+
+      // Headroom shrinks with the boom for exactly the same reason — held at full
+      // height on a short boom it pitches the character down out of frame.
       const pivot = head
         .clone()
-        .addScaledVector(rightV, camShoulder)
-        .addScaledVector(UP, FEEL.cameraHeadroom);
+        .addScaledVector(UP, FEEL.cameraHeadroom * boomScale)
+        .addScaledVector(rightV, camShoulder);
       // Far enough out that small rig motion barely moves it, which is most of why
       // the old follow read as "swimmy".
       lookTarget = pivot.clone().addScaledVector(aim, FEEL.cameraConverge);
 
-      const desired = pivot.clone().addScaledVector(aim, -camDistance);
+      const desired = pivot.clone().addScaledVector(aim, -backDist);
       desired.y = Math.max(desired.y, FEEL.cameraMinHeight);
-
-      // Camera collision: raycast pivot → the DESIRED target (a stable point, not the
-      // current camera position) and pull the target in to just before any wall.
-      // Correcting the target once and then smoothing to it avoids the per-frame
-      // lerp-out / snap-in oscillation that made the camera shake against buildings.
-      const toDesired = desired.clone().sub(pivot);
-      const dist = toDesired.length();
-      if (dist > 0.001) {
-        // CAMERA_BOXES, not BOXES3D: chest-high cover is excluded so the lens rides
-        // over a crate instead of being jammed against its face (see village.ts).
-        const t = raycastBoxes(pivot, desired, CAMERA_BOXES);
-        if (t < 1) {
-          const d = Math.max(FEEL.cameraMinDistance, Math.min(dist, dist * t - FEEL.cameraCollisionBuffer));
-          desired.copy(pivot).addScaledVector(toDesired.multiplyScalar(1 / dist), d);
-          desired.y = Math.max(desired.y, FEEL.cameraMinHeight);
-        }
-      }
 
       // Smooth the follow on a base position; keep shake separate so it never
       // contaminates the follow (and the collision solve stays stable).

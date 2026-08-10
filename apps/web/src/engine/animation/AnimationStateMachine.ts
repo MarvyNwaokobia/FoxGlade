@@ -322,15 +322,25 @@ export class AnimationStateMachine {
   }
 
   private clearLocoBlend() {
-    if (this.blendAction) {
-      // Zero the weight BEFORE stopping. `stop()` deactivates the action but
-      // leaves its stored weight intact, and `mixer.clipAction()` hands back the
-      // same object next time — so a dropped blend would come back half-on the
-      // moment that clip was played again.
-      this.blendAction.setEffectiveWeight(0);
-      this.blendAction.stop();
-      this.blendAction = null;
-    }
+    const b = this.blendAction;
+    this.blendAction = null;
+    if (!b) return;
+    // NEVER disarm the action that is currently driving the body.
+    //
+    // `mixer.clipAction()` returns the SAME object for a given clip, so the
+    // secondary and the dominant can be one and the same — walk forward-right
+    // with strafeRight blended in, tip the travel over to right-dominant, and
+    // that strafe is promoted to the dominant clip while this still holds a
+    // reference to it. Stopping it there left nothing driving the skeleton at
+    // all, so the rig fell back to its BIND pose: for these Blender GLBs that's
+    // the flat, Z-up orientation HIPS_PITCH_FIX exists to cancel, which on
+    // screen is a character lying horizontal and floating off the ground.
+    if (b === this.activeAction) return;
+    // Zero the weight BEFORE stopping. `stop()` deactivates the action but
+    // leaves its stored weight intact, and the same object comes back next time
+    // — so a dropped blend would return half-on the moment it was replayed.
+    b.setEffectiveWeight(0);
+    b.stop();
   }
 
   /** Normalised 0..1 position of an action through its clip. */
