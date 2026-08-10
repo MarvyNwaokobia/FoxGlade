@@ -21,42 +21,84 @@ export function gripOverride(axis: "rx" | "ry" | "rz"): number | undefined {
   return GRIP_OVERRIDES[axis];
 }
 
-// ── Aiming a socketed weapon ────────────────────────────────────────────────
+// ── Socketing a weapon into the hand ────────────────────────────────────────
 //
-// Letting the animation decide where the barrel points does not work. A clip is
-// authored for a generic "holding a rifle" pose, not for the direction you happen
-// to be looking, so the muzzle ends up tens of degrees off the crosshair — and
-// worse, it MOVES during the fire clip, so shots visibly leave in a direction you
-// didn't choose. Nudging the spine gets it close and no closer.
+// The weapon is now HELD: it takes both its position and its orientation from
+// the hand bone, through a fixed grip offset, exactly as a real socket would.
 //
-// So the weapon is aimed directly: it takes its POSITION from the hand bone (it
-// stays in the grip, and the arms still carry it through every animation) and its
-// ORIENTATION from the aim vector. That's how third-person shooters do it, and
-// it's what makes the muzzle, the tracer and the hit all agree.
-const _aimZ = new THREE.Vector3();
-const _aimX = new THREE.Vector3();
-const _aimY = new THREE.Vector3();
-const _worldUp = new THREE.Vector3(0, 1, 0);
-const _fallbackUp = new THREE.Vector3(0, 0, 1);
+// It used to take position from the hand and ORIENTATION FROM THE AIM VECTOR —
+// a basis built out of the camera direction and world up, with the hand's own
+// rotation discarded. The reasoning was sound (a clip has no idea where you're
+// looking, so a clip-driven barrel drifts off the crosshair) but the cure was
+// worse than the disease, because it meant the wrist and the weapon had no
+// relationship at all:
+//
+//   · the gun read as pinned to the forearm rather than gripped, in every frame;
+//   · its roll was locked to world up, so it stayed dead level while the body
+//     leaned, strafed and flinched;
+//   · the LEFT hand could never reach the foregrip — the Mixamo rifle clips pose
+//     both hands correctly for a rifle, and all of that was being thrown away;
+//   · every grip constant measured for the socket became dead code.
+//
+// The disagreement it was solving is handled where it belongs instead. The
+// hitscan still comes from the CAMERA, so shots land exactly on the reticle; the
+// spine traverse in PlayerRig swings the torso onto the aim so the barrel lands
+// within a few degrees of it; and the tracer is drawn from the real muzzle
+// anchor to the hitscan's impact point (see PlayerController's spawnShot), so it
+// visibly converges on whatever you actually hit. Nobody reads a few degrees of
+// barrel error when the streak ends on the target.
+
+const _gripPos = new THREE.Vector3();
+const _gripQuat = new THREE.Quaternion();
+const _gripScale = new THREE.Vector3();
+const _handFrame = new THREE.Matrix4();
+const _unit = new THREE.Vector3(1, 1, 1);
+
+/** A hand-relative grip offset: rotation (XYZ euler), translation, and scale. */
+export interface GripOffset {
+  rx: number;
+  ry?: number;
+  rz: number;
+  ox?: number;
+  oy?: number;
+  oz?: number;
+  scale?: number;
+}
+
+const _offEuler = new THREE.Euler();
+const _offQuat = new THREE.Quaternion();
+const _offPos = new THREE.Vector3();
+const _offScale = new THREE.Vector3();
 
 /**
- * Write a world matrix into `out` that puts a gun at `handPos` with its barrel
- * (local +Z) along `aimDir` and its top (local +Y) as close to world-up as the
- * aim allows.
+ * Write a world matrix into `out` that puts a gun in the hand: the bone's
+ * position and rotation, then the fixed grip offset.
+ *
+ * The hand bone's SCALE is deliberately dropped. Rigs come in at wildly
+ * different scales (our FBX→GLB conversions carry a 100× node scale), and
+ * inheriting that would either shrink the weapon to nothing or blow it up to
+ * fill the street. Size belongs to `grip.scale`, which is in the gun's own
+ * units, so one grip works on every rig.
  */
-export function aimGunWorldMatrix(
+export function handGunWorldMatrix(
   out: THREE.Matrix4,
-  handPos: THREE.Vector3,
-  aimDir: THREE.Vector3
+  handMatrixWorld: THREE.Matrix4,
+  grip: GripOffset
 ): THREE.Matrix4 {
-  _aimZ.copy(aimDir).normalize();
-  // Straight up/down would make the cross product degenerate; swap the reference.
-  const up = Math.abs(_aimZ.y) > 0.999 ? _fallbackUp : _worldUp;
-  _aimX.crossVectors(up, _aimZ).normalize();
-  _aimY.crossVectors(_aimZ, _aimX).normalize();
-  out.makeBasis(_aimX, _aimY, _aimZ);
-  out.setPosition(handPos);
-  return out;
+  handMatrixWorld.decompose(_gripPos, _gripQuat, _gripScale);
+  _handFrame.compose(_gripPos, _gripQuat, _unit);
+  // `?griprx=&gripry=&griprz=` override the rotation in dev, so the grip can be
+  // dialled in from the URL (or swept headlessly) without a rebuild.
+  _offEuler.set(
+    gripOverride("rx") ?? grip.rx,
+    gripOverride("ry") ?? grip.ry ?? 0,
+    gripOverride("rz") ?? grip.rz
+  ); // XYZ: roll first, in the gun's frame
+  _offQuat.setFromEuler(_offEuler);
+  _offPos.set(grip.ox ?? 0, grip.oy ?? 0, grip.oz ?? 0);
+  _offScale.setScalar(grip.scale ?? 1);
+  out.compose(_offPos, _offQuat, _offScale);
+  return out.premultiply(_handFrame);
 }
 
 /** World position of a gun group's `muzzle` anchor, given its world matrix. */

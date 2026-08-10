@@ -669,7 +669,7 @@ export function Hud() {
       {!isTouchDevice() && showControls && (
         <div style={{ ...styles.controls, opacity: controlsFading ? 0 : 1 }}>
           <div>
-            <b>WASD</b> move &nbsp;·&nbsp; <b>Shift</b> run &nbsp;·&nbsp; <b>Space</b> jump / vault &nbsp;·&nbsp; <b>C</b> crouch
+            <b>WASD</b> move &nbsp;·&nbsp; <b>Shift</b> run &nbsp;·&nbsp; <b>Space</b> roll / vault / jump &nbsp;·&nbsp; <b>C</b> crouch
           </div>
           <div>
             <b>Mouse</b> look &nbsp;·&nbsp; <b>Left-click</b> / <b>F</b> shoot &nbsp;·&nbsp; <b>Right-click</b> aim &nbsp;·&nbsp; <b>R</b> reload

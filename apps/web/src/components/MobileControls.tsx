@@ -99,6 +99,11 @@ export function MobileControls() {
         // on the bank pad you want BANK, but out in the street with a crate in
         // front of you the only thing this button could usefully be is the hurdle.
         const canVault = runtime.canVault && !runtime.sheltered;
+        // ROLL sits at the bottom of the priority list but above the dead "—":
+        // out in the open, moving, with nothing to interact with, the useful
+        // thing this button can be is the dodge. Same Space binding as VAULT —
+        // the controller already picks between them by context.
+        const canRoll = runtime.playerMoving && !runtime.sheltered && !runtime.crouching;
         const label = canBank
           ? "BANK"
           : canGrab
@@ -111,11 +116,13 @@ export function MobileControls() {
                   ? "REST"
                   : runtime.resting
                     ? "STAND"
-                    : "—";
+                    : canRoll
+                      ? "ROLL"
+                      : "—";
         btn.textContent = label;
         actionKey.current =
-          canBank || canGrab || canShop ? "KeyE" : canVault ? "Space" : "KeyX";
-        const hot = canBank || canGrab || canShop || canVault || canRest || runtime.resting;
+          canBank || canGrab || canShop ? "KeyE" : canVault || (canRoll && !canRest) ? "Space" : "KeyX";
+        const hot = canBank || canGrab || canShop || canVault || canRest || runtime.resting || canRoll;
         btn.style.borderColor = hot ? "rgba(242,193,78,0.95)" : "rgba(255,255,255,0.35)";
         btn.style.background = hot ? "rgba(242,193,78,0.42)" : "rgba(20,20,24,0.42)";
       }

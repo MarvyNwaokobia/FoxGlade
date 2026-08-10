@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { Billboard } from "@react-three/drei";
@@ -12,7 +12,7 @@ import { runtime } from "@/engine/runtime";
 import { useGame } from "@/engine/store";
 import { audio } from "@/engine/audio/audio";
 import { AUDIO } from "@/engine/config/audio";
-import { BLOCKER } from "@/engine/config/round";
+import { blockerStats, type BlockerRole } from "@/engine/config/round";
 import { NpcRig, type NpcRigState, DEATH_LINGER_MS } from "@/engine/character/NpcRig";
 import { foxPinnedBlocker, steerTowards } from "@/engine/fox/foxBrain";
 import { findPath } from "@/engine/world/navgrid";
@@ -31,14 +31,25 @@ type Awareness = "idle" | "alert" | "engaged";
  * its head — then ENGAGED, pursuing toward a fighting range, strafing, and firing
  * on line of sight. Loses interest and returns to idle if you break away. Staggers
  * on hit, plays a death animation, then despawns.
+ *
+ * Its numbers come from its ROLE (see BLOCKER_ROLES): a `rusher` closes to knife
+ * range on a short fuse, a `holder` posts up at distance and plants its feet to
+ * shoot. Same code below — the two fights differ entirely in the stat block.
  */
-export function Blocker({ position }: { position: [number, number, number] }) {
-  const [health, setHealth] = useState<number>(BLOCKER.health);
+export function Blocker({
+  position,
+  role = "rusher",
+}: {
+  position: [number, number, number];
+  role?: BlockerRole;
+}) {
+  const S = useMemo(() => blockerStats(role), [role]);
+  const [health, setHealth] = useState<number>(S.health);
   const [removed, setRemoved] = useState(false); // unmount after the death lies out
   const dead = health <= 0;
   const group = useRef<THREE.Group>(null);
   const marker = useRef<THREE.Group>(null); // the "!" alert marker (toggled by state)
-  const cooldown = useRef(Math.random() * BLOCKER.fireCooldown); // stagger initial volleys
+  const cooldown = useRef(Math.random() * S.fireCooldown); // stagger initial volleys
   const pos = useRef(new THREE.Vector3(position[0], position[1], position[2]));
   const strafeDir = useRef(Math.random() < 0.5 ? 1 : -1);
   const strafeTimer = useRef(2 + Math.random() * 2);
@@ -57,7 +68,7 @@ export function Blocker({ position }: { position: [number, number, number] }) {
     moving: false,
     running: false,
     fireAt: -1,
-    speed: BLOCKER.moveSpeed,
+    speed: S.moveSpeed,
     aimDir: new THREE.Vector3(0, 0, 1),
     muzzleOut: new THREE.Vector3(),
   });
@@ -75,7 +86,7 @@ export function Blocker({ position }: { position: [number, number, number] }) {
         // shot in progress. That's what makes shooting first actually worth
         // something — previously a blocker fired straight through being hit, so
         // landing rounds bought you nothing until the third one killed it.
-        cooldown.current = Math.max(cooldown.current, BLOCKER.hitStagger);
+        cooldown.current = Math.max(cooldown.current, S.hitStagger);
         telegraphUntil.current = 0;
         setHealth((h) => {
           const next = Math.max(0, h - damage);
@@ -116,7 +127,7 @@ export function Blocker({ position }: { position: [number, number, number] }) {
     const dz = runtime.playerPos.z - pos.current.z;
     const dist = Math.hypot(dx, dz);
     // A crouched player is noticed later (stealth, §14.2).
-    const stealth = runtime.crouching ? BLOCKER.crouchDetectionMult : 1;
+    const stealth = runtime.crouching ? S.crouchDetectionMult : 1;
 
     // Line of sight to the player's chest (drives both sensing and firing). Aim
     // lower when crouched, so low cover genuinely hides you.
@@ -125,14 +136,14 @@ export function Blocker({ position }: { position: [number, number, number] }) {
     const to = new THREE.Vector3(runtime.playerPos.x, runtime.playerPos.y + chestY, runtime.playerPos.z);
     const hasLOS = raycastBoxes(from, to, BOXES3D) >= 1;
     // Senses you: in aggro range with sight, OR your recent gunfire within earshot.
-    const heardShot = performance.now() - runtime.fireAt < 250 && dist < BLOCKER.hearRange;
-    const canSense = (dist < BLOCKER.aggroRange * stealth && hasLOS) || heardShot;
+    const heardShot = performance.now() - runtime.fireAt < 250 && dist < S.hearRange;
+    const canSense = (dist < S.aggroRange * stealth && hasLOS) || heardShot;
 
     // Awareness transitions.
     if (awareness.current === "idle") {
       if (canSense) {
         awareness.current = "alert";
-        alertClock.current = BLOCKER.alertTime;
+        alertClock.current = S.alertTime;
         audio.playAt("spot", pos.current.x, pos.current.z, 6, 42); // positional bark
       }
     } else if (awareness.current === "alert") {
@@ -140,9 +151,9 @@ export function Blocker({ position }: { position: [number, number, number] }) {
       if (alertClock.current <= 0) awareness.current = "engaged";
     } else {
       // Engaged: give up if the player stays out of sight and well away.
-      if (!canSense && dist > BLOCKER.aggroRange) {
+      if (!canSense && dist > S.aggroRange) {
         lostClock.current += dt;
-        if (lostClock.current > BLOCKER.loseSightTime) awareness.current = "idle";
+        if (lostClock.current > S.loseSightTime) awareness.current = "idle";
       } else {
         lostClock.current = 0;
       }
@@ -154,13 +165,13 @@ export function Blocker({ position }: { position: [number, number, number] }) {
     // doorway is still a sanctuary; the only thing the safe-room rewrite would
     // have changed is that the sun keeps moving while you use it.
     //
-    // The delay is deliberate and generous (BLOCKER.breachDelay): ducking inside
+    // The delay is deliberate and generous (S.breachDelay): ducking inside
     // has to genuinely buy you a reload and a decision, or cover is worthless.
     const breaching =
       awareness.current === "engaged" &&
       runtime.sheltered &&
       !hasLOS &&
-      dist < BLOCKER.breachRange;
+      dist < S.breachRange;
     if (breaching) {
       breachClock.current += dt;
       lostClock.current = 0; // committed: it isn't going to lose interest mid-entry
@@ -168,7 +179,7 @@ export function Blocker({ position }: { position: [number, number, number] }) {
       breachClock.current = 0;
       breachPath.current.length = 0;
     }
-    const entering = breaching && breachClock.current >= BLOCKER.breachDelay;
+    const entering = breaching && breachClock.current >= S.breachDelay;
     const aware = awareness.current !== "idle";
     // Level the weapon at the player whenever aware — the rig aims the gun along
     // this, so an enemy that has noticed you is visibly pointing a rifle at you
@@ -181,20 +192,25 @@ export function Blocker({ position }: { position: [number, number, number] }) {
     // Move only once ENGAGED (idle/alert hold position — the alert beat is a
     // telegraph, not a lunge).
     let moved = false;
+    // A HOLDER plants its feet while it lines up a shot. That's the role's whole
+    // bargain: it hits hard from a distance you can't easily answer, and in
+    // exchange the long wind-up happens on a stationary target. A rusher never
+    // stops, so it's the opposite deal — hard to hit, but it has to get close.
+    const planted = S.holdsGround && telegraphUntil.current > 0;
     // While it's locked out but not yet committed, it HOLDS — a stakeout outside
     // the door, not a jog around the building. That stillness is the tell: you
     // can see through a window that it hasn't left, and you know what the wait
     // ends in.
-    if (awareness.current === "engaged" && dist > 0.01 && (!breaching || entering)) {
+    if (awareness.current === "engaged" && dist > 0.01 && !planted && (!breaching || entering)) {
       moved = true;
       const nx = dx / dist;
       const nz = dz / dist;
       let mx: number;
       let mz: number;
-      if (dist > BLOCKER.rangeMax) {
+      if (dist > S.rangeMax) {
         mx = nx; // advance
         mz = nz;
-      } else if (dist < BLOCKER.rangeMin) {
+      } else if (dist < S.rangeMin) {
         mx = -nx; // back off
         mz = -nz;
       } else {
@@ -225,7 +241,7 @@ export function Blocker({ position }: { position: [number, number, number] }) {
         // clearance leaves the door opening walkable.
         breachRepath.current -= dt;
         if (breachPath.current.length === 0 || breachRepath.current <= 0) {
-          breachRepath.current = BLOCKER.breachRepath;
+          breachRepath.current = S.breachRepath;
           breachPath.current = findPath(pos.current, runtime.playerPos) ?? [];
         }
         while (breachPath.current.length && breachPath.current[0].distanceTo(pos.current) < 0.9) {
@@ -235,7 +251,7 @@ export function Blocker({ position }: { position: [number, number, number] }) {
       } else {
         _goal.set(startX + mx * 4, 0, startZ + mz * 4); // a point along the desired heading
       }
-      const travelled = steerTowards(pos.current, _goal, BLOCKER.moveSpeed, dt, BODY_R);
+      const travelled = steerTowards(pos.current, _goal, S.moveSpeed, dt, BODY_R);
       const stepX = pos.current.x - startX;
       const stepZ = pos.current.z - startZ;
       // Tell the rig which way it's actually travelling relative to its facing (it
@@ -245,7 +261,7 @@ export function Blocker({ position }: { position: [number, number, number] }) {
       anim.current.moveFwd = (stepX * nx + stepZ * nz) * inv;
       anim.current.moveRight = (-stepX * nz + stepZ * nx) * inv;
       // Genuinely wedged → stop animating a walk that isn't happening.
-      moved = travelled > BLOCKER.moveSpeed * dt * 0.15;
+      moved = travelled > S.moveSpeed * dt * 0.15;
       const lim = VILLAGE.half - BODY_R;
       pos.current.x = Math.max(-lim, Math.min(lim, pos.current.x));
       pos.current.z = Math.max(-lim, Math.min(lim, pos.current.z));
@@ -270,20 +286,20 @@ export function Blocker({ position }: { position: [number, number, number] }) {
     const pinned = self.current ? foxPinnedBlocker(self.current) : false;
     const canShoot =
       awareness.current === "engaged" &&
-      dist <= BLOCKER.engageRange * stealth &&
+      dist <= S.engageRange * stealth &&
       hasLOS &&
       !pinned;
     const nowMs = performance.now();
 
     if (canShoot && cooldown.current <= 0 && telegraphUntil.current === 0) {
-      telegraphUntil.current = nowMs + BLOCKER.telegraphTime * 1000;
+      telegraphUntil.current = nowMs + S.telegraphTime * 1000;
     }
     // Lost the shot (you broke LOS or ran) → drop the telegraph.
     if (!canShoot) telegraphUntil.current = 0;
 
     if (telegraphUntil.current > 0 && nowMs >= telegraphUntil.current) {
       telegraphUntil.current = 0;
-      cooldown.current = BLOCKER.fireCooldown;
+      cooldown.current = S.fireCooldown;
       anim.current.fireAt = nowMs;
       // The round leaves the BARREL TIP, along the barrel — the rig publishes the
       // muzzle's world position each frame now that the gun is aimed. It used to
@@ -291,7 +307,7 @@ export function Blocker({ position }: { position: [number, number, number] }) {
       // shots looked like they were coming out of the NPC rather than its weapon.
       const muzzlePos = anim.current.muzzleOut ?? from;
       const dir = to.clone().sub(muzzlePos).normalize();
-      spawnProjectile(muzzlePos.clone().addScaledVector(dir, 0.12), dir, BLOCKER.projectileSpeed);
+      spawnProjectile(muzzlePos.clone().addScaledVector(dir, 0.12), dir, S.projectileSpeed);
       muzzleFlashUntil.current = nowMs + 130; // 70ms was invisible at 45fps (~3 frames)
       // Incoming fire — panned to the shooter's direction + quieter with distance.
       audio.playAt("enemyGun", pos.current.x, pos.current.z, AUDIO.enemyGunNear, AUDIO.enemyGunFar);
@@ -307,7 +323,7 @@ export function Blocker({ position }: { position: [number, number, number] }) {
         // The cylinder's length runs along its LOCAL Y; the mesh is then rotated
         // to lie along Z. So the length scale goes on Y — scaling Z just fattened
         // the radius and left a stub floating in the air.
-        const t = 1 - (telegraphUntil.current - nowMs) / (BLOCKER.telegraphTime * 1000);
+        const t = 1 - (telegraphUntil.current - nowMs) / (S.telegraphTime * 1000);
         telegraph.current.scale.set(1, dist, 1);
         telegraph.current.position.set(0, 1.0, dist / 2);
         const mat = telegraph.current.material as THREE.MeshBasicMaterial;
@@ -328,23 +344,38 @@ export function Blocker({ position }: { position: [number, number, number] }) {
 
   if (removed) return null;
 
-  const frac = health / BLOCKER.health;
+  const frac = health / S.health;
+  const holder = role === "holder";
   return (
     <group ref={group} position={position}>
       <NpcRig model="npc_blocker" state={anim.current} />
 
-      {/* Health bar (billboarded) — gone once downed, so the corpse reads clean */}
+      {/* Health bar (billboarded) — gone once downed, so the corpse reads clean.
+          Its WIDTH is the role's health, so a holder's bar is visibly the longer
+          one. "Which of these do I shoot first" is only a decision if you can
+          tell them apart before they open fire, and a bar you're already reading
+          costs no new UI. */}
       {!dead && (
         <Billboard position={[0, BODY_H + 0.35, 0]}>
           <mesh>
-            <planeGeometry args={[1, 0.14]} />
+            <planeGeometry args={[S.health / 3, 0.14]} />
             <meshBasicMaterial color="#000000" transparent opacity={0.5} depthWrite={false} />
           </mesh>
-          <mesh position={[-(1 - frac) / 2, 0, 0.001]}>
-            <planeGeometry args={[frac, 0.11]} />
-            <meshBasicMaterial color="#ff5a5a" depthWrite={false} />
+          <mesh position={[-((S.health / 3) * (1 - frac)) / 2, 0, 0.001]}>
+            <planeGeometry args={[(S.health / 3) * frac, 0.11]} />
+            <meshBasicMaterial color={holder ? "#ff8a3d" : "#ff5a5a"} depthWrite={false} />
           </mesh>
         </Billboard>
+      )}
+
+      {/* A holder wears a pauldron: heavier silhouette for the heavier enemy, and
+          the read works at the distance it actually fights from, which a colour
+          on a 14px bar does not. */}
+      {!dead && holder && (
+        <mesh position={[0, BODY_H * 0.78, 0]} castShadow>
+          <boxGeometry args={[0.72, 0.16, 0.44]} />
+          <meshStandardMaterial color="#3d4450" roughness={0.65} metalness={0.35} />
+        </mesh>
       )}
 
       {/* Alert "!" — flashes over the head the instant it spots you (toggled in the

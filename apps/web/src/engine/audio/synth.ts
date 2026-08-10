@@ -437,6 +437,53 @@ export const SFX: Record<string, (ctx: AudioContext, out: AudioNode, t0: number,
     }
   },
 
+  // ── The thief race ────────────────────────────────────────────────────────
+  //
+  // The most dramatic system in the game was happening off-screen: a thief walked
+  // in from a wall, pathed to a nook you might be nowhere near, and either got
+  // away or didn't. The only feedback was a compass blip and a toast. These two
+  // cues are what turn it into an event you can hear coming and act on.
+
+  // A thief has reached the treasure and started its GRAB — a scrape of stone and
+  // a rising scrabble. This is the 1.1s window in which you can still stop it,
+  // and a window you can't perceive isn't counterplay, it's a dice roll.
+  thiefGrab(ctx, out, t0, vol) {
+    const noise = ctx.createBufferSource();
+    const buf = ctx.createBuffer(1, ctx.sampleRate * 0.5, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+    noise.buffer = buf;
+    const bp = ctx.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.frequency.setValueAtTime(420, t0);
+    bp.frequency.exponentialRampToValueAtTime(2100, t0 + 0.42);
+    bp.Q.value = 3.5;
+    const g = env(ctx, t0, 0.55 * vol, 0.01, 0.44);
+    noise.connect(bp).connect(g).connect(out);
+    noise.start(t0);
+    noise.stop(t0 + 0.5);
+  },
+
+  // It has the prize and it is RUNNING — a jeering two-note whistle. Deliberately
+  // the most piercing thing in the mix: this is your last chance to chase, and
+  // "I just lost a rare treasure" should never be indistinguishable from silence.
+  thiefFlee(ctx, out, t0, vol) {
+    const notes: [number, number, number][] = [
+      [880, 0, 0.16],
+      [1320, 0.14, 0.3],
+    ];
+    for (const [f, at, dur] of notes) {
+      const o = ctx.createOscillator();
+      o.type = "triangle";
+      o.frequency.setValueAtTime(f * 0.94, t0 + at);
+      o.frequency.exponentialRampToValueAtTime(f, t0 + at + 0.05);
+      const g = env(ctx, t0 + at, 0.42 * vol, 0.008, dur);
+      o.connect(g).connect(out);
+      o.start(t0 + at);
+      o.stop(t0 + at + dur + 0.05);
+    }
+  },
+
   // UI click for the mute button.
 
   // ── Village voices ────────────────────────────────────────────────────────

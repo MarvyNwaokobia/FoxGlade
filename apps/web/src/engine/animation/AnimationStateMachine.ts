@@ -104,7 +104,11 @@ export function buildAnimMap(tempo = 1.0): AnimationMap {
     [AnimState.Grab]: { clip: CLIP_NAMES.grab, loop: false, speed: 1.0, fadeIn: 0.1, fadeOut: 0.14, canInterrupt: false, nextState: AnimState.Idle },
     // Crouch locomotion — real clips replacing the old vertical-squash hack.
     [AnimState.CrouchIdle]: { clip: CLIP_NAMES.crouchIdle, loop: true, speed: 1.0, fadeIn: 0.18, fadeOut: 0.18, canInterrupt: true },
-    [AnimState.CrouchWalk]: { clip: CLIP_NAMES.crouchWalk, clipsByMove: { left: CLIP_NAMES.crouchStrafe, right: CLIP_NAMES.crouchStrafe }, loop: true, speed: 1.0, fadeIn: 0.15, fadeOut: 0.15, canInterrupt: true },
+    // Only `right` is authored ("Walk Crouching Right"); `left` deliberately has
+    // no entry so clipForDir mirrors it by playing that clip in reverse. Mapping
+    // both directions to the same clip — as this used to — meant crouching left
+    // played a strafe-RIGHT cycle against leftward travel.
+    [AnimState.CrouchWalk]: { clip: CLIP_NAMES.crouchWalk, clipsByMove: { right: CLIP_NAMES.crouchStrafe }, loop: true, speed: 1.0, fadeIn: 0.15, fadeOut: 0.15, canInterrupt: true },
     // Turn-in-place shuffle (loop; played only while pivoting on the spot).
     [AnimState.Turn]: { clip: CLIP_NAMES.turn, loop: true, speed: 1.0, fadeIn: 0.12, fadeOut: 0.14, canInterrupt: true },
     // Hurdle over a low obstacle — a committed one-shot on a running jump.
@@ -144,6 +148,14 @@ export class AnimationStateMachine {
   private moveDir: MoveDir = "forward";
   // True while the current locomotion clip is being played REVERSED (backpedal).
   private locoReversed = false;
+  // Continuous travel direction (unit-ish, relative to facing) — drives the
+  // locomotion blend so a diagonal mixes walk and strafe instead of picking one.
+  private moveFwd = 1;
+  private moveRight = 0;
+  // The second locomotion clip riding alongside `activeAction`, and whether it
+  // has to run backwards for its direction.
+  private blendAction: THREE.AnimationAction | null = null;
+  private blendReversed = false;
 
   constructor(animMap: AnimationMap) {
     this.animMap = animMap;
@@ -162,14 +174,42 @@ export class AnimationStateMachine {
     this.transition(AnimState.Idle, true);
   }
 
+  /**
+   * The clip a state plays for one travel direction, and whether it has to run
+   * BACKWARDS to represent it.
+   *
+   * Reversal used to be hard-coded to "back with no clip". That left the crouch
+   * set silently broken: it mapped BOTH `left` and `right` to the single
+   * right-authored `crouchStrafe`, so a clip existed for `left`, no reversal
+   * triggered, and crouch-strafing left played a strafe-right cycle — the
+   * character's legs crossing the wrong way while he slid the other direction.
+   * A lateral clip reversed is the mirror move, which is exactly what the
+   * loader's own comment ("right; reversed = left") intended.
+   */
+  private clipForDir(config: AnimStateConfig, dir: MoveDir): { name: string; reversed: boolean } {
+    const by = config.clipsByMove;
+    if (!by) return { name: config.clip, reversed: false };
+    const exact = by[dir];
+    if (exact && this.clips.has(exact)) return { name: exact, reversed: false };
+    // No clip for this direction — run its opposite backwards.
+    const opposite: Record<MoveDir, MoveDir> = {
+      forward: "back",
+      back: "forward",
+      left: "right",
+      right: "left",
+    };
+    const mirrorName = dir === "back" ? config.clip : by[opposite[dir]];
+    if (mirrorName && this.clips.has(mirrorName)) return { name: mirrorName, reversed: true };
+    return { name: config.clip, reversed: false };
+  }
+
   // Picks which clip a state plays this entry (directional locomotion, or the
   // fixed clip).
   private resolveClipName(config: AnimStateConfig): string {
     if (config.clipsByMove) {
-      const chosen = config.clipsByMove[this.moveDir];
-      this.locoReversed = !chosen && this.moveDir === "back";
-      if (chosen && this.clips.has(chosen)) return chosen;
-      return config.clip;
+      const { name, reversed } = this.clipForDir(config, this.moveDir);
+      this.locoReversed = reversed;
+      return name;
     }
     this.locoReversed = false;
     return config.clip;
@@ -194,16 +234,111 @@ export class AnimationStateMachine {
 
   /**
    * Feed the character's planar velocity projected on its facing (forward and
-   * right components). If the travel direction flips axis while walking or
-   * running, the locomotion clip is swapped in place (strafe ↔ walk ↔ backpedal).
+   * right components).
+   *
+   * This used to pick ONE of four clips and, on any change, force a full
+   * re-transition — which resets the action to time 0. On a diagonal the forward
+   * and lateral components are near-equal, so ordinary speed wobble flipped the
+   * choice and restarted the stride mid-step: the feet visibly stuttered and
+   * re-planted every time you ran a corner. And because only one clip ever
+   * played, 45° travel was animated as either pure-forward or pure-strafe — the
+   * legs simply lying about where the body was going.
+   *
+   * Now the direction is kept as a continuous vector. A dominant clip is still
+   * chosen (with the same stickiness, so `currentClipName` and the derived pose
+   * drop stay stable), but the OTHER axis plays alongside it at a proportional
+   * weight — so a diagonal is a real mix of walk and strafe, and the moment the
+   * dominant axis changes hands the two clips are already sitting at ~50/50,
+   * which makes the swap invisible instead of a hitch.
    */
   setMoveDirection(fwdAmt: number, rightAmt: number) {
+    const mag = Math.hypot(fwdAmt, rightAmt);
+    if (mag > 1e-4) {
+      this.moveFwd = fwdAmt / mag;
+      this.moveRight = rightAmt / mag;
+    }
     const dir = classifyMoveDir(fwdAmt, rightAmt, this.moveDir);
     if (dir === this.moveDir) return;
     this.moveDir = dir;
     if (this.isLoco(this.currentState)) {
       this.transition(this.currentState, true);
     }
+  }
+
+  /**
+   * Drive the secondary locomotion clip's weight from the travel vector. Called
+   * every frame while moving (from matchLocomotionSpeed, which already runs
+   * there). Outside locomotion the secondary is faded out and dropped.
+   */
+  private updateLocoBlend() {
+    const config = this.animMap[this.currentState];
+    if (!this.mixer || !this.isLoco(this.currentState) || !config?.clipsByMove || !this.activeAction) {
+      this.clearLocoBlend();
+      return;
+    }
+
+    const f = Math.abs(this.moveFwd);
+    const r = Math.abs(this.moveRight);
+    const total = f + r;
+    if (total < 1e-4) {
+      this.clearLocoBlend();
+      return;
+    }
+
+    // Whichever axis ISN'T driving the dominant clip is the one to blend in.
+    const primaryIsFwd = this.moveDir === "forward" || this.moveDir === "back";
+    const secondaryDir: MoveDir = primaryIsFwd
+      ? this.moveRight >= 0
+        ? "right"
+        : "left"
+      : this.moveFwd >= 0
+        ? "forward"
+        : "back";
+    const secondaryWeight = (primaryIsFwd ? r : f) / total;
+
+    const { name, reversed } = this.clipForDir(config, secondaryDir);
+    const clip = this.clips.get(name);
+    // Nothing to blend with (the axes resolved to the same clip, or it's missing):
+    // fall back to the dominant clip alone at full weight.
+    if (!clip || name === this.activeAction.getClip().name) {
+      this.clearLocoBlend();
+      this.activeAction.setEffectiveWeight(1);
+      return;
+    }
+
+    if (this.blendAction?.getClip() !== clip) {
+      this.clearLocoBlend();
+      const action = this.mixer.clipAction(clip);
+      action.setLoop(THREE.LoopRepeat, Infinity);
+      action.reset().play();
+      // Enter in phase with the clip it's blending against, so the two cycles
+      // agree on which foot is planted rather than fighting each other.
+      action.time = this.phaseOf(this.activeAction) * clip.duration;
+      this.blendAction = action;
+    }
+    this.blendReversed = reversed;
+    this.blendAction!.setEffectiveWeight(secondaryWeight);
+    this.activeAction.setEffectiveWeight(1 - secondaryWeight);
+  }
+
+  private clearLocoBlend() {
+    if (this.blendAction) {
+      // Zero the weight BEFORE stopping. `stop()` deactivates the action but
+      // leaves its stored weight intact, and `mixer.clipAction()` hands back the
+      // same object next time — so a dropped blend would come back half-on the
+      // moment that clip was played again.
+      this.blendAction.setEffectiveWeight(0);
+      this.blendAction.stop();
+      this.blendAction = null;
+    }
+  }
+
+  /** Normalised 0..1 position of an action through its clip. */
+  private phaseOf(action: THREE.AnimationAction): number {
+    const dur = action.getClip().duration;
+    if (dur <= 0) return 0;
+    const t = action.time % dur;
+    return (t < 0 ? t + dur : t) / dur;
   }
 
   transition(newState: AnimState, force = false, dir?: HitDirection) {
@@ -249,12 +384,24 @@ export class AnimationStateMachine {
     this.previousAction = this.activeAction;
 
     if (this.activeAction && this.activeAction !== newAction) {
+      // Locomotion → locomotion keeps its STRIDE PHASE. `reset()` sends the new
+      // action back to time 0, so swapping walk↔strafe mid-run re-planted the
+      // feet from the top of the cycle; entering in phase means the same foot
+      // stays down through the change and the swap reads as a blend.
+      const keepPhase =
+        this.isLoco(newState) && this.isLoco(prevState) && this.activeAction.getClip().duration > 0;
+      const phase = keepPhase ? this.phaseOf(this.activeAction) : 0;
       this.activeAction.fadeOut(config.fadeIn);
       newAction.reset().fadeIn(config.fadeIn).play();
+      if (keepPhase) newAction.time = phase * clip.duration;
     } else {
       newAction.reset().setEffectiveWeight(1).play();
     }
     this.activeAction = newAction;
+    // A leftover blend belongs to the clip we just left.
+    if (this.blendAction && this.blendAction !== newAction && !this.isLoco(newState)) {
+      this.clearLocoBlend();
+    }
 
     if (!config.loop) {
       const onFinished = (e: { action: THREE.AnimationAction }) => {
@@ -299,7 +446,25 @@ export class AnimationStateMachine {
   matchLocomotionSpeed(worldSpeed: number) {
     if (!this.activeAction || this.paused) return;
     const s = this.currentState;
-    if (s !== AnimState.Walk && s !== AnimState.Run && s !== AnimState.CrouchWalk) return;
+    if (s !== AnimState.Walk && s !== AnimState.Run && s !== AnimState.CrouchWalk) {
+      this.clearLocoBlend();
+      return;
+    }
+
+    // Weight the two locomotion clips first, then set the cadence on BOTH — a
+    // blended-in strafe cycling at its own authored pace against a speed-matched
+    // walk is two sets of legs disagreeing about how fast the ground is moving.
+    this.updateLocoBlend();
+    if (this.blendAction) {
+      const bStride = getClipStride(this.blendAction.getClip().name);
+      const bSign = this.blendReversed ? -1 : 1;
+      if (bStride && bStride.groundSpeed > MIN_BAKED_STRIDE) {
+        const baked = (bStride.groundSpeed / MIXAMO_UNITS_PER_METER) * this.rigScale;
+        this.blendAction.timeScale = bSign * Math.min(2.1, Math.max(0.25, worldSpeed / baked));
+      } else {
+        this.blendAction.timeScale = bSign * (this.animMap[s]?.speed ?? 1);
+      }
+    }
 
     const sign = this.locoReversed ? -1 : 1;
     const stride = getClipStride(this.activeAction.getClip().name);

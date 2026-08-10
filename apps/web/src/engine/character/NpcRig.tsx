@@ -16,7 +16,7 @@ import {
 } from "@/engine/animation";
 import { runtime } from "@/engine/runtime";
 import { useGame } from "@/engine/store";
-import { makeRifle, aimGunWorldMatrix, muzzleWorldPos } from "./GunMesh";
+import { makeRifle, handGunWorldMatrix, muzzleWorldPos } from "./GunMesh";
 import { buildArchetypeKit, type Archetype, type KitPiece } from "./ArchetypeKit";
 
 /**
@@ -114,12 +114,6 @@ const FIRE_HOLD = 0.22;
 const NPC_GRIP = { rx: -Math.PI / 2, rz: -1.8368, oy: 0.02, oz: 0.04 };
 const _npcGunScratch = new THREE.Matrix4();
 const _npcGunWorld = new THREE.Matrix4();
-const _npcGunScale = new THREE.Vector3(1, 1, 1);
-const _npcGunOff = new THREE.Vector3();
-const _npcGunQ = new THREE.Quaternion();
-const _npcGunE = new THREE.Euler();
-const _npcHandPos = new THREE.Vector3();
-const _npcAim = new THREE.Vector3();
 // Scratch for the archetype kit sockets.
 const _kitLocal = new THREE.Matrix4();
 const _kitWorld = new THREE.Matrix4();
@@ -400,17 +394,14 @@ export const NpcRig = memo(function NpcRig({
       node.visible = !state.dead || deathAt.current < 0 || performance.now() - deathAt.current < DEATH_LINGER_MS - 100;
     }
 
-    // Drive the rifle from the hand bone (Valor's socket) — same as the player.
+    // Drive the rifle from the hand bone — HELD, same as the player (see
+    // GunMesh.handGunWorldMatrix). NPCs body-face the player whenever they're
+    // aware and the rig aims along `state.aimDir`, so a held weapon points close
+    // enough down the firing line; their projectiles spawn from the published
+    // muzzle either way, so the shot and the barrel still agree.
     if (gunRef.current && handBoneRef.current) {
       handBoneRef.current.updateWorldMatrix(true, false);
-      _npcHandPos.setFromMatrixPosition(handBoneRef.current.matrixWorld);
-      // Fall back to the body's forward if the AI hasn't supplied an aim yet.
-      if (state.aimDir && state.aimDir.lengthSq() > 1e-6) {
-        _npcAim.copy(state.aimDir);
-      } else {
-        _npcAim.set(0, 0, 1).applyQuaternion(groupRef.current.getWorldQuaternion(_npcGunQ));
-      }
-      aimGunWorldMatrix(_npcGunWorld, _npcHandPos, _npcAim);
+      handGunWorldMatrix(_npcGunWorld, handBoneRef.current.matrixWorld, NPC_GRIP);
       if (state.muzzleOut) muzzleWorldPos(state.muzzleOut, gunRef.current, _npcGunWorld);
       _npcGunScratch.copy(groupRef.current.matrixWorld).invert();
       gunRef.current.matrix.multiplyMatrices(_npcGunScratch, _npcGunWorld);

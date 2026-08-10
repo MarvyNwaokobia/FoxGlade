@@ -34,6 +34,24 @@ export const FEEL = {
   gravity: -26,
   jumpForce: 6.5,
 
+  // --- Dodge roll ---
+  //
+  // The whole defensive vocabulary in a firefight used to be "walk backwards" —
+  // and `AnimState.Dodge` sat fully wired, clip loaded, with nothing on earth
+  // able to trigger it. Space while MOVING now commits you to a roll (standing
+  // still it still jumps; with cover ahead the vault still wins).
+  //
+  // It grants no invulnerability, deliberately. Blocker fire is real travelling
+  // projectiles behind a 0.45s telegraph, so a roll evades by genuinely not
+  // being there any more — which makes the counter a matter of reading the
+  // wind-up rather than of spending an i-frame budget. The cost is commitment:
+  // for `dodgeTime` you cannot steer, shoot, or change your mind.
+  dodgeSpeed: 11.5, // m/s along the roll — clearly faster than a sprint
+  dodgeTime: 0.42, // seconds of committed travel
+  dodgeCooldown: 1.15, // seconds before you can roll again
+  /** How much of your control returns as the roll ends (eases back to a run). */
+  dodgeExitSpeed: 5.5,
+
   // --- Camera (third-person over-the-shoulder: pivot + convergence) ---
   //
   // The rig orbits a PIVOT offset from the head (out to the shoulder, up by the

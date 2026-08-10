@@ -78,6 +78,7 @@ export function PlayerController() {
     hitDir: "front",
     reloading: false,
     throwAt: -1,
+    dodgeAt: -1,
     grabAt: -1,
     resting: false,
     visible: true,
@@ -100,6 +101,9 @@ export function PlayerController() {
   const recoilPitch = useRef(0); // transient view kick from firing (recovers to 0)
   const recoilYaw = useRef(0);
   const crouching = useRef(false); // C toggles; jump stands you back up
+  // Committed dodge roll: unit travel direction + 0..1 progress (null = not rolling).
+  const dodge = useRef<{ t: number; dx: number; dz: number } | null>(null);
+  const dodgeReadyAt = useRef(0);
   /** In-flight hurdle over chest-high cover (null when not vaulting). */
   const vault = useRef<{
     t: number;
@@ -464,33 +468,6 @@ export function PlayerController() {
     runtime.playerMoving = moving;
     runtime.crouching = crouching.current;
 
-    if (moving) {
-      // Touch is ANALOG: how far the stick is pushed sets how fast you go. This
-      // was being thrown away by the normalize below, so any stick input at all
-      // moved you at full walk speed — half of why mobile felt like it was always
-      // sprinting. Keyboard stays digital (always 1).
-      const analog = touch.enabled
-        ? THREE.MathUtils.clamp(Math.min(1, Math.hypot(touch.moveX, touch.moveY)), 0.35, 1)
-        : 1;
-      wish.normalize();
-      // Aiming slows you to a walk — you don't sprint down a sight line.
-      const adsSpeed = 1 - adsT.current * (1 - FEEL.adsSpeedMult);
-      const speed =
-        (crouching.current ? FEEL.crouchSpeed : run ? FEEL.runSpeed : FEEL.walkSpeed) *
-        adsSpeed *
-        analog;
-      const t = Math.min(1, FEEL.accel * dt);
-      vel.current.x += (wish.x * speed - vel.current.x) * t;
-      vel.current.z += (wish.z * speed - vel.current.z) * t;
-    } else {
-      const d = Math.exp(-FEEL.decay * dt);
-      vel.current.x *= d;
-      vel.current.z *= d;
-    }
-
-    pos.current.x += vel.current.x * dt;
-    pos.current.z += vel.current.z * dt;
-
     // ── Vault over chest-high cover ──
     //
     // The micro-cover crates used to be dead ends: you walked into one and simply
@@ -519,6 +496,71 @@ export function PlayerController() {
     // Published so the touch action button can offer VAULT (mobile has no room
     // for a dedicated jump button).
     runtime.canVault = vaultAhead !== null;
+
+    // Space is contextual, in priority order: hurdle a crate if one's in front of
+    // you, ROLL if you're already moving, jump if you're standing still. The roll
+    // takes the middle slot because that case had nothing useful in it — a
+    // running jump over flat ground played the vault clip as a hurdle over
+    // nothing, and the game's entire defensive vocabulary was walking backwards.
+    const planarNow = Math.hypot(vel.current.x, vel.current.z);
+    if (
+      grounded.current &&
+      jump &&
+      !frozen &&
+      !vault.current &&
+      !vaultAhead &&
+      !dodge.current &&
+      !crouching.current &&
+      planarNow > 0.6 &&
+      performance.now() >= dodgeReadyAt.current
+    ) {
+      // Roll along TRAVEL, not along aim: you commit to where your feet were
+      // already going, which is what makes it a decision rather than a free
+      // reposition in any direction.
+      const inv = 1 / planarNow;
+      dodge.current = { t: 0, dx: vel.current.x * inv, dz: vel.current.z * inv };
+      dodgeReadyAt.current = performance.now() + FEEL.dodgeCooldown * 1000;
+      rigState.current.dodgeAt = performance.now();
+      fireHeld.current = false; // committed — no rolling and shooting
+      bombAim.current = false;
+      audio.play(runtime.sheltered ? "footstepWood" : "footstepStone", 1);
+    }
+
+    if (dodge.current) {
+      // The roll OWNS locomotion while it runs: no steering, no accel curve, no
+      // decay. That commitment is the cost you pay for the distance.
+      const d = dodge.current;
+      d.t = Math.min(1, d.t + dt / FEEL.dodgeTime);
+      const speed = THREE.MathUtils.lerp(FEEL.dodgeSpeed, FEEL.dodgeExitSpeed, d.t * d.t);
+      vel.current.x = d.dx * speed;
+      vel.current.z = d.dz * speed;
+      if (d.t >= 1) dodge.current = null;
+    } else if (moving) {
+      // Touch is ANALOG: how far the stick is pushed sets how fast you go. This
+      // was being thrown away by the normalize below, so any stick input at all
+      // moved you at full walk speed — half of why mobile felt like it was always
+      // sprinting. Keyboard stays digital (always 1).
+      const analog = touch.enabled
+        ? THREE.MathUtils.clamp(Math.min(1, Math.hypot(touch.moveX, touch.moveY)), 0.35, 1)
+        : 1;
+      wish.normalize();
+      // Aiming slows you to a walk — you don't sprint down a sight line.
+      const adsSpeed = 1 - adsT.current * (1 - FEEL.adsSpeedMult);
+      const speed =
+        (crouching.current ? FEEL.crouchSpeed : run ? FEEL.runSpeed : FEEL.walkSpeed) *
+        adsSpeed *
+        analog;
+      const t = Math.min(1, FEEL.accel * dt);
+      vel.current.x += (wish.x * speed - vel.current.x) * t;
+      vel.current.z += (wish.z * speed - vel.current.z) * t;
+    } else {
+      const d = Math.exp(-FEEL.decay * dt);
+      vel.current.x *= d;
+      vel.current.z *= d;
+    }
+
+    pos.current.x += vel.current.x * dt;
+    pos.current.z += vel.current.z * dt;
 
     if (grounded.current && jump && !frozen && !vault.current) {
       const target = vaultAhead;
@@ -554,8 +596,9 @@ export function PlayerController() {
       }
     }
 
-    // Jump + gravity (jumping stands you back up).
-    if (grounded.current && jump && !frozen && !vault.current) {
+    // Jump + gravity (jumping stands you back up). Not while rolling — one
+    // press is one action.
+    if (grounded.current && jump && !frozen && !vault.current && !dodge.current) {
       crouching.current = false;
       vel.current.y = FEEL.jumpForce;
       grounded.current = false;

@@ -38,6 +38,22 @@ export const THIEF = {
   panicMult: 1.55,
   /** Seconds after round start when each thief spawns and sets off. */
   starts: [5, 10, 15],
+  /** How many can be in the village at once. */
+  maxLive: 3,
+  /**
+   * Seconds between reinforcements once the race is on.
+   *
+   * The race used to be a fifteen-second burst and then nothing: three thieves
+   * launched at +5/+10/+15s from the moment Dusk began, and once each had died
+   * or escaped they never came back — the components returned null and stayed
+   * that way until the next run. Chapter 4 (Night) added no more, because the
+   * same three instances simply persisted. So the entire thief content of a run
+   * was over twenty seconds into Dusk, and everything after that was a quiet
+   * walk. Now they keep coming for as long as there's light left to lose.
+   */
+  respawnDelay: 22,
+  /** …and they arrive faster at Night, when the pressure should be at its worst. */
+  respawnDelayNight: 14,
 } as const;
 
 /**
@@ -139,4 +155,72 @@ export const BLOCKER = {
   breachRepath: 0.9,
   /** Beyond this it won't bother coming in after you — it lost you properly. */
   breachRange: 30,
+  /** Does it stand still while lining up a shot? Overridden per role below. */
+  holdsGround: false,
 } as const;
+
+/**
+ * Blocker ROLES.
+ *
+ * Every blocker used to be the same man: same 26m aggro, same 5–7m band, same
+ * 2.2s cadence, same 3 health. Fighting three was fighting one, three times —
+ * no reason to prioritise a target, no formation, no shape to a group. The
+ * difficulty curve was "more identical men", which is not a curve.
+ *
+ * These are overrides on BLOCKER, so the shared code above is unchanged and the
+ * two roles are a table, not a second AI. They're built to demand opposite
+ * things from the player:
+ *
+ *  · RUSHER — fast, fragile, short telegraph, closes to knife range and never
+ *    stops moving. Punishes standing still and reloading. You back off, or you
+ *    dodge through it, or you kill it before it arrives.
+ *  · HOLDER — slow, tanky, hits hard, and posts up at 12–18m with a long,
+ *    readable wind-up that it takes STANDING STILL. Trading shots with one in
+ *    the open loses; the answer is to break line of sight or close the distance.
+ *
+ * Put both in a group and you finally have to choose who dies first — the
+ * rusher in your face or the holder chipping you from down the street.
+ */
+export type BlockerRole = "rusher" | "holder";
+
+/**
+ * BLOCKER's stat shape with the literal types widened. `as const` above is what
+ * makes the shared defaults readable at a glance, but it also types `health` as
+ * exactly `3` — so a role saying `health: 2` is a type error rather than an
+ * override. This mapping keeps the documentation value and allows the tuning.
+ */
+export type BlockerStats = {
+  -readonly [K in keyof typeof BLOCKER]: (typeof BLOCKER)[K] extends boolean ? boolean : number;
+};
+
+export const BLOCKER_ROLES: Record<BlockerRole, Partial<BlockerStats>> = {
+  rusher: {
+    health: 2,
+    moveSpeed: 4.2, // faster than your walk (3.4), slower than your sprint (7.5)
+    aggroRange: 30,
+    engageRange: 13,
+    rangeMin: 2.2,
+    rangeMax: 5,
+    fireCooldown: 1.5,
+    shotDamage: 7,
+    telegraphTime: 0.32, // barely a beat — this one is a pressure source
+    holdsGround: false,
+  },
+  holder: {
+    health: 4,
+    moveSpeed: 2.4,
+    aggroRange: 34,
+    engageRange: 26,
+    rangeMin: 12,
+    rangeMax: 18,
+    fireCooldown: 2.9,
+    shotDamage: 14, // a real bite: you cannot ignore one and keep walking
+    telegraphTime: 0.62, // long and legible — this one you can read and beat
+    holdsGround: true, // plants its feet to shoot, so it's killable while aiming
+  },
+};
+
+/** The resolved stat block for a role: shared defaults, then its overrides. */
+export function blockerStats(role: BlockerRole): BlockerStats {
+  return { ...BLOCKER, ...BLOCKER_ROLES[role] } as BlockerStats;
+}

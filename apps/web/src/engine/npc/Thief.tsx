@@ -72,6 +72,12 @@ export function Thief({
   const path = useRef<THREE.Vector3[]>([]);
   const repathClock = useRef(0);
   const carrying = useRef(false);
+  // A render-visible mirror of `carrying`. The ref is what the 60fps loop reads,
+  // but the loot sack and the carrier glow are JSX — and a ref mutation triggers
+  // no re-render, so the sack only ever changed appearance if some OTHER state
+  // happened to update in the same beat. The thief could take the treasure and
+  // still be rendered empty-handed all the way to the wall.
+  const [hasLoot, setHasLoot] = useState(false);
   const exit = useRef(new THREE.Vector3(entry[0], 0, entry[1]));
   const prevPos = useRef(new THREE.Vector3(entry[0], 0, entry[1]));
 
@@ -118,6 +124,7 @@ export function Thief({
     if (carrying.current && targetHint.current >= 0) {
       runtime.hintStolen[targetHint.current] = false;
       carrying.current = false;
+      setHasLoot(false);
     }
     const id = setTimeout(() => setRemoved(true), DEATH_LINGER_MS);
     return () => clearTimeout(id);
@@ -170,7 +177,10 @@ export function Thief({
           runtime.hintStolen[i] = true;
           runtime.treasureStolenAt = now;
           carrying.current = true;
-          audio.playAt("spot", pos.current.x, pos.current.z, 8, 45);
+          setHasLoot(true);
+          // It has the prize and it's running for the wall. Loud, and audible
+          // most of the way across the village — this is the chase starting.
+          audio.playAt("thiefFlee", pos.current.x, pos.current.z, 14, 75);
         }
         phase.current = "fleeing";
         path.current.length = 0;
@@ -198,6 +208,12 @@ export function Thief({
         // At the treasure: it has to physically TAKE it, which is the window you
         // get to shoot it off the prize. It used to teleport out of existence the
         // instant it touched the spot.
+        //
+        // And it ANNOUNCES it. GRAB_TIME is the only counterplay this system
+        // offers, and a window you can't perceive is not counterplay — the whole
+        // race was resolving off-screen with a toast for an epitaph. The cue is
+        // positional, so it also tells you which way to run.
+        audio.playAt("thiefGrab", pos.current.x, pos.current.z, 10, 60);
         phase.current = "taking";
         grabClock.current = GRAB_TIME;
         anim.current.moving = false;
@@ -236,15 +252,29 @@ export function Thief({
     <group ref={group} position={[entry[0], 0, entry[1]]}>
       <NpcRig model="npc_thief" state={anim.current} />
       {/* Loot sack — only actually full once it has the treasure. */}
-      <mesh position={[-0.3, BODY_H * 0.62, -0.12]} scale={carrying.current ? 1.35 : 0.85}>
+      <mesh position={[-0.3, BODY_H * 0.62, -0.12]} scale={hasLoot ? 1.35 : 0.85}>
         <sphereGeometry args={[0.22, 10, 10]} />
         <meshStandardMaterial
-          color={carrying.current ? "#d8b45a" : "#8a6a3c"}
-          emissive={carrying.current ? "#8a6a20" : "#000000"}
-          emissiveIntensity={carrying.current ? 0.5 : 0}
+          color={hasLoot ? "#d8b45a" : "#8a6a3c"}
+          emissive={hasLoot ? "#8a6a20" : "#000000"}
+          emissiveIntensity={hasLoot ? 0.5 : 0}
           roughness={0.85}
         />
       </mesh>
+      {/* A CARRIER GLOWS. The treasure it's holding throws light, so from the far
+          side of the village a fleeing thief is a moving spark you can pick out
+          and chase — the difference between losing a rare and never knowing one
+          was on the board. It only appears once the prize is actually taken, so
+          it never gives away a thief that hasn't earned the attention. */}
+      {hasLoot && (
+        <group position={[-0.3, BODY_H * 0.62, -0.12]}>
+          <pointLight color="#ffd070" intensity={5} distance={9} decay={2} />
+          <mesh>
+            <sphereGeometry args={[0.34, 12, 12]} />
+            <meshBasicMaterial color="#ffe6a8" transparent opacity={0.32} depthWrite={false} />
+          </mesh>
+        </group>
+      )}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
         <circleGeometry args={[BODY_R * 1.4, 20]} />
         <meshBasicMaterial color="#000000" transparent opacity={0.3} depthWrite={false} />

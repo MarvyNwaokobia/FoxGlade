@@ -21,7 +21,7 @@ import { BOMB } from "@/engine/config/round";
 import { runtime } from "@/engine/runtime";
 import { useGame } from "@/engine/store";
 import type { WeaponId } from "@/engine/config/shop";
-import { makeGunMesh, aimGunWorldMatrix, muzzleWorldPos } from "./GunMesh";
+import { makeGunMesh, handGunWorldMatrix, muzzleWorldPos } from "./GunMesh";
 
 /** Free a swapped-out procedural gun's geometry + materials (no leaks on re-equip). */
 function disposeGroup(obj: THREE.Object3D) {
@@ -58,6 +58,7 @@ export interface PlayerRigState {
   hitDir: HitDirection; // which side it came from, so he flinches the right way
   reloading: boolean; // drives the reload clip
   throwAt: number; // performance.now of the last bomb lob (drives the throw clip)
+  dodgeAt: number; // performance.now of the last dodge roll (drives the dodge clip)
   grabAt: number; // performance.now of the last interact (drives the pick-up clip)
   resting: boolean; // seated indoors (drives the sit clip)
   visible: boolean; // false only when fully faded (camera extremely close)
@@ -122,14 +123,10 @@ const HIPS_PITCH_FIX_INV = HIPS_PITCH_FIX.clone().invert();
 // disturbing the rx yaw fix.)
 const GUN_TUNER = false; // keys freed for play
 const gripTune = { rx: -Math.PI / 2, ry: 0, rz: -1.8368, ox: 0, oy: 0.02, oz: 0.04, scale: 1 };
+// The grip's own scratch (euler/quat/offset/scale) now lives inside
+// handGunWorldMatrix, so the rig only needs the two matrices it composes with.
 const _gunScratch = new THREE.Matrix4();
 const _gunWorld = new THREE.Matrix4();
-const _gunScaleVec = new THREE.Vector3();
-const _gunOff = new THREE.Vector3();
-const _gunEuler = new THREE.Euler();
-const _tmpQ = new THREE.Quaternion();
-const _handPos = new THREE.Vector3();
-const _playerAim = new THREE.Vector3();
 
 // Aim elevation + TRAVERSE: pitch AND yaw the upper spine toward the aim so the
 // socketed gun actually tracks the crosshair, instead of only nodding up and down
@@ -251,6 +248,7 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
   const deathDrop = useRef(0); // eased downward offset that settles the corpse
   // Edge trackers for the one-shot / stateful movement clips.
   const lastThrowAt = useRef(state.throwAt);
+  const lastDodgeAt = useRef(state.dodgeAt);
   const lastGrabAt = useRef(state.grabAt);
   const prevGrounded = useRef(true);
   const wasResting = useRef(false);
@@ -455,6 +453,12 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
         lastThrowAt.current = state.throwAt;
         if (state.throwAt > 0) animMachine.transition(AnimState.Throw, true);
       }
+      // The dodge clip has been loaded and wired into the state machine since the
+      // animation pass; nothing had ever been able to trigger it.
+      if (state.dodgeAt !== lastDodgeAt.current) {
+        lastDodgeAt.current = state.dodgeAt;
+        if (state.dodgeAt > 0) animMachine.transition(AnimState.Dodge, true);
+      }
       // Interact gesture (claim a treasure / bank at the vault / shop at the stall).
       if (state.grabAt !== lastGrabAt.current) {
         lastGrabAt.current = state.grabAt;
@@ -581,8 +585,17 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
     // the socketed gun tracks the crosshair in both axes. Applied on top of the
     // animated pose (after the mixer + hips fix), suppressed while dead/seated.
     if (spineBoneRef.current && !state.dead && !state.resting) {
+      // `rotation` is a MODEL rotation (the rig faces its local +Z) while
+      // `aimYaw` is the CAMERA yaw (forward is -Z). The two conventions are half a
+      // turn apart, which is why the controller sets the body's facing target to
+      // `yaw + PI`. Comparing them raw made the error a constant ±PI, so the
+      // clamp below was saturated every single frame: the torso sat permanently
+      // twisted 46° off the body instead of resting square and only twisting when
+      // the aim genuinely ran ahead of the feet. Harmless-looking while the gun
+      // was aimed by the camera; now that the weapon is held in the hand, it
+      // would throw the barrel a clean 46° off the crosshair.
       const yawErr = THREE.MathUtils.clamp(
-        angleDelta(state.rotation, state.aimYaw) * SPINE_YAW_GAIN,
+        angleDelta(state.rotation, state.aimYaw + Math.PI) * SPINE_YAW_GAIN,
         -SPINE_YAW_CLAMP,
         SPINE_YAW_CLAMP
       );
@@ -616,21 +629,20 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
 
     if (gunRef.current && handBoneRef.current && groupRef.current) {
       handBoneRef.current.updateWorldMatrix(true, false); // refresh hand + ancestors
-      // Position from the hand, orientation from the AIM. The animation carries
-      // the weapon around convincingly but has no idea where you're looking, so
-      // leaving the barrel to the clip left shots visibly departing off-crosshair
-      // — and swinging further off during the fire clip specifically. Aiming it
-      // outright is what makes the muzzle, the tracer and the hitscan agree.
-      _handPos.setFromMatrixPosition(handBoneRef.current.matrixWorld);
-      const cp = Math.cos(state.aimPitch);
-      _playerAim.set(
-        -Math.sin(state.aimYaw) * cp,
-        Math.sin(state.aimPitch),
-        -Math.cos(state.aimYaw) * cp
-      );
-      aimGunWorldMatrix(_gunWorld, _handPos, _playerAim);
+      // HELD, not aimed: the hand bone gives both position and orientation, via
+      // the fixed grip offset. See handGunWorldMatrix for why the old
+      // orientation-from-the-camera socket had to go, and where the barrel/aim
+      // disagreement it was papering over is handled instead.
+      //
+      // The visible payoff is the whole upper body: the weapon now rolls with a
+      // lean, dips with a flinch, swings through the reload, and — because the
+      // Mixamo locomotion clips are all rifle clips — the LEFT hand sits on the
+      // foregrip, which was simply not reachable before.
+      handGunWorldMatrix(_gunWorld, handBoneRef.current.matrixWorld, gripTune);
       // Publish the real muzzle so the tracer + flash leave the barrel tip rather
-      // than a hand-tuned offset floating near the shoulder.
+      // than a hand-tuned offset floating near the shoulder. The tracer runs from
+      // here to the hitscan's impact point, so it converges on what you hit even
+      // when the held barrel sits a few degrees off the reticle.
       muzzleWorldPos(runtime.muzzlePos, gunRef.current, _gunWorld);
       _gunScratch.copy(groupRef.current.matrixWorld).invert();
       gunRef.current.matrix.multiplyMatrices(_gunScratch, _gunWorld);
