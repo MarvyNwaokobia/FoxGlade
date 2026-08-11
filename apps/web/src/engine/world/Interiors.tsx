@@ -4,7 +4,7 @@ import { useMemo, useRef } from "react";
 import { useGLTF } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { ENTERABLES, INTERIORS, VILLAGE, type Building } from "./village";
+import { ENTERABLES, HOME_INDEX, INTERIORS, VILLAGE, type Building } from "./village";
 import { THEME } from "./theme";
 import { useVillageMaterials } from "./VillageMesh";
 import { runtime } from "@/engine/runtime";
@@ -19,6 +19,7 @@ const MODELS = {
   lantern: "/models/Lantern_01/Lantern_01_1k.gltf",
   shelf: "/models/Shelf_01/Shelf_01_1k.gltf",
   pot: "/models/ceramic_pot/ceramic_pot_1k.gltf",
+  bench: "/models/props/painted_wooden_bench/painted_wooden_bench_1k.gltf",
 } as const;
 Object.values(MODELS).forEach((u) => useGLTF.preload(u));
 
@@ -71,9 +72,14 @@ function isBank(r: Rect) {
 
 /**
  * Furnish one enterable house. The bank interior becomes a vault (chest, shelf,
- * strongboxes); other houses get a lived-in mix (table, chairs, barrels, pots).
- * A warm point light + a timber floor make the room read as a real interior
- * rather than the inside of a stone box.
+ * strongboxes); HOME gets a bed and your own chest; other houses get a lived-in
+ * mix (table, chairs, barrels, pots). A warm point light + a timber floor make
+ * the room read as a real interior rather than the inside of a stone box.
+ *
+ * Home is furnished differently on purpose. Every day now starts and ends in
+ * this room, so it has to be recognisable the moment you open your eyes —
+ * waking in a room laid out exactly like four other houses would read as being
+ * dropped somewhere, which is the opposite of coming home.
  */
 function Interior({ b, r, floorMat, index }: { b: Building; r: Rect; floorMat: THREE.Material; index: number }) {
   const cx = (r.minX + r.maxX) / 2;
@@ -81,6 +87,7 @@ function Interior({ b, r, floorMat, index }: { b: Building; r: Rect; floorMat: T
   const floorW = r.maxX - r.minX;
   const floorD = r.maxZ - r.minZ;
   const bank = isBank(r);
+  const home = index === HOME_INDEX;
 
   // Only render (and light) this interior while the player is inside it — outside,
   // its furniture + fill light are pure waste (5 houses × furniture + a point
@@ -109,6 +116,24 @@ function Interior({ b, r, floorMat, index }: { b: Building; r: Rect; floorMat: T
           <Prop model="shelf" position={at(r, 0.8, -0.85)} rotation={-Math.PI / 2} />
           <Prop model="pot" position={at(r, 0.85, 0.7)} scale={1.1} />
           <Prop model="lantern" position={at(r, -0.85, 0.8)} />
+        </>
+      ) : home ? (
+        <>
+          {/* Your room. The door is the +X wall, so the whole layout keeps the
+              lane in front of it clear: nothing sits where nx > 0.4 and the z
+              offset is small. Waking up and walking straight out has to be
+              unobstructed, and the first pass had a chair and a shelf standing
+              in the doorway you were being told to walk through.
+
+              The bed is against the far wall, furthest from the street, with
+              the chest at the foot of it. */}
+          <Prop model="bench" position={at(r, -0.85, -0.45)} rotation={Math.PI / 2} scale={1.15} />
+          <Prop model="chest" position={at(r, -0.85, 0.6)} rotation={Math.PI / 2} scale={0.85} />
+          <Prop model="table" position={at(r, 0.15, -0.85)} />
+          <Prop model="chair" position={at(r, 0.15, -0.4)} rotation={Math.PI} />
+          <Prop model="shelf" position={at(r, -0.25, 0.95)} rotation={Math.PI} />
+          <Prop model="lantern" position={at(r, -0.9, 0.95)} />
+          <Prop model="basket" position={at(r, 0.6, 0.9)} />
         </>
       ) : (
         <>

@@ -50,6 +50,26 @@ export const VILLAGE = {
   market: new THREE.Vector3(-19, 0, 7), // shop trigger inside the market enclosure
   /** Vault pad inside the bank building (the enterable house on the plaza). */
   bank: new THREE.Vector3(-26, 0, -4.5),
+  /**
+   * HOME. Every day starts here, in this room, rather than out at the gate.
+   *
+   * The day is a loop now — go out, find treasure, bank it, come back and sleep
+   * — and a loop wants a place you return TO. Waking in a room you recognise and
+   * stepping out of your own door is what makes the morning read as a morning
+   * instead of a respawn.
+   *
+   * It's the house just inside the south gate, whose door faces east onto the
+   * main street, so the first thing you see on stepping out is the village.
+   */
+  home: new THREE.Vector3(-6.6, 0, 20),
+  /** Facing the door (east, +X) on waking, so the way out is already in view. */
+  homeYaw: -Math.PI / 2,
+  /**
+   * Where the guardian waits, a couple of metres out from your door and off to
+   * one side of it. Not a spawn point — it stands here from the first frame of
+   * the day, so stepping outside is meeting someone who was already there.
+   */
+  guardianPost: new THREE.Vector3(-0.5, 0, 21.2),
 } as const;
 
 /**
@@ -107,6 +127,16 @@ export const DOOR_W = 2.0; // default door opening width
 /** Enterable buildings (have a door) vs plain solid blocks. */
 export const ENTERABLES: Building[] = BUILDINGS.filter((b) => b.door);
 export const SOLIDS: Building[] = BUILDINGS.filter((b) => !b.door);
+
+/**
+ * Which enterable is HOME. Derived from the position rather than hard-coded to
+ * an index, because ENTERABLES is a filter over BUILDINGS and inserting one
+ * doored house above it would silently make somebody else's kitchen your bedroom.
+ */
+export const HOME_INDEX: number = ENTERABLES.findIndex(
+  (b) =>
+    Math.abs(b.x - VILLAGE.home.x) <= b.w / 2 && Math.abs(b.z - VILLAGE.home.z) <= b.d / 2
+);
 
 /**
  * The four wall strips of an enterable building, with the doored face split in

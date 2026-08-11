@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { runtime } from "@/engine/runtime";
 import { useGame } from "@/engine/store";
 import { isTouchDevice } from "@/engine/input/touch";
+import { HOME_INDEX } from "@/engine/world/village";
 
 /**
  * First-run teaching, delivered IN CONTEXT.
@@ -29,6 +30,15 @@ interface Beat {
 }
 
 const BEATS: Beat[] = [
+  {
+    // The first thing said, before anything else can claim the slot. Beats are
+    // matched in array order, so this sitting at the top is what guarantees the
+    // waking instruction is not pre-empted by the fox beat, which is eligible
+    // from the opening second.
+    id: "wake",
+    when: () => runtime.shelterIndex === HOME_INDEX,
+    text: () => "Go out, find your treasure, and come back here to rest.",
+  },
   {
     id: "fox",
     // Once the fox is off cooldown and there's a treasure to look for.

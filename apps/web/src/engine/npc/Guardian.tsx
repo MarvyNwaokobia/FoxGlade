@@ -39,7 +39,7 @@ const HOLD_TIME = 9; // seconds the briefing stays up
 const WALK_SPEED = 2.6;
 const LEAVE_DIST = 26; // how far it walks off before vanishing
 
-type Phase = "gone" | "arriving" | "speaking" | "leaving";
+type Phase = "gone" | "waiting" | "arriving" | "speaking" | "leaving";
 const _goal = new THREE.Vector3();
 
 export function Guardian() {
@@ -77,24 +77,65 @@ export function Guardian() {
 
     // A new chapter means a new board, so it comes back with a new briefing.
     if (seenChapter.current !== gs.chapter) {
+      const opening = seenChapter.current < 0 && gs.chapter === 0;
       seenChapter.current = gs.chapter;
-      // Appear just ahead of wherever the player currently is, so it can't spawn
-      // across the map and be missed entirely.
-      const yaw = runtime.yaw;
-      pos.current.set(
-        runtime.playerPos.x - Math.sin(yaw) * 7,
-        0,
-        runtime.playerPos.z - Math.cos(yaw) * 7
-      );
-      phase.current = "arriving";
+      if (opening) {
+        // THE OPENING. It is already outside your door, waiting, before you have
+        // opened it — so the first thing that happens today is meeting someone
+        // who came to find you.
+        //
+        // It used to materialise seven metres ahead of wherever the player was
+        // looking, which is what made it read as conjured rather than met: turn
+        // around, and a man faded into being in front of you. Now the day starts
+        // in a room, and that same rule would have put him in your bedroom.
+        pos.current.copy(VILLAGE.guardianPost);
+        phase.current = "waiting";
+      } else {
+        // Later chapters keep the old approach for now.
+        const yaw = runtime.yaw;
+        pos.current.set(
+          runtime.playerPos.x - Math.sin(yaw) * 7,
+          0,
+          runtime.playerPos.z - Math.cos(yaw) * 7
+        );
+        phase.current = "arriving";
+        audio.playAt("merchantGreet", pos.current.x, pos.current.z, 8, 40);
+      }
       setVisible(true);
-      audio.playAt("merchantGreet", pos.current.x, pos.current.z, 8, 40);
     }
 
     const d = Math.hypot(runtime.playerPos.x - pos.current.x, runtime.playerPos.z - pos.current.z);
     let moving = false;
 
     switch (phase.current) {
+      case "waiting":
+        // Stands its ground. No steering at all — a guardian that walks to meet
+        // you is one you can back away from, and the whole point is that it was
+        // here first and you came to it.
+        //
+        // `sheltered` is the real gate, not distance. Your door is close enough
+        // to the post that raw range let it deliver the whole briefing through
+        // the bedroom wall while you were still waking up, which threw away the
+        // one beat this scene exists for. It speaks when you are OUTSIDE.
+        if (!runtime.sheltered && d <= SPEAK_RANGE) {
+          phase.current = "speaking";
+          holdClock.current = HOLD_TIME;
+          const real = HINTS.find((h) => h.real);
+          briefCount.current++;
+          setLine(guardianBrief(pos.current, real?.pos ?? runtime.playerPos, true));
+          runtime.guardianBriefed = true;
+          runtime.guardianSpokeAt = performance.now();
+          if (real) {
+            setLead(
+              "guardian",
+              bearingTo(pos.current.x, pos.current.z, real.pos.x, real.pos.z),
+              performance.now()
+            );
+          }
+          audio.playAt("villagerLine", pos.current.x, pos.current.z, 8, 40);
+        }
+        break;
+
       case "arriving":
         if (d <= SPEAK_RANGE) {
           phase.current = "speaking";

@@ -61,8 +61,8 @@ export function PlayerController() {
   const shadow = useRef<THREE.Mesh>(null);
   // Mutable state the animated rig reads every frame (kept out of React render).
   const rigState = useRef<PlayerRigState>({
-    position: VILLAGE.spawn.clone(),
-    rotation: VILLAGE.spawnYaw,
+    position: VILLAGE.home.clone(),
+    rotation: VILLAGE.homeYaw,
     aimPitch: 0.35,
     velocity: new THREE.Vector3(),
     moving: false,
@@ -71,7 +71,7 @@ export function PlayerController() {
     grounded: true,
     dead: false,
     fireAt: -1,
-    aimYaw: VILLAGE.spawnYaw,
+    aimYaw: VILLAGE.homeYaw,
     hitAt: -1,
     hitSerious: false,
     hitHeavy: false,
@@ -85,11 +85,11 @@ export function PlayerController() {
     opacity: 1,
   });
   const camBase = useRef(new THREE.Vector3(0, 4, 8)); // smoothed camera pos (shake kept separate)
-  const pos = useRef(VILLAGE.spawn.clone());
+  const pos = useRef(VILLAGE.home.clone());
   const vel = useRef(new THREE.Vector3(0, 0, 0));
-  const yaw = useRef(VILLAGE.spawnYaw); // camera/heading yaw
+  const yaw = useRef(VILLAGE.homeYaw); // camera/heading yaw
   const pitch = useRef<number>(FEEL.startPitch);
-  const bodyRot = useRef(VILLAGE.spawnYaw);
+  const bodyRot = useRef(VILLAGE.homeYaw);
   // During an interact gesture, turn the body to FACE the target (vault / stall /
   // treasure) so the pick-up reads as a real act, not a shrug at thin air.
   const grabTarget = useRef(new THREE.Vector3());
@@ -258,18 +258,19 @@ export function PlayerController() {
     };
   }, []);
 
-  // On respawn, return the player to the spawn point.
+  // On respawn, put the player back indoors.
   const respawnNonce = useGame((s) => s.respawnNonce);
   useEffect(() => {
     // Respawn at your REFUGE — the last safe house you stepped into — rather than
-    // all the way back at the gate. You come back inside, where the world is
-    // paused and nothing can reach you, so you gather yourself and walk back out
-    // on your own terms. Falls back to the spawn gate if you've never been in one.
+    // all the way back at the gate. You come back inside, where nothing can reach
+    // you, so you gather yourself and walk back out on your own terms. Falls back
+    // to your own room, which is also where a fresh day begins.
     const refuge = runtime.refugeIndex >= 0 ? INTERIORS[runtime.refugeIndex] : null;
     if (refuge) {
       pos.current.set((refuge.minX + refuge.maxX) / 2, 0, (refuge.minZ + refuge.maxZ) / 2);
     } else {
-      pos.current.copy(VILLAGE.spawn);
+      pos.current.copy(VILLAGE.home);
+      yaw.current = VILLAGE.homeYaw;
     }
     vel.current.set(0, 0, 0);
     crouching.current = false;
