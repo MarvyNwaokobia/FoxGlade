@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { skyAt } from "@/engine/config/day";
@@ -27,6 +27,19 @@ export function Daylight({ shadows, shadowSize }: { shadows: boolean; shadowSize
   const { scene } = useThree();
   const sunColor = useRef(new THREE.Color("#fff4e0"));
   const fogColor = useRef(new THREE.Color("#c3ccd6"));
+
+  // `target={sunTarget.current}` in the JSX below can't work: refs are still
+  // null on the render that mounts the light, and this component never
+  // re-renders on its own to pick the ref up later (everything after mount
+  // is driven imperatively through useFrame). Without this, the light quietly
+  // keeps THREE's default target — a point fixed at world origin — while its
+  // position swings around wherever the player actually is, so the sun's real
+  // direction drifts by however far the player has walked from (0,0). Wiring
+  // it explicitly here, once both refs exist, is what makes the tracking in
+  // useFrame below actually reach the light.
+  useEffect(() => {
+    if (sun.current && sunTarget.current) sun.current.target = sunTarget.current;
+  }, []);
 
   useFrame(() => {
     const s = skyAt(runtime.dayProgress);
@@ -92,7 +105,6 @@ export function Daylight({ shadows, shadowSize }: { shadows: boolean; shadowSize
         shadow-camera-near={1}
         shadow-camera-far={140}
         shadow-bias={-0.0004}
-        target={sunTarget.current ?? undefined}
       />
       {/* The light aims at this, and it rides with the player (see above). */}
       <object3D ref={sunTarget} />
