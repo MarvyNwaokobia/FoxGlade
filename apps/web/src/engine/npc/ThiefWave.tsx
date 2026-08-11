@@ -61,15 +61,28 @@ export function Thieves() {
 
   // The opening wave arrives on THIEF.starts, exactly as before — the staggered
   // first three are what teach you to read the compass blips.
+  //
+  // The `nextId.current` bump USED to happen inside the setRunners updater
+  // itself. StrictMode (on by default under `npm run dev`) calls a functional
+  // updater twice per commit to catch exactly this: the first call mutated the
+  // ref 0→3 and returned the wave, then the second call saw nextId.current
+  // already at 3 (its own guard, tripped by the first call's side effect) and
+  // returned the OLD empty array instead — which is the result React kept. So
+  // in every dev session, the instant a chapter with thieves began, the wave
+  // silently failed to schedule and stayed that way for the rest of the round.
+  // Only reproduces under `next dev`, never a production build, which is
+  // exactly why it could pass code review looking correct. Fix: do the
+  // mutation in the effect body (side effects are fine there) and hand
+  // setRunners a plain value instead of an impure updater.
   useEffect(() => {
     if (!racing) return;
-    setRunners((cur) => {
-      if (cur.length > 0 || nextId.current > 0) return cur;
-      return THIEF.starts.map((delay, i) => {
-        const id = nextId.current++;
-        return { id, entry: ENTRIES[i % ENTRIES.length], delay };
-      });
-    });
+    if (nextId.current > 0) return;
+    const wave = THIEF.starts.map((delay, i) => ({
+      id: nextId.current++,
+      entry: ENTRIES[i % ENTRIES.length],
+      delay,
+    }));
+    setRunners(wave);
   }, [racing]);
 
   useFrame((_, rawDt) => {
