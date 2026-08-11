@@ -52,8 +52,8 @@ const BEATS: Beat[] = [
     // layer: they follow the pup, dig at nothing, and conclude the game lied.
     text: (t) =>
       t
-        ? "Lost? Tap FOX — it runs to the treasure. It means well, but a pup can be wrong."
-        : "Lost? Press Q — your fox runs to the treasure. It means well, but a pup can be wrong.",
+        ? "Lost? Tap FOX. It runs to the treasure, and it means well, but a pup can be wrong."
+        : "Lost? Press Q. Your fox runs to the treasure, and it means well, but a pup can be wrong.",
   },
   {
     id: "claim",
@@ -63,13 +63,13 @@ const BEATS: Beat[] = [
   {
     id: "carry",
     when: () => useGame.getState().villeCarrying > 0,
-    text: () => "You're carrying it. Get it to the vault — go down out here and you drop it.",
+    text: () => "You're carrying it. Get it to the vault, because if you go down out here you drop it.",
   },
   {
     id: "vault",
     when: () => runtime.nearBank && useGame.getState().villeCarrying > 0,
     text: (t) =>
-      t ? "The vault. Tap BANK to secure it — and push the day on." : "The vault. Press E to bank it — and push the day on.",
+      t ? "The vault. Tap BANK to secure it, and push the day on." : "The vault. Press E to bank it, and push the day on.",
   },
   {
     id: "market",
@@ -81,13 +81,13 @@ const BEATS: Beat[] = [
     when: () => runtime.sheltered,
     text: (t) =>
       t
-        ? "Walls break their sight — they don't stop time, and they will follow. Tap REST to patch up."
-        : "Walls break their sight — they don't stop time, and they will follow. Press X to patch up.",
+        ? "Walls break their sight, but they do not stop time, and they will follow. Tap REST to patch up."
+        : "Walls break their sight, but they do not stop time, and they will follow. Press X to patch up.",
   },
   {
     id: "reload",
     when: () => useGame.getState().ammoInMag === 0,
-    text: (t) => (t ? "Out. It reloads itself — keep moving while it does." : "Out. Press R to reload (it also reloads itself)."),
+    text: (t) => (t ? "Out. It reloads itself, so keep moving while it does." : "Out. Press R to reload, though it also reloads itself."),
   },
   {
     id: "liars",

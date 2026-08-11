@@ -95,7 +95,7 @@ export const SHOP_ITEMS: ShopItem[] = [
     id: "s_chart",
     category: "supply",
     name: "Surveyor's Chart",
-    desc: "Read it here: a fresh, narrow bearing on the treasure.",
+    desc: "Read it here for a fresh, narrow bearing on the treasure.",
     price: 75,
     icon: "🗺️",
     consumable: true,
@@ -122,13 +122,13 @@ export const SHOP_ITEMS: ShopItem[] = [
   // bandages and charges — so unlocking one is a stretch you saved toward, not
   // something you trip over on run three. These are a first pass off the loot
   // table (common 100 / rare 300) and want a playtest before they're trusted.
-  { id: "w_sidearm", category: "weapon", name: "Flintlock", desc: "Snappy, light hit — a backup piece.", price: 110, icon: "🔫", gunId: "sidearm" },
+  { id: "w_sidearm", category: "weapon", name: "Flintlock", desc: "Snappy and light, a backup piece.", price: 110, icon: "🔫", gunId: "sidearm" },
   { id: "w_smg", category: "weapon", name: "Repeater", desc: "Spits lead. Little weight behind it.", price: 300, icon: "🔫", gunId: "smg" },
   { id: "w_rifle", category: "weapon", name: "Carbine", desc: "The balanced all-rounder.", price: 0, icon: "🔫", gunId: "assault_rifle" },
   { id: "w_marksman", category: "weapon", name: "Long Rifle", desc: "Heavy hit, slow cadence. One shot, one thief.", price: 600, icon: "🎯", gunId: "marksman" },
   { id: "w_exotic", category: "weapon", name: "The Relic", desc: "Nobody will say where it came from.", price: 1500, icon: "⚡", gunId: "legendary" },
   // ── Attachments (global feel upgrades, bought once) ──
-  { id: "a_sight", category: "attachment", name: "Brass Sight", desc: "Cuts recoil — steadier aim.", price: 240, icon: "🔭" },
+  { id: "a_sight", category: "attachment", name: "Brass Sight", desc: "Cuts recoil for steadier aim.", price: 240, icon: "🔭" },
   { id: "a_grip", category: "attachment", name: "Wrapped Grip", desc: "Faster fire on any gun.", price: 260, icon: "✊" },
   // ── Bombs ──
   { id: "b_satchel", category: "bomb", name: "Bomb Satchel", desc: "Carry 4 bombs per run instead of 2.", price: 200, icon: "💣" },

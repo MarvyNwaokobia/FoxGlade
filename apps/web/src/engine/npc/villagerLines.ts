@@ -29,13 +29,13 @@ export function bearingWord(from: THREE.Vector3, to: THREE.Vector3): string {
 }
 
 const TRUE_FORMS = [
-  (d: string) => `It's ${d} of here — I saw them bury it.`,
+  (d: string) => `It's ${d} of here. I saw them bury it.`,
   (d: string) => `Go ${d}. I'd not lie to a stranger.`,
   (d: string) => `${d[0].toUpperCase()}${d.slice(1)}, past the houses. Quickly now.`,
 ];
 const LIE_FORMS = [
   (d: string) => `The treasure's ${d}, friend! Trust me.`,
-  (d: string) => `I saw it glint ${d} — go, before someone else does!`,
+  (d: string) => `I saw it glint ${d}. Go, before someone else does!`,
   (d: string) => `Everyone knows it's ${d}. Everyone.`,
 ];
 
@@ -54,23 +54,30 @@ export interface VillagerClaim {
  * a skill rather than a formality.
  */
 const CONTRADICT_FORMS = [
-  (d: string) => `That guard? Old fool. It's ${d} — I'd stake my hands on it.`,
+  (d: string) => `That guard? Old fool. It's ${d}, and I'd stake my hands on it.`,
   (d: string) => `Whatever the guardian told you, forget it. ${d[0].toUpperCase()}${d.slice(1)}.`,
-  (d: string) => `The guard sent you wrong. It's ${d}, I watched them carry it.`,
+  (d: string) => `The guard sent you wrong. It's ${d}. I watched them carry it.`,
 ];
 
-/** The guardian's briefing: said once, never written down. */
+/**
+ * The guardian's briefing, said once each morning and never written down.
+ *
+ * It carries the shape of the whole day, which is why the first one is longer:
+ * where the treasure is, that dawn is the quiet hour, that the village wakes
+ * against you by afternoon, and that the fox is the way back when your memory
+ * gives out. It stops short of promising the fox is right, because a kit is
+ * honestly and confidently wrong a good deal of the time
+ * (fox/foxBrain.findScoutTarget), and overselling it on the one occasion the
+ * player is guaranteed to be listening teaches exactly the wrong lesson.
+ */
 export function guardianBrief(at: THREE.Vector3, target: THREE.Vector3, first: boolean): string {
   const d = bearingWord(at, target);
   return first
-    ? `Listen once, I'll not repeat it. The treasure lies ${d} of this gate. ` +
-      // It used to promise the fox "cannot lie". It can't — but a kit can be
-      // honestly, confidently wrong (fox/foxBrain.findScoutTarget), and a
-      // briefing that oversells it teaches the player the wrong lesson on the
-      // one occasion they're guaranteed to be listening.
-      `Others will tell you different — they lie. Send the kit if your memory fails; ` +
-      `it means well, though it's young yet.`
-    : `New light, new prize. This one lies ${d} of the gate. Go.`;
+    ? `Listen once, for I will not repeat it. The treasure lies ${d} of here. ` +
+      `It is dawn and the village still sleeps, so take what you can before afternoon, ` +
+      `when the ones who guard it wake. Others will tell you different. They lie. ` +
+      `Send the kit if your memory fails.`
+    : `New light, new prize. This one lies ${d} of here. Go, before the village wakes.`;
 }
 
 /**

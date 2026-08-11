@@ -17,38 +17,43 @@ import { bearingTo, setLead } from "@/engine/world/leads";
 /**
  * The guardian (Marvy's design, Phase 6).
  *
- * One trusted voice, at the start of each chapter, who tells you where the
- * treasure is — ONCE, out loud, and never writes it down. Everything else in the
- * village is then trying to talk you out of it: liars now contradict the
- * briefing by name rather than offering unrelated rumours.
+ * One trusted voice who tells you where the treasure is, ONCE, out loud, and
+ * never writes it down. Everything else in the village is then trying to talk
+ * you out of it, and liars contradict the briefing by name rather than offering
+ * unrelated rumours.
  *
  * The memory pressure is the mechanic, so two rules matter:
  *
  *  1. The briefing is deliberately NOT pinned to the HUD. If it were, there'd be
  *     nothing to remember and the liars would be noise instead of a threat.
  *  2. Forgetting must cost you something without ending the run. That's the fox:
- *     it physically runs to the real treasure, and it cannot lie. The guardian
- *     tells you so in the first briefing, which is how the two systems get
- *     introduced as one idea rather than two features.
+ *     it physically runs off to look, and following it is the way back when your
+ *     memory gives out. The guardian names it in the first briefing, which is
+ *     how the two systems land as one idea rather than two features.
  *
- * It appears, delivers, and LEAVES — you can't walk back and ask again.
+ * It WAITS, it delivers, and it leaves. You cannot walk back and ask again.
+ *
+ * There is exactly one way it can arrive on screen, and that is by already being
+ * there. It used to be spawned seven metres ahead of wherever the player was
+ * facing at the top of every chapter, so it faded into being in front of you,
+ * mid-map, as many as five times a day. Now it takes a fixed post outside your
+ * door before the day starts and stands in it, which is also the only staging
+ * that survives the day beginning indoors.
  */
-const APPEAR_AT = new THREE.Vector3(VILLAGE.spawn.x + 2.2, 0, VILLAGE.spawn.z - 3.5);
 const SPEAK_RANGE = 5.5;
 const HOLD_TIME = 9; // seconds the briefing stays up
 const WALK_SPEED = 2.6;
 const LEAVE_DIST = 26; // how far it walks off before vanishing
 
-type Phase = "gone" | "waiting" | "arriving" | "speaking" | "leaving";
+type Phase = "gone" | "waiting" | "speaking" | "leaving";
 const _goal = new THREE.Vector3();
 
 export function Guardian() {
   const group = useRef<THREE.Group>(null);
-  const pos = useRef(APPEAR_AT.clone());
+  const pos = useRef(VILLAGE.guardianPost.clone());
   const phase = useRef<Phase>("gone");
   const holdClock = useRef(0);
   const facing = useRef(Math.PI);
-  const seenChapter = useRef(-1);
   const briefCount = useRef(0);
   const [line, setLine] = useState<string | null>(null);
   const [visible, setVisible] = useState(false);
@@ -58,7 +63,6 @@ export function Guardian() {
   const roundNonce = useGame((s) => s.roundNonce);
   useEffect(() => {
     phase.current = "gone";
-    seenChapter.current = -1;
     briefCount.current = 0;
     runtime.guardianBriefed = false;
     setLine(null);
@@ -75,32 +79,20 @@ export function Guardian() {
     // the first (and most important) briefing was delivered to nobody.
     if (!runtime.playerReady) return;
 
-    // A new chapter means a new board, so it comes back with a new briefing.
-    if (seenChapter.current !== gs.chapter) {
-      const opening = seenChapter.current < 0 && gs.chapter === 0;
-      seenChapter.current = gs.chapter;
-      if (opening) {
-        // THE OPENING. It is already outside your door, waiting, before you have
-        // opened it — so the first thing that happens today is meeting someone
-        // who came to find you.
-        //
-        // It used to materialise seven metres ahead of wherever the player was
-        // looking, which is what made it read as conjured rather than met: turn
-        // around, and a man faded into being in front of you. Now the day starts
-        // in a room, and that same rule would have put him in your bedroom.
-        pos.current.copy(VILLAGE.guardianPost);
-        phase.current = "waiting";
-      } else {
-        // Later chapters keep the old approach for now.
-        const yaw = runtime.yaw;
-        pos.current.set(
-          runtime.playerPos.x - Math.sin(yaw) * 7,
-          0,
-          runtime.playerPos.z - Math.cos(yaw) * 7
-        );
-        phase.current = "arriving";
-        audio.playAt("merchantGreet", pos.current.x, pos.current.z, 8, 40);
-      }
+    // ONE briefing a day, taken at the post outside your door before you are up.
+    //
+    // It used to be one per CHAPTER, which meant up to five a day, each one
+    // conjured in front of you wherever you happened to be standing. Tying it to
+    // the morning instead is what makes it a person with a habit rather than a
+    // system that fires on a state change, and it is the only version that works
+    // now that a day starts behind a closed door.
+    //
+    // The cost is real and deliberate: later chapters reseed the board and no
+    // longer come with a fresh bearing, so once you have spent the morning's
+    // briefing the fox and the villagers are what you have left.
+    if (phase.current === "gone" && briefCount.current === 0) {
+      pos.current.copy(VILLAGE.guardianPost);
+      phase.current = "waiting";
       setVisible(true);
     }
 
@@ -121,34 +113,11 @@ export function Guardian() {
           phase.current = "speaking";
           holdClock.current = HOLD_TIME;
           const real = HINTS.find((h) => h.real);
-          briefCount.current++;
-          setLine(guardianBrief(pos.current, real?.pos ?? runtime.playerPos, true));
-          runtime.guardianBriefed = true;
-          runtime.guardianSpokeAt = performance.now();
-          if (real) {
-            setLead(
-              "guardian",
-              bearingTo(pos.current.x, pos.current.z, real.pos.x, real.pos.z),
-              performance.now()
-            );
-          }
-          audio.playAt("villagerLine", pos.current.x, pos.current.z, 8, 40);
-        }
-        break;
-
-      case "arriving":
-        if (d <= SPEAK_RANGE) {
-          phase.current = "speaking";
-          holdClock.current = HOLD_TIME;
-          const real = HINTS.find((h) => h.real);
           const first = briefCount.current === 0;
           briefCount.current++;
           setLine(guardianBrief(pos.current, real?.pos ?? runtime.playerPos, first));
           runtime.guardianBriefed = true;
           runtime.guardianSpokeAt = performance.now();
-          // Put the bearing it just named on the compass as a SECTOR that fades
-          // (see world/leads.ts). Not a pin: you still have to go and look, and
-          // in a minute you'll only half-remember which way it said.
           if (real) {
             setLead(
               "guardian",
@@ -157,9 +126,6 @@ export function Guardian() {
             );
           }
           audio.playAt("villagerLine", pos.current.x, pos.current.z, 8, 40);
-        } else {
-          _goal.set(runtime.playerPos.x, 0, runtime.playerPos.z);
-          moving = steerTowards(pos.current, _goal, WALK_SPEED, dt, 0.45) > 1e-4;
         }
         break;
 

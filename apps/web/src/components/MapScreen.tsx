@@ -144,9 +144,9 @@ export function MapScreen() {
               Find treasure, carry it to the vault, spend at the market. Night ends the day.
             </div>
             <div style={styles.note}>
-              The treasure is not marked here. A guardian will tell you where it lies —{" "}
-              <b>once</b>. Others will tell you different, and some of them lie. Your fox
-              never does: send it, and follow.
+              The treasure is not marked here. A guardian will tell you where it lies,{" "}
+              <b>once</b>. Others will tell you different, and some of them lie. Send your
+              fox and follow it, though a young one can be wrong.
             </div>
             <div style={styles.keys}>
               {touch ? (

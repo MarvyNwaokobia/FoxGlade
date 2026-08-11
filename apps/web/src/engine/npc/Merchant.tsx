@@ -22,7 +22,7 @@ import { NpcRig, type NpcRigState } from "@/engine/character/NpcRig";
  * firefight in stops being a safe zone.
  */
 const GREETINGS = [
-  "Powder, bombs, better iron — name it.",
+  "Powder, bombs, better iron. Name it.",
   "You look like you've had a day. Buy something.",
   "Coin first, questions later. That's the trade.",
 ];

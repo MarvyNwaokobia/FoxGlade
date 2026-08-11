@@ -43,7 +43,7 @@ function noseLabel(misread: number): string {
   if (misread <= 0) return "never wrong";
   if (misread < 0.2) return "good nose";
   if (misread < 0.35) return "learning";
-  return "still a pup — check its work";
+  return "still a pup, check its work";
 }
 
 /** Annular-sector path for a compass wedge, in the 58×58 compass box. */
@@ -286,7 +286,7 @@ export function Hud() {
         const st = runtime.foxState;
         if (st === "down") {
           const left = Math.ceil((runtime.foxDownUntil - now) / 1000);
-          sniffEl.current.textContent = `🦊 down — ${Math.max(0, left)}s`;
+          sniffEl.current.textContent = `🦊 down for ${Math.max(0, left)}s`;
           sniffEl.current.style.color = "#ff8a7a";
           sniffEl.current.style.borderColor = "rgba(232,86,63,0.7)";
         } else if (st === "scout") {
@@ -294,7 +294,7 @@ export function Hud() {
           // decoys with total conviction. The HUD reports what it's doing, not
           // whether it's right; finding that out is the player's job.
           sniffEl.current.textContent = runtime.foxFoundTreasure
-            ? "🦊 it's digging — follow!"
+            ? "🦊 it's digging, follow!"
             : "🦊 scouting…";
           sniffEl.current.style.color = HINT_REAL;
           sniffEl.current.style.borderColor = HINT_REAL;
@@ -310,7 +310,7 @@ export function Hud() {
           // Name the control the player actually HAS. On a phone this read
           // "send — Q", pointing at a key that isn't there, while the toast two
           // lines below it correctly said "Tap FOX".
-          sniffEl.current.textContent = touchInput ? "🦊 send — FOX" : "🦊 send — Q";
+          sniffEl.current.textContent = touchInput ? "🦊 send with FOX" : "🦊 send with Q";
           sniffEl.current.style.color = HINT_DEFAULT;
           sniffEl.current.style.borderColor = HINT_DEFAULT;
         }
@@ -321,12 +321,12 @@ export function Hud() {
         const idx = runtime.nearHintIndex;
         const nearRealUnclaimed = runtime.nearHintIsReal && idx >= 0 && !runtime.hintClaimed[idx];
         if (nearRealUnclaimed) {
-          promptEl.current.innerHTML = "Treasure — press <b>E</b> to grab · then bank it";
+          promptEl.current.innerHTML = "Treasure. Press <b>E</b> to grab, then bank it.";
           promptEl.current.style.color = "#ffdf8f";
           promptEl.current.style.borderColor = "rgba(242,193,78,0.6)";
           promptEl.current.style.opacity = "1";
         } else if (idx >= 0 && !runtime.nearHintIsReal) {
-          promptEl.current.innerHTML = "False lead — nothing here";
+          promptEl.current.innerHTML = "False lead, nothing here.";
           promptEl.current.style.color = "rgba(232,238,242,0.7)";
           promptEl.current.style.borderColor = "rgba(232,238,242,0.3)";
           promptEl.current.style.opacity = "1";
@@ -339,7 +339,7 @@ export function Hud() {
       if (foxToastEl.current) {
         const age = now - runtime.foxGrewAt;
         if (runtime.foxGrewAt > 0 && age < 3200) {
-          foxToastEl.current.textContent = `🦊 Your fox grew — ${runtime.foxStageName}!`;
+          foxToastEl.current.textContent = `🦊 Your fox grew into ${runtime.foxStageName}!`;
           foxToastEl.current.style.opacity = String(age < 2600 ? 1 : (3200 - age) / 600);
         } else {
           foxToastEl.current.style.opacity = "0";
@@ -376,23 +376,23 @@ export function Hud() {
       if (shelterEl.current) {
         const canBank = runtime.nearBank && useGame.getState().villeCarrying > 0;
         if (canBank) {
-          shelterEl.current.innerHTML = "at the vault — press <b>E</b> to bank it & grow your fox";
+          shelterEl.current.innerHTML = "at the vault. Press <b>E</b> to bank it and grow your fox.";
           shelterEl.current.style.opacity = "1";
         } else if (runtime.nearMarket && !useGame.getState().shopOpen) {
-          shelterEl.current.innerHTML = "at the market — press <b>E</b> to shop";
+          shelterEl.current.innerHTML = "at the market. Press <b>E</b> to shop.";
           shelterEl.current.style.opacity = "1";
         } else if (runtime.resting) {
-          shelterEl.current.innerHTML = "patching up — <b>stay still</b>";
+          shelterEl.current.innerHTML = "patching up, <b>stay still</b>";
           shelterEl.current.style.opacity = "1";
         } else if (runtime.sheltered) {
           const left = useGame.getState().restoresLeft;
           const atCap =
             useGame.getState().playerHealth >= useGame.getState().maxPlayerHealth * REST.healCap;
           shelterEl.current.innerHTML = atCap
-            ? "out of sight — they'll come looking"
+            ? "out of sight, they'll come looking"
             : left > 0
-              ? `out of sight — <b>X</b> to patch up (${left} left)`
-              : "out of sight — <b>no restores left</b> — buy more at the market";
+              ? `out of sight. <b>X</b> to patch up, ${left} left`
+              : "out of sight, <b>no restores left</b>. Buy more at the market";
           shelterEl.current.style.opacity = "1";
         } else {
           shelterEl.current.style.opacity = "0";
@@ -530,7 +530,7 @@ export function Hud() {
       {/* Loot wallet, top-left: banked total + what you're carrying (unbanked) */}
       <div style={styles.wallet}>
         <div style={styles.walletBanked}>🏦 {villeBanked} VILLE</div>
-        {villeCarrying > 0 && <div style={styles.walletCarry}>◆ carrying {villeCarrying} — bank it</div>}
+        {villeCarrying > 0 && <div style={styles.walletCarry}>◆ carrying {villeCarrying}, bank it</div>}
         {/* Growth stage is the fox's, and the fox IS the rank — so in a mode
             without one there is nothing here to report. */}
         {gameMode().fox && (
@@ -540,9 +540,9 @@ export function Hud() {
                 nothing about WHY you'd want to; its nose is the why.
                 On a phone this whole line ran nearly half the screen width, so
                 the threshold — the least urgent part — is dropped there. */}
-            <span style={styles.foxNext}> · {noseLabel(foxGrowthFor(villeEarned).misreadChance)}</span>
+            <span style={styles.foxNext}>, {noseLabel(foxGrowthFor(villeEarned).misreadChance)}</span>
             {!touchLayout && foxNextThreshold(villeEarned) !== null && (
-              <span style={styles.foxNext}> · bank {foxNextThreshold(villeEarned)! - villeEarned} to grow</span>
+              <span style={styles.foxNext}>. Bank {foxNextThreshold(villeEarned)! - villeEarned} to grow</span>
             )}
           </div>
         )}
@@ -602,12 +602,12 @@ export function Hud() {
           </div>
           <div style={styles.roundLoot}>
             {treasuresBanked > 0
-              ? `${treasuresBanked} treasure${treasuresBanked === 1 ? "" : "s"} banked · ${villeBanked} VILLE safe`
+              ? `${treasuresBanked} treasure${treasuresBanked === 1 ? "" : "s"} banked, ${villeBanked} VILLE safe`
               : "You banked nothing today."}
           </div>
           {villeCarrying > 0 && (
             <div style={styles.roundLoot}>
-              carrying {villeCarrying} VILLE — bank it at the vault next run · {villeBanked} safe
+              carrying {villeCarrying} VILLE. Bank it at the vault next run, {villeBanked} safe
             </div>
           )}
           <div style={styles.roundHint}>
