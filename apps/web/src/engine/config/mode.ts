@@ -12,7 +12,7 @@
  * the canvas mounts (see app/nighthaul/page.tsx).
  */
 
-export type GameModeId = "foxglade" | "nighthaul" | "nights";
+export type GameModeId = "foxglade" | "nighthaul";
 
 export interface GameMode {
   id: GameModeId;
@@ -36,15 +36,6 @@ export const MODES: Record<GameModeId, GameMode> = {
     label: "Nighthaul",
     firstPerson: true,
     fox: false,
-  },
-  // The survivor-like. It shares the engine and almost nothing else: its own
-  // camera, its own crowd renderer, its own controller. The flag exists so the
-  // shared bits (input, audio, save) can tell which game is running.
-  nights: {
-    id: "nights",
-    label: "Foxglade Nights",
-    firstPerson: false,
-    fox: true,
   },
 };
 
