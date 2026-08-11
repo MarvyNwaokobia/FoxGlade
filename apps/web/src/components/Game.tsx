@@ -17,6 +17,7 @@ import { Minimap } from "@/components/Minimap";
 import { MobileControls } from "@/components/MobileControls";
 import { MapScreen } from "@/components/MapScreen";
 import { Tutorial } from "@/components/Tutorial";
+import { WalletButton } from "@/components/WalletButton";
 import { isTouchDevice } from "@/engine/input/touch";
 import { PerfProbe } from "@/engine/scene/PerfProbe";
 import { ShaderWarmup } from "@/engine/scene/ShaderWarmup";
@@ -108,6 +109,7 @@ export default function Game() {
         <PerfProbe />
       </Canvas>
       <Hud />
+      <WalletButton />
       <Tutorial />
       <Minimap />
       <Shop />

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import {ERC721Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol";
 import {AuthorizedGame} from "./auth/AuthorizedGame.sol";
 
 /// @title PetNFT
@@ -12,7 +12,8 @@ import {AuthorizedGame} from "./auth/AuthorizedGame.sol";
 ///         is a pure view over `lastSuccessfulRunTimestamp`, so no gas is spent
 ///         ticking a clock. Evolution is triggered by the game server (§13.4),
 ///         consistent with the off-chain Renown trust boundary (§13.2).
-contract PetNFT is ERC721, AuthorizedGame {
+///         UUPS-upgradeable (DESIGN.md §14.9).
+contract PetNFT is ERC721Upgradeable, AuthorizedGame {
     enum Stage {
         Egg,
         Baby,
@@ -28,7 +29,7 @@ contract PetNFT is ERC721, AuthorizedGame {
     uint256 private constant WINDOW = DECAY_END - GRACE;
     uint256 public constant MAX_HEALTH = 10_000; // basis points
 
-    uint256 private _nextId = 1;
+    uint256 private _nextId;
     string private _baseTokenURI;
 
     mapping(uint256 => Stage) public stageOf;
@@ -42,11 +43,19 @@ contract PetNFT is ERC721, AuthorizedGame {
     error NotOwnerOfPet(uint256 tokenId, address caller);
     error NotForward(Stage current, Stage target);
 
-    constructor(address initialOwner, address initialGameServer, string memory baseURI)
-        ERC721("Foxglade Fox", "FOX")
-        AuthorizedGame(initialOwner, initialGameServer)
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(address initialOwner, address initialGameServer, string memory baseURI)
+        external
+        initializer
     {
+        __ERC721_init("Foxglade Fox", "FOX");
+        __AuthorizedGame_init(initialOwner, initialGameServer);
         _baseTokenURI = baseURI;
+        _nextId = 1;
     }
 
     /// @notice Onboarding mint. Fox starts as an Egg with the decay clock running.

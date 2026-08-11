@@ -15,6 +15,7 @@ import {
   type WeaponId,
 } from "@/engine/config/shop";
 import { clearSave, loadSave, writeSave, NEW_SAVE } from "@/engine/save";
+import { claimOnChain } from "@/engine/chain/relay";
 
 /** Read once at module load — the state below is seeded from it. */
 const SAVE = loadSave();
@@ -178,26 +179,35 @@ export const useGame = create<GameState>((set, get) => ({
   villeCarrying: 0,
   villeBanked: SAVE.villeBanked,
   villeEarned: SAVE.villeEarned,
-  depositLoot: () =>
-    set((s) => {
-      if (s.villeCarrying <= 0) return s;
-      // Banking makes every claim you're carrying permanent — from here on, going
-      // down can't put these back on the board.
-      for (let i = 0; i < runtime.hintClaimed.length; i++) {
-        if (runtime.hintClaimed[i]) runtime.hintBanked[i] = true;
-      }
-      // Banking a CLAIMED treasure no longer ENDS the run — it advances the day.
-      // That's the core of the long-form structure: the sun is the clock, and you
-      // are the one pushing it. Bank often and night comes fast but nothing is at
-      // risk; push for one more treasure and you keep the light but carry the loss.
-      const secured = s.treasureClaimed && s.roundState === "playing";
-      return {
-        villeBanked: s.villeBanked + s.villeCarrying, // spendable wallet
-        villeEarned: s.villeEarned + s.villeCarrying, // lifetime — drives the fox
-        villeCarrying: 0,
-        ...(secured ? { treasuresBanked: s.treasuresBanked + 1, treasureClaimed: false, claimedRarity: null } : {}),
-      };
-    }),
+  depositLoot: () => {
+    const before = get();
+    if (before.villeCarrying <= 0) return;
+    // Banking makes every claim you're carrying permanent — from here on, going
+    // down can't put these back on the board.
+    for (let i = 0; i < runtime.hintClaimed.length; i++) {
+      if (runtime.hintClaimed[i]) runtime.hintBanked[i] = true;
+    }
+    // Banking a CLAIMED treasure no longer ENDS the run — it advances the day.
+    // That's the core of the long-form structure: the sun is the clock, and you
+    // are the one pushing it. Bank often and night comes fast but nothing is at
+    // risk; push for one more treasure and you keep the light but carry the loss.
+    const secured = before.treasureClaimed && before.roundState === "playing";
+    // Captured before the reducer clears them below — the on-chain relay (fired
+    // after, as a side effect) needs the amount/rarity this specific bank secured.
+    const amount = before.villeCarrying;
+    const rarity = before.claimedRarity;
+    set((s) => ({
+      villeBanked: s.villeBanked + s.villeCarrying, // spendable wallet
+      villeEarned: s.villeEarned + s.villeCarrying, // lifetime — drives the fox
+      villeCarrying: 0,
+      ...(secured ? { treasuresBanked: s.treasuresBanked + 1, treasureClaimed: false, claimedRarity: null } : {}),
+    }));
+    // Real on-chain mint/reward, only for an actually-secured treasure (not a
+    // salvaged partial carry) and only if a wallet is connected — see relay.ts.
+    if (secured && rarity) {
+      claimOnChain(amount, rarity === "rare" ? 1 : 0);
+    }
+  },
 
   // Carried over from the last night's sleep. A brand-new save owns only the
   // starter carbine (engine/save.ts NEW_SAVE).

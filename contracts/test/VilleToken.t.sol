@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {VilleToken} from "../src/VilleToken.sol";
 
 contract VilleTokenTest is Test {
@@ -13,7 +14,10 @@ contract VilleTokenTest is Test {
     address stranger = address(0xDEAD);
 
     function setUp() public {
-        ville = new VilleToken(owner, server);
+        VilleToken impl = new VilleToken();
+        ville = VilleToken(
+            address(new ERC1967Proxy(address(impl), abi.encodeCall(VilleToken.initialize, (owner, server))))
+        );
         vm.prank(owner);
         ville.setSpender(spender, true);
     }

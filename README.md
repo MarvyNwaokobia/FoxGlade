@@ -18,13 +18,14 @@ Godot to web/R3F — rationale in [DESIGN.md §4](DESIGN.md).)
 ```
 FoxGlade/
 ├── DESIGN.md          Game design + technical spec (start here)
-├── package.json       npm workspace root
+├── package.json       npm workspace root (apps/web only — apps/server is standalone)
 ├── apps/
-│   └── web/           Next.js + React Three Fiber game + dApp
-│       ├── app/       Next App Router (layout, page)
-│       └── src/
-│           ├── engine/    config/feel, input, player, fox, scene, runtime
-│           └── components/ Game (canvas) + Hud (DOM overlay)
+│   ├── web/           Next.js + React Three Fiber game + dApp (deployed on Vercel)
+│   │   ├── app/       Next App Router (layout, page, api/chain/* relay proxy)
+│   │   └── src/
+│   │       ├── engine/    config/feel, input, player, fox, scene, runtime, chain/
+│   │       └── components/ Game (canvas) + Hud (DOM overlay)
+│   └── server/        gameServer backend (deployed on Railway) — see below
 └── contracts/         Foundry / Solidity — the on-chain layer
     ├── src/           TreasureNFT, VilleToken, ArmoryItems, PetNFT, SeasonRewards
     ├── script/        Deploy.s.sol
@@ -45,50 +46,106 @@ jump · **Mouse** look · **Esc** release. All game-feel numbers live in one pla
 [`apps/web/src/engine/config/feel.ts`](apps/web/src/engine/config/feel.ts) — so
 movement, camera, and the fox-follow can be retuned without touching scene code.
 
-Current slice: gray-box third-person movement with the fox companion trailing at
-heel and a rough treasure-zone compass. NPCs, shooting, and on-chain calls land in
-later milestones ([DESIGN.md §8](DESIGN.md)).
+Current slice: full gray-box loop (movement, NPCs, shooting, hints, marketplace,
+day/night), Magic email-OTP wallet login, and a real on-chain moment — banking a
+secured treasure with a wallet connected mints a `TreasureNFT` and rewards real
+`VilleToken`, live on Avalanche mainnet ([DESIGN.md §8](DESIGN.md), [§14.9](DESIGN.md)).
+Wallet connection stays optional: unconnected play is unaffected, exactly as
+before this landed — the chain layer is additive, never a gate.
+
+## gameServer backend (`apps/server`, on Railway)
+
+`VilleToken.rewardTreasure` / `TreasureNFT.mintTreasure` are `onlyGameServer` —
+only the `gameServer` hot key can call them (DESIGN.md §13.2). That key can't
+live in the browser, so `apps/server` is a small standalone Express + viem
+service that holds it and does the actual signing:
+
+```
+apps/web (browser)
+  → store.ts depositLoot() [secured treasure banked]
+  → engine/chain/relay.ts  claimOnChain()          fire-and-forget, wallet-gated
+  → app/api/chain/claim/route.ts                    Next.js server route — holds
+                                                      CHAIN_RELAY_SECRET, never sent
+                                                      to the browser
+  → apps/server  POST /treasure/claim               validates + rate-limits, then
+                                                      signs & submits with the
+                                                      gameServer key
+  → Avalanche C-Chain mainnet
+```
+
+`apps/server` is intentionally **not** an npm workspace — it has its own
+`package.json`/lockfile so Railway can build it standalone with its Root
+Directory set to `apps/server`, independent of the web app's workspace. Gameplay
+itself is fully client-simulated (no authoritative server), so this relay trusts
+the client's report of what happened — that's the accepted v1 trust boundary
+(§13.2): the `gameServer` key's integrity IS the security boundary. The amount
+cap (1300, matching the game's own max carry cap) and per-player rate limit are
+a light abuse deterrent, not real anti-cheat.
+
+```bash
+cd apps/server
+cp .env.example .env      # fill in GAME_SERVER_PRIVATE_KEY + RELAY_SECRET
+npm install
+npm run dev                # → http://localhost:8080
+```
 
 ## Contracts
 
-Five intentionally-simple contracts (see [DESIGN.md §7](DESIGN.md)):
+Five intentionally-simple contracts (see [DESIGN.md §7](DESIGN.md)), all
+**UUPS-upgradeable** ([DESIGN.md §14.9](DESIGN.md)) and **live on Avalanche
+C-Chain mainnet**:
 
-| Contract | Standard | Role |
-|---|---|---|
-| `TreasureNFT` | ERC-721 | Minted per successful treasure pickup; carries rarity tier |
-| `VilleToken` | ERC-20 | Soft currency; **non-cash-out** (transfers restricted to the marketplace; burned on spend) |
-| `ArmoryItems` | ERC-1155 | Marketplace — consumables + cosmetics priced in VILLE; routes a pool cut |
-| `PetNFT` | ERC-721 | The fox — growth stage + **derived** health (decay computed as a view) |
-| `SeasonRewards` | — | Monthly tournament scoring + native-AVAX prize pool; winner-initiated claims |
+| Contract | Standard | Role | Mainnet proxy |
+|---|---|---|---|
+| `TreasureNFT` | ERC-721 | Minted per successful treasure pickup; carries rarity tier | `0x9962CDE2ab47C835926AD20885c4100Ea974c209` |
+| `VilleToken` | ERC-20 | Soft currency; **non-cash-out** (transfers restricted to the marketplace; burned on spend) | `0x1c9021462B8F62e1bF384407C093651135d9e346` |
+| `ArmoryItems` | ERC-1155 | Marketplace — consumables + cosmetics priced in VILLE; routes a pool cut | `0x3d95a695baFc865cC17366B7f2f35b19fD741987` |
+| `PetNFT` | ERC-721 | The fox — growth stage + **derived** health (decay computed as a view) | `0x217F88139a85E2DD6338732abEc109f55dDe5c01` |
+| `SeasonRewards` | — | Monthly tournament scoring + native-AVAX prize pool; winner-initiated claims | `0x3C462908c5F1e3a45009f4Ac82dB67Bb95f812DB` |
 
 A shared `AuthorizedGame` base defines the `gameServer` key — the single off-chain
 signer trusted to relay validated gameplay outcomes on-chain. **This key is the v1
-trust boundary** ([DESIGN.md §13.2](DESIGN.md)).
+trust boundary** ([DESIGN.md §13.2](DESIGN.md)). `owner` (upgrade/admin authority
+on every contract) is a Safe multisig, deliberately separate from `gameServer`
+(§14.9) — a multisig can't auto-sign per-gameplay-event, so `gameServer` stays a
+dedicated hot key instead.
 
 ### Build & test
 
 Requires [Foundry](https://book.getfoundry.sh/). From `contracts/`:
 
 ```bash
-forge install OpenZeppelin/openzeppelin-contracts foundry-rs/forge-std
+forge install OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable foundry-rs/forge-std
 forge build
 forge test
 ```
 
-### Deploy (Fuji testnet)
+### Deploy (Avalanche C-Chain mainnet — no testnet stop, §14.9)
 
 ```bash
-cp .env.example .env      # fill in PRIVATE_KEY + GAME_SERVER_ADDRESS
-forge script script/Deploy.s.sol --rpc-url fuji --broadcast --verify
+cp .env.example .env      # fill in PRIVATE_KEY, GAME_SERVER_ADDRESS, SAFE_ADDRESS
+forge script script/Deploy.s.sol --rpc-url avalanche --broadcast --verify
 ```
 
-The deploy script wires `ArmoryItems` as the sole authorized VILLE spender.
+Each contract deploys as an `ERC1967Proxy` in front of a logic contract,
+`initialize()`d with `SAFE_ADDRESS` as `owner`. Deployment is real, irreversible
+AVAX spend — double-check the deployer balance and `SAFE_ADDRESS` first.
+
+The deploy script auto-whitelists `ArmoryItems` as VilleToken's sole spender
+**only if `SAFE_ADDRESS` is unset** (deployer == owner). With a real
+`SAFE_ADDRESS`, that whitelist call has to be made from the Safe after deploy:
+`VilleToken.setSpender(ArmoryItems, true)`.
 
 ## Status
 
 Design settled ([DESIGN.md §12 locked decisions](DESIGN.md), [§13 known risks](DESIGN.md));
-contracts build and pass tests; the web game is at its first playable slice
-(gray-box movement + fox follow). Remaining work follows the M0–M9 milestones.
+contracts build, pass tests, and are **deployed live on Avalanche mainnet**;
+the web game has the full gray-box loop, Magic wallet login, and a real
+on-chain treasure-claim path through the Railway `gameServer` backend —
+verified end-to-end against live mainnet. Not yet wired to chain: the
+marketplace (`ArmoryItems.buyItem`, player-signed, no backend needed), the
+fox's `PetNFT` (needs the onboarding egg-pick UI first), and `SeasonRewards`
+(needs a tournament UI). Remaining work follows the M0–M9 milestones.
 
 ## Known design risks worth re-reading before building
 

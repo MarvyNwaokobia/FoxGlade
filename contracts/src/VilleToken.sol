@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import {AuthorizedGame} from "./auth/AuthorizedGame.sol";
 
 /// @title VilleToken
@@ -12,7 +12,8 @@ import {AuthorizedGame} from "./auth/AuthorizedGame.sol";
 /// @dev    Non-cash-out is enforced by restricting transfers: tokens may only
 ///         move to or from a whitelisted spender (e.g. ArmoryItems). Player↔player
 ///         and player↔EOA transfers are blocked so a secondary market can't form.
-contract VilleToken is ERC20, AuthorizedGame {
+///         UUPS-upgradeable (DESIGN.md §14.9).
+contract VilleToken is ERC20Upgradeable, AuthorizedGame {
     /// @notice Contracts allowed to receive/pull VilleToken (the marketplace).
     mapping(address => bool) public isSpender;
 
@@ -23,10 +24,15 @@ contract VilleToken is ERC20, AuthorizedGame {
     error TransfersRestricted(address from, address to);
     error NotSpender(address caller);
 
-    constructor(address initialOwner, address initialGameServer)
-        ERC20("Ville Token", "VILLE")
-        AuthorizedGame(initialOwner, initialGameServer)
-    {}
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(address initialOwner, address initialGameServer) external initializer {
+        __ERC20_init("Ville Token", "VILLE");
+        __AuthorizedGame_init(initialOwner, initialGameServer);
+    }
 
     /// @notice Whitelist (or remove) a spender contract, e.g. ArmoryItems.
     function setSpender(address spender, bool allowed) external onlyOwner {

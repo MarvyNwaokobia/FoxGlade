@@ -256,7 +256,20 @@ Decisions made while playing the gray-box build. These evolve the core loop — 
 
 **14.7 — Fox breeds, chosen via the egg.** Not one fox — **multiple breeds** (red, arctic, fennec, silver, …). At onboarding the player picks an **egg whose color/type determines the breed** it hatches into; you **carry the egg from the start**, it hatches and grows through the same four stages (Egg → Baby → Juvenile → Adult) within its breed. Breed is **cosmetic identity** (v1, no stat differences), riding on the existing growth/decay/rank system — so it adds art, not new systems. Ties the emotional companion choice to the on-chain `PetNFT` mint at onboarding (§7, §11).
 
-**14.8 — Wallet is Magic (magic.link); on-chain deferred until gameplay is complete.** Onboarding uses **Magic** email/social login → a deterministic embedded wallet (no extension, no seed phrase — the low-friction path for a casual audience, and the same integration Valor already uses). The on-chain layer (treasure mint, egg mint, marketplace, reward claims) is **wired only after the core gameplay loop is proven in gray-box** — hints, combat, thieves, session timer, bomb, marketplace UI first, then chain. Deploy target: **Avalanche Fuji** testnet.
+**14.8 — Wallet is Magic (magic.link); on-chain deferred until gameplay is complete.** Onboarding uses **Magic** email/social login → a deterministic embedded wallet (no extension, no seed phrase — the low-friction path for a casual audience, and the same integration Valor already uses). The on-chain layer (treasure mint, egg mint, marketplace, reward claims) is **wired only after the core gameplay loop is proven in gray-box** — hints, combat, thieves, session timer, bomb, marketplace UI first, then chain.
+
+**14.9 — Deploy target is Avalanche C-Chain mainnet directly; no Fuji testnet stop (2026-08-11, Marvy).** Supersedes the Fuji line in §14.8. Contracts deploy straight to mainnet with real AVAX gas — the `PRIVATE_KEY` in `contracts/.env` must be a dedicated, minimally-funded deployer wallet, never one holding other funds, since deployment is irreversible. The frontend's Magic wallet is configured for chainId 43114. Railway is available for any backend/database needs (e.g. hosting the `gameServer` signer service that relays validated gameplay events, §13.2).
+
+All five contracts (`VilleToken`, `TreasureNFT`, `PetNFT`, `ArmoryItems`, `SeasonRewards`) are **UUPS-upgradeable** (OpenZeppelin `contracts-upgradeable`, each deployed as an `ERC1967Proxy` in front of a logic contract, `initialize()` instead of a constructor). `owner` (the upgrade/admin authority — can rotate `gameServer`, whitelist spenders, and call `upgradeToAndCall`) is Marvy's **Safe multisig**, set via `SAFE_ADDRESS` in `contracts/.env` and passed as `initialOwner` at deploy time — the deploy key itself never holds owner power once `SAFE_ADDRESS` is set. `gameServer` stays a separate, non-multisig hot key (a Railway-hosted backend signer) since it must auto-sign every gameplay event with no manual approval step, which a Safe can't do without a relayer.
+
+The Railway backend (`apps/server`) is live and wired to real gameplay
+(2026-08-11): banking a secured treasure, with a wallet connected, mints a
+`TreasureNFT` and rewards `VilleToken` for real, relayed through a Next.js
+server route (`apps/web/app/api/chain/claim`) that keeps the relay's shared
+secret server-side. Verified end-to-end against live mainnet. See the README's
+"gameServer backend" section for the full request path. Not yet wired: the
+marketplace, `PetNFT` (needs onboarding UI), `SeasonRewards` (needs a
+tournament UI) — all deferred until their gameplay UI exists.
 
 ---
 

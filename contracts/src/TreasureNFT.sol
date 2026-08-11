@@ -1,21 +1,22 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import {ERC721Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol";
 import {AuthorizedGame} from "./auth/AuthorizedGame.sol";
 
 /// @title TreasureNFT
 /// @notice Minted once per successful treasure pickup. Rarity tier is set by
 ///         how deep in the village the treasure spawned and feeds tournament
 ///         score weighting (DESIGN.md §7, §10 Layer 2).
-contract TreasureNFT is ERC721, AuthorizedGame {
+/// @dev    UUPS-upgradeable (DESIGN.md §14.9).
+contract TreasureNFT is ERC721Upgradeable, AuthorizedGame {
     enum Rarity {
         Common,
         Rare,
         Legendary
     }
 
-    uint256 private _nextId = 1;
+    uint256 private _nextId;
     string private _baseTokenURI;
 
     mapping(uint256 => Rarity) public rarityOf;
@@ -24,11 +25,19 @@ contract TreasureNFT is ERC721, AuthorizedGame {
 
     error InvalidRarity(uint256 tier);
 
-    constructor(address initialOwner, address initialGameServer, string memory baseURI)
-        ERC721("Foxglade Treasure", "TREASURE")
-        AuthorizedGame(initialOwner, initialGameServer)
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(address initialOwner, address initialGameServer, string memory baseURI)
+        external
+        initializer
     {
+        __ERC721_init("Foxglade Treasure", "TREASURE");
+        __AuthorizedGame_init(initialOwner, initialGameServer);
         _baseTokenURI = baseURI;
+        _nextId = 1;
     }
 
     /// @notice Mint a treasure to `player`. `rarityTier` is 0/1/2 (see Rarity).

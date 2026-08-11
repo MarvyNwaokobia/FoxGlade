@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {PetNFT} from "../src/PetNFT.sol";
 
 contract PetNFTTest is Test {
@@ -12,7 +13,10 @@ contract PetNFTTest is Test {
     uint256 tokenId;
 
     function setUp() public {
-        fox = new PetNFT(owner, server, "ipfs://fox/");
+        PetNFT impl = new PetNFT();
+        fox = PetNFT(
+            address(new ERC1967Proxy(address(impl), abi.encodeCall(PetNFT.initialize, (owner, server, "ipfs://fox/"))))
+        );
         vm.prank(player);
         tokenId = fox.mintEgg(player);
     }

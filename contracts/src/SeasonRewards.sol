@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {AuthorizedGame} from "./auth/AuthorizedGame.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 
 /// @title SeasonRewards
 /// @notice Monthly tournament scoring + real (native AVAX) prize pool.
@@ -12,7 +12,10 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 ///         §10 Layer 2, §11). Default target: top 25, front-loaded tiering.
 /// @dev    Pool is funded by direct deposits: the grant seed for season 1 plus
 ///         the treasury mirroring the marketplace VILLE cut into AVAX (§13.1).
-contract SeasonRewards is AuthorizedGame, ReentrancyGuard {
+///         UUPS-upgradeable (DESIGN.md §14.9). `ReentrancyGuardTransient` uses
+///         EIP-1153 transient storage — stateless across calls, so no init step
+///         and no proxy storage-layout risk from mixing it in.
+contract SeasonRewards is AuthorizedGame, ReentrancyGuardTransient {
     struct Season {
         uint64 start;
         uint64 end;
@@ -45,9 +48,14 @@ contract SeasonRewards is AuthorizedGame, ReentrancyGuard {
     error PayoutExceedsPool(uint256 requested, uint256 available);
     error NothingToClaim();
 
-    constructor(address initialOwner, address initialGameServer)
-        AuthorizedGame(initialOwner, initialGameServer)
-    {}
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(address initialOwner, address initialGameServer) external initializer {
+        __AuthorizedGame_init(initialOwner, initialGameServer);
+    }
 
     receive() external payable {
         emit PoolFunded(msg.sender, msg.value);
