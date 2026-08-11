@@ -26,6 +26,24 @@ export const VILLE_TOKEN_ABI = [
   },
 ] as const;
 
+export const ARMORY_ITEMS_ABI = [
+  {
+    type: "function",
+    name: "buyItemFor",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "buyer", type: "address" },
+      { name: "itemId", type: "uint256" },
+      { name: "qty", type: "uint256" },
+      { name: "deadline", type: "uint256" },
+      { name: "v", type: "uint8" },
+      { name: "r", type: "bytes32" },
+      { name: "s", type: "bytes32" },
+    ],
+    outputs: [],
+  },
+] as const;
+
 export const TREASURE_NFT_ABI = [
   {
     type: "function",

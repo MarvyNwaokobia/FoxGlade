@@ -73,14 +73,28 @@ apps/web (browser)
   → Avalanche C-Chain mainnet
 ```
 
+`apps/server` also relays gasless marketplace purchases: `POST
+/marketplace/buy` takes a player's off-chain-signed EIP-712 `Purchase`
+message (signed via a viem wallet client wrapping Magic's provider —
+`engine/chain/client.ts`) and submits `ArmoryItems.buyItemFor` on the
+player's behalf, paying gas from the same key. The player never sends a
+transaction or needs AVAX for a primary purchase. Player-to-player resale
+(`listForResale` / `buyResale`) is the opposite by design — real,
+player-paid transactions on both sides, since VILLE's non-cash-out transfer
+restriction (see `VilleToken.sol`) makes a gasless resale payout require
+either inflating supply or custody-holding VILLE, and a direct transaction
+keeps the sink property intact without either.
+
 `apps/server` is intentionally **not** an npm workspace — it has its own
 `package.json`/lockfile so Railway can build it standalone with its Root
 Directory set to `apps/server`, independent of the web app's workspace. Gameplay
-itself is fully client-simulated (no authoritative server), so this relay trusts
-the client's report of what happened — that's the accepted v1 trust boundary
-(§13.2): the `gameServer` key's integrity IS the security boundary. The amount
-cap (1300, matching the game's own max carry cap) and per-player rate limit are
-a light abuse deterrent, not real anti-cheat.
+itself is fully client-simulated (no authoritative server), so the treasure-claim
+relay trusts the client's report of what happened — that's the accepted v1 trust
+boundary (§13.2): the `gameServer` key's integrity IS the security boundary. The
+amount cap (1300, matching the game's own max carry cap) and per-player rate
+limit are a light abuse deterrent, not real anti-cheat. The marketplace relay is
+different: the player's own EIP-712 signature is what authorizes spending their
+VILLE, verified on-chain — not the relay's say-so.
 
 ```bash
 cd apps/server
@@ -140,11 +154,11 @@ The deploy script auto-whitelists `ArmoryItems` as VilleToken's sole spender
 
 Design settled ([DESIGN.md §12 locked decisions](DESIGN.md), [§13 known risks](DESIGN.md));
 contracts build, pass tests, and are **deployed live on Avalanche mainnet**;
-the web game has the full gray-box loop, Magic wallet login, and a real
-on-chain treasure-claim path through the Railway `gameServer` backend —
-verified end-to-end against live mainnet. Not yet wired to chain: the
-marketplace (`ArmoryItems.buyItem`, player-signed, no backend needed), the
-fox's `PetNFT` (needs the onboarding egg-pick UI first), and `SeasonRewards`
+the web game has the full gray-box loop, Magic wallet login, a real
+on-chain treasure-claim path, and a real on-chain marketplace — gasless
+relayed purchases plus genuine player-to-player resale — all verified
+end-to-end against live mainnet. Not yet wired to chain: the fox's `PetNFT`
+(needs the onboarding egg-pick UI first), and `SeasonRewards`
 (needs a tournament UI). Remaining work follows the M0–M9 milestones.
 
 ## Known design risks worth re-reading before building

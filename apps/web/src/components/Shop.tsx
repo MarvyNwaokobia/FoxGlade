@@ -13,6 +13,11 @@ import {
   type ShopItem,
   type WeaponId,
 } from "@/engine/config/shop";
+import { useWallet } from "@/engine/chain/wallet";
+import { isOnChainSellable, onChainItemId } from "@/engine/chain/itemIds";
+import { buyItemOnChain } from "@/engine/chain/marketplace";
+import { OnChainConfirm } from "./OnChainConfirm";
+import { OnChainMarket } from "./OnChainMarket";
 
 /**
  * The marketplace overlay (DESIGN §2.3). Opens when you step up to the MARKET stall
@@ -35,8 +40,10 @@ export function Shop() {
 
   // Supplies open the stall. On most visits that's what you're here for — the
   // permanents are a once-every-few-runs purchase.
-  const [cat, setCat] = useState<ShopCategory>("supply");
+  const [cat, setCat] = useState<ShopCategory | "trade">("supply");
   const [selId, setSelId] = useState<string | null>(null);
+  const walletAddress = useWallet((s) => s.address);
+  const [mintConfirm, setMintConfirm] = useState<ShopItem | null>(null);
 
   // Release the mouse from pointer-lock so it can click the overlay.
   useEffect(() => {
@@ -139,96 +146,137 @@ export function Shop() {
               {CATEGORY_LABEL[c]}
             </button>
           ))}
-        </div>
-
-        {/* Card grid */}
-        <div style={styles.grid}>
-          {items.map((i) => {
-            const selected = i.id === selId;
-            const own = isOwned(i);
-            const equipped = isEquipped(i);
-            const stats = i.gunId ? WEAPON_STATS[i.gunId] : null;
-            // Weapons show the actual weapon. Everything else keeps its glyph.
-            const thumb = i.gunId ? weaponThumb(i.gunId) : null;
-            // Can't afford it? Say so on the card, rather than making the player
-            // tap through to a dead Sign button to find out.
-            const short = !own && i.price > villeBanked ? i.price - villeBanked : 0;
-            const carried = i.consumable ? stock(i) : null;
-            return (
-              <button
-                key={i.id}
-                onClick={() => setSelId(i.id)}
-                style={{
-                  ...styles.card,
-                  ...(selected ? styles.cardSelected : null),
-                  ...(short ? styles.cardUnaffordable : null),
-                }}
-              >
-                {equipped ? (
-                  <span style={styles.badgeEquipped}>EQUIPPED</span>
-                ) : own ? (
-                  <span style={styles.badgeOwned}>OWNED</span>
-                ) : i.consumable ? (
-                  // Price AND what's already in your pack, so the decision ("do I
-                  // need another?") is answerable from the card.
-                  <span style={{ ...styles.badgePrice, ...(short ? styles.badgeShort : null) }}>
-                    {carried ? `${carried.have}/${carried.cap} · ${i.price}` : `${i.price}`}
-                  </span>
-                ) : (
-                  <span style={{ ...styles.badgePrice, ...(short ? styles.badgeShort : null) }}>
-                    {i.price === 0 ? "FREE" : `${i.price}`}
-                  </span>
-                )}
-                {thumb ? (
-                  <img src={thumb} alt="" style={styles.cardThumb} />
-                ) : (
-                  <span style={styles.cardIcon}>{i.icon}</span>
-                )}
-                <span style={styles.cardName}>{i.name}</span>
-                {stats && (
-                  <span style={styles.cardStats}>
-                    ⚔ {stats.damage.toFixed(2)}× · {Math.round(1 / stats.fireInterval)}/s
-                  </span>
-                )}
-                {short > 0 && <span style={styles.cardShort}>need {short} more</span>}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Footer: selected item detail + primary action */}
-        <div style={styles.footer}>
-          {sel ? (
-            <>
-              <div style={styles.footInfo}>
-                {sel.gunId && weaponThumb(sel.gunId) ? (
-                  <img src={weaponThumb(sel.gunId)!} alt="" style={styles.footThumb} />
-                ) : (
-                  <span style={styles.footIcon}>{sel.icon}</span>
-                )}
-                <div>
-                  <div style={styles.footName}>{sel.name}</div>
-                  <div style={styles.footDesc}>{sel.desc}</div>
-                </div>
-              </div>
-              {(() => {
-                const a = action(sel);
-                return (
-                  <button
-                    onClick={a.onClick}
-                    disabled={a.disabled}
-                    style={{ ...styles.buy, ...(a.disabled ? styles.buyDisabled : null) }}
-                  >
-                    {a.label}
-                  </button>
-                );
-              })()}
-            </>
-          ) : (
-            <div style={styles.footHint}>Tap an item to inspect it, then Sign to buy.</div>
+          {/* On-chain player-to-player resale (DESIGN.md §14.9) — only worth a
+              tab once a wallet exists to trade from; otherwise it's a dead end. */}
+          {walletAddress && (
+            <button
+              onClick={() => {
+                setCat("trade");
+                setSelId(null);
+              }}
+              style={{ ...styles.tab, ...(cat === "trade" ? styles.tabActive : null) }}
+            >
+              🔗 Trade
+            </button>
           )}
         </div>
+
+        {cat === "trade" ? (
+          <OnChainMarket />
+        ) : (
+          <>
+            {/* Card grid */}
+            <div style={styles.grid}>
+              {items.map((i) => {
+                const selected = i.id === selId;
+                const own = isOwned(i);
+                const equipped = isEquipped(i);
+                const stats = i.gunId ? WEAPON_STATS[i.gunId] : null;
+                // Weapons show the actual weapon. Everything else keeps its glyph.
+                const thumb = i.gunId ? weaponThumb(i.gunId) : null;
+                // Can't afford it? Say so on the card, rather than making the player
+                // tap through to a dead Sign button to find out.
+                const short = !own && i.price > villeBanked ? i.price - villeBanked : 0;
+                const carried = i.consumable ? stock(i) : null;
+                return (
+                  <button
+                    key={i.id}
+                    onClick={() => setSelId(i.id)}
+                    style={{
+                      ...styles.card,
+                      ...(selected ? styles.cardSelected : null),
+                      ...(short ? styles.cardUnaffordable : null),
+                    }}
+                  >
+                    {equipped ? (
+                      <span style={styles.badgeEquipped}>EQUIPPED</span>
+                    ) : own ? (
+                      <span style={styles.badgeOwned}>OWNED</span>
+                    ) : i.consumable ? (
+                      // Price AND what's already in your pack, so the decision ("do I
+                      // need another?") is answerable from the card.
+                      <span style={{ ...styles.badgePrice, ...(short ? styles.badgeShort : null) }}>
+                        {carried ? `${carried.have}/${carried.cap} · ${i.price}` : `${i.price}`}
+                      </span>
+                    ) : (
+                      <span style={{ ...styles.badgePrice, ...(short ? styles.badgeShort : null) }}>
+                        {i.price === 0 ? "FREE" : `${i.price}`}
+                      </span>
+                    )}
+                    {thumb ? (
+                      <img src={thumb} alt="" style={styles.cardThumb} />
+                    ) : (
+                      <span style={styles.cardIcon}>{i.icon}</span>
+                    )}
+                    <span style={styles.cardName}>{i.name}</span>
+                    {stats && (
+                      <span style={styles.cardStats}>
+                        ⚔ {stats.damage.toFixed(2)}× · {Math.round(1 / stats.fireInterval)}/s
+                      </span>
+                    )}
+                    {short > 0 && <span style={styles.cardShort}>need {short} more</span>}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Footer: selected item detail + primary action */}
+            <div style={styles.footer}>
+              {sel ? (
+                <>
+                  <div style={styles.footInfo}>
+                    {sel.gunId && weaponThumb(sel.gunId) ? (
+                      <img src={weaponThumb(sel.gunId)!} alt="" style={styles.footThumb} />
+                    ) : (
+                      <span style={styles.footIcon}>{sel.icon}</span>
+                    )}
+                    <div>
+                      <div style={styles.footName}>{sel.name}</div>
+                      <div style={styles.footDesc}>{sel.desc}</div>
+                    </div>
+                  </div>
+                  <div style={styles.actionCol}>
+                    {(() => {
+                      const a = action(sel);
+                      return (
+                        <button
+                          onClick={a.onClick}
+                          disabled={a.disabled}
+                          style={{ ...styles.buy, ...(a.disabled ? styles.buyDisabled : null) }}
+                        >
+                          {a.label}
+                        </button>
+                      );
+                    })()}
+                    {/* Separate ledger from the local purchase above (DESIGN.md §14.9) — a
+                        real, sponsored/gasless on-chain mint, independent of whether the
+                        local gameplay copy is owned. Only offered for permanents. */}
+                    {walletAddress && isOnChainSellable(sel) && (
+                      <button style={styles.mintBtn} onClick={() => setMintConfirm(sel)}>
+                        🔗 Mint on-chain · {sel.price} VILLE
+                      </button>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div style={styles.footHint}>Tap an item to inspect it, then Sign to buy.</div>
+              )}
+            </div>
+          </>
+        )}
       </div>
+      {mintConfirm && (
+        <OnChainConfirm
+          title="Mint on-chain"
+          lines={[
+            `${mintConfirm.name} for ${mintConfirm.price} VILLE, paid from your real on-chain balance.`,
+            "Gas is on us — just sign.",
+          ]}
+          confirmLabel="Mint it"
+          onClose={() => setMintConfirm(null)}
+          onConfirm={() => buyItemOnChain(onChainItemId(mintConfirm.id), 1)}
+        />
+      )}
     </div>
   );
 }
@@ -404,5 +452,17 @@ const styles: Record<string, React.CSSProperties> = {
     background: "rgba(255,255,255,0.08)",
     color: "rgba(232,238,242,0.4)",
     cursor: "default",
+  },
+  actionCol: { display: "flex", flexDirection: "column", gap: 8, alignItems: "stretch" },
+  mintBtn: {
+    color: GOLD,
+    background: "rgba(242,193,78,0.1)",
+    border: "1px solid rgba(242,193,78,0.4)",
+    borderRadius: 8,
+    padding: "8px 14px",
+    fontSize: 11.5,
+    fontWeight: 700,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
   },
 };

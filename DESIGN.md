@@ -267,9 +267,25 @@ The Railway backend (`apps/server`) is live and wired to real gameplay
 `TreasureNFT` and rewards `VilleToken` for real, relayed through a Next.js
 server route (`apps/web/app/api/chain/claim`) that keeps the relay's shared
 secret server-side. Verified end-to-end against live mainnet. See the README's
-"gameServer backend" section for the full request path. Not yet wired: the
-marketplace, `PetNFT` (needs onboarding UI), `SeasonRewards` (needs a
-tournament UI) — all deferred until their gameplay UI exists.
+"gameServer backend" section for the full request path. Not yet wired:
+`PetNFT` (needs onboarding UI), `SeasonRewards` (needs a tournament UI) —
+deferred until their gameplay UI exists.
+
+**Marketplace, real on-chain ownership + player-to-player trading
+(2026-08-11).** `ArmoryItems` upgraded to v2 via the Safe (new storage
+appended after all v1 slots — layout-safe): gasless relayed purchases
+(`buyItemFor`, EIP-712-signed by the player, submitted and gas-paid by the
+`gameServer`/relay key) for the 9 sellable permanents (weapons, attachments,
+the bomb satchel, bags — consumables stay local, latency doesn't fit
+"quickly buy a bomb mid-fight"), plus real resale (`listForResale` /
+`buyResale`, custody-based so VILLE moves as a genuine transfer rather than
+a burn-and-remint, needing no change to `VilleToken`'s non-cash-out design).
+Marvy's call on gas: primary purchases sponsored/gasless; resale, both
+listing and buying, is a direct player-paid transaction on both sides — the
+"hybrid" pattern from Valor (a sibling project), adapted because VILLE's
+restricted transfers make a gasless resale *payout* specifically harder
+than G$'s free transferability allows there. Verified end-to-end against
+live mainnet (a real relayed `buyItemFor` purchase, confirmed on-chain).
 
 ---
 
