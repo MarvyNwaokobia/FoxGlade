@@ -313,7 +313,7 @@ export function Blocker({
       // shots looked like they were coming out of the NPC rather than its weapon.
       const muzzlePos = anim.current.muzzleOut ?? from;
       const dir = to.clone().sub(muzzlePos).normalize();
-      spawnProjectile(muzzlePos.clone().addScaledVector(dir, 0.12), dir, S.projectileSpeed);
+      spawnProjectile(muzzlePos.clone().addScaledVector(dir, 0.12), dir, S.projectileSpeed, S.shotDamage);
       muzzleFlashUntil.current = nowMs + 130; // 70ms was invisible at 45fps (~3 frames)
       // Incoming fire — panned to the shooter's direction + quieter with distance.
       audio.playAt("enemyGun", pos.current.x, pos.current.z, AUDIO.enemyGunNear, AUDIO.enemyGunFar);

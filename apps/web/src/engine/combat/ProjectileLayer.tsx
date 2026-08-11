@@ -6,7 +6,6 @@ import * as THREE from "three";
 import { MAX_PROJECTILES, projectilePool, stepProjectiles } from "./projectiles";
 import { useGame } from "@/engine/store";
 import { runtime } from "@/engine/runtime";
-import { BLOCKER } from "@/engine/config/round";
 import { FOX } from "@/engine/config/fox";
 import { audio } from "@/engine/audio/audio";
 
@@ -32,9 +31,11 @@ export function Projectiles() {
         // directional flinch and the on-screen damage indicator.
         runtime.damageFrom.set(-p.vx, 0, -p.vz);
         if (runtime.damageFrom.lengthSq() > 1e-6) runtime.damageFrom.normalize();
-        runtime.damageAmount = BLOCKER.shotDamage;
+        // The round carries its shooter's damage — a holder's shot lands harder
+        // than a rusher's, which is the whole point of the role split.
+        runtime.damageAmount = p.damage;
         runtime.hitRollSign = Math.random() < 0.5 ? -1 : 1;
-        useGame.getState().damagePlayer(BLOCKER.shotDamage);
+        useGame.getState().damagePlayer(p.damage);
         runtime.damageAt = performance.now();
       },
       // Fox took the round: it goes down (never dies) and you're without it.

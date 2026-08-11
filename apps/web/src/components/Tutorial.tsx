@@ -33,10 +33,17 @@ const BEATS: Beat[] = [
     id: "fox",
     // Once the fox is off cooldown and there's a treasure to look for.
     when: () => performance.now() > runtime.foxReadyAt && runtime.foxState === "heel",
+    // This used to promise the fox "cannot lie", which is the one thing it must
+    // not say. A Kit misreads 45% of the time (FOX table, misreadChance), the
+    // HUD two lines up already reads "still a pup — check its work", and the
+    // guardian's briefing was reworded away from the same promise for the same
+    // reason. Teaching a first-time player to trust a coin-flip — on the one
+    // occasion they are guaranteed to be reading — poisons the whole deduction
+    // layer: they follow the pup, dig at nothing, and conclude the game lied.
     text: (t) =>
       t
-        ? "Lost? Tap FOX — it runs to the real treasure. It cannot lie to you."
-        : "Lost? Press Q — your fox runs to the real treasure. It cannot lie to you.",
+        ? "Lost? Tap FOX — it runs to the treasure. It means well, but a pup can be wrong."
+        : "Lost? Press Q — your fox runs to the treasure. It means well, but a pup can be wrong.",
   },
   {
     id: "claim",

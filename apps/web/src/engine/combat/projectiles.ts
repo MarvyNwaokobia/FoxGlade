@@ -15,6 +15,18 @@ export interface Projectile {
   vz: number;
   ttl: number;
   active: boolean;
+  /**
+   * What this round takes off the player, carried by the ROUND rather than read
+   * from shared config when it lands.
+   *
+   * It has to live here: the shooter's stats are a per-role table
+   * (BLOCKER_ROLES), and by the time a round connects the blocker that fired it
+   * may have moved, given up, or died. Reading `BLOCKER.shotDamage` at the
+   * moment of impact — which is what used to happen — gave every round the
+   * shared default of 9 and silently discarded the rusher's 7 and the holder's
+   * 14, so the two roles hit identically no matter what the table said.
+   */
+  damage: number;
 }
 
 export const MAX_PROJECTILES = 96;
@@ -25,15 +37,23 @@ const PLAYER_CHEST = 1.0;
 const FOX_HIT_RADIUS = 0.42;
 
 export const projectilePool: Projectile[] = Array.from({ length: MAX_PROJECTILES }, () => ({
-  x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, ttl: 0, active: false,
+  x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, ttl: 0, active: false, damage: 0,
 }));
 
-export function spawnProjectile(origin: THREE.Vector3, dir: THREE.Vector3, speed: number, ttl = 3) {
+/** Fire a round. `damage` is the shooter's own value (see Projectile.damage). */
+export function spawnProjectile(
+  origin: THREE.Vector3,
+  dir: THREE.Vector3,
+  speed: number,
+  damage: number,
+  ttl = 3
+) {
   const p = projectilePool.find((q) => !q.active);
   if (!p) return;
   p.x = origin.x; p.y = origin.y; p.z = origin.z;
   p.vx = dir.x * speed; p.vy = dir.y * speed; p.vz = dir.z * speed;
   p.ttl = ttl;
+  p.damage = damage;
   p.active = true;
 }
 

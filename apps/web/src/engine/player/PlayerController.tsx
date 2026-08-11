@@ -281,6 +281,30 @@ export function PlayerController() {
     }
   }, [respawnNonce]);
 
+  // Give the mouse back when the stall closes.
+  //
+  // Shop.tsx releases pointer lock on open so the cursor can click the overlay,
+  // but nothing used to re-acquire it — so you shut the stall and were standing
+  // in a live village unable to LOOK, with no on-screen sign of why, until you
+  // happened to click. In a playtest that one missing call cost the whole rest
+  // of the run: every treasure banked came before the first market visit.
+  //
+  // The re-lock is deliberately narrow. Touch never had the lock to begin with,
+  // and re-grabbing the pointer once the run is over would trap the cursor away
+  // from the overlays that want clicking.
+  const shopOpen = useGame((s) => s.shopOpen);
+  const wasShopOpen = useRef(false);
+  useEffect(() => {
+    const closing = wasShopOpen.current && !shopOpen;
+    wasShopOpen.current = shopOpen;
+    if (!closing || touch.enabled) return;
+    if (useGame.getState().roundState !== "playing" || useGame.getState().isDead) return;
+    if (document.pointerLockElement) return;
+    // Chrome can refuse a lock requested too soon after one was released; the
+    // click path in the effect below is still there, so a refusal costs nothing.
+    Promise.resolve(gl.domElement.requestPointerLock()).catch(() => {});
+  }, [shopOpen, gl]);
+
   // Mouse look via pointer lock; left-click fires once the mouse is captured.
   useEffect(() => {
     const canvas = gl.domElement;

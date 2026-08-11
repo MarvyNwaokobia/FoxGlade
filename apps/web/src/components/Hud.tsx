@@ -1206,7 +1206,12 @@ const styles: Record<string, React.CSSProperties> = {
   shelterPill: {
     position: "absolute",
     left: "50%",
-    bottom: 84,
+    // Must clear `resourceRow`, which sits at bottom 74 and stands 29px tall.
+    // At 84 this pill ran straight through it — 19px of overlap, dead centre —
+    // so "at the vault — press E to bank it" was drawn over the ammo count at
+    // exactly the moment you're indoors deciding whether to spend a restore.
+    // Anything that grows the resource row has to push this up with it.
+    bottom: 112,
     transform: "translateX(-50%)",
     padding: "5px 14px",
     borderRadius: 999,
