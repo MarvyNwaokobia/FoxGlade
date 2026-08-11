@@ -14,6 +14,10 @@ import {
   SUPPLY_CAP,
   type WeaponId,
 } from "@/engine/config/shop";
+import { clearSave, loadSave, writeSave, NEW_SAVE } from "@/engine/save";
+
+/** Read once at module load — the state below is seeded from it. */
+const SAVE = loadSave();
 
 /**
  * Reactive game state (as opposed to per-frame `runtime` data). Kept small — only
@@ -96,6 +100,18 @@ interface GameState {
   healPlayer: (amount: number) => void;
   respawn: () => void;
 
+  /** Which day you are on, 1-indexed. Survives sleeping (see engine/save.ts). */
+  day: number;
+  /**
+   * The day is spent and you may go home and sleep.
+   *
+   * Nightfall used to end the run outright, which meant the better you played
+   * the less game you saw: four good bank runs took a day from dawn to over in
+   * about two minutes, and the reward for that was a results screen. Night is a
+   * state you can still act in now, and going to bed is YOUR call. You can push
+   * on in the dark for whatever is still out there, or turn in and bank the day.
+   */
+  dayOver: boolean;
   /** How far through the day the run is (0 = dawn, 1 = nightfall). Advanced by
    *  banking treasure and, slowly, by time passing. This IS the clock now. */
   dayProgress: number;
@@ -108,12 +124,25 @@ interface GameState {
   /** A thief got away with the chapter's treasure. Costs you time and puts a new
    *  one somewhere else — it does NOT end the run. */
   loseTreasureToThief: () => void;
+  /** Turn in for the night. Only legal once `dayOver` and you're home. Rolls the
+   *  day over, re-kits your supplies, and reseeds the board for the morning. */
+  sleep: () => void;
 
   /** Round lifecycle. `timeLeft` lives in `runtime` (per-frame); this is the state. */
   roundState: RoundState;
   roundReason: RoundReason;
-  /** Bumped on restart so the scene remounts (revives) all NPCs. */
+  /** Bumped on restart AND on sleep so the scene remounts (revives) all NPCs. */
   roundNonce: number;
+  /**
+   * Bumped only when a brand new GAME begins, never when a day rolls over.
+   *
+   * The opening map and the control legend are an introduction to the village.
+   * Hanging them off `roundNonce` meant they fired every single morning, so
+   * waking in your own bed put a full-screen map of a village you live in
+   * between you and your own front door. Once is an opening; every day is a
+   * thing you learn to dismiss without reading.
+   */
+  newGameNonce: number;
   endRound: (reason: Exclude<RoundReason, null>) => void;
   restart: () => void;
 }
@@ -147,8 +176,8 @@ export const useGame = create<GameState>((set, get) => ({
   throwBomb: () => set((s) => ({ bombsLeft: Math.max(0, s.bombsLeft - 1) })),
 
   villeCarrying: 0,
-  villeBanked: 0,
-  villeEarned: 0,
+  villeBanked: SAVE.villeBanked,
+  villeEarned: SAVE.villeEarned,
   depositLoot: () =>
     set((s) => {
       if (s.villeCarrying <= 0) return s;
@@ -170,9 +199,11 @@ export const useGame = create<GameState>((set, get) => ({
       };
     }),
 
-  owned: ["w_rifle"], // the starter assault rifle is owned from the start
-  equippedWeapon: DEFAULT_WEAPON,
-  ammoInMag: WEAPON_STATS[DEFAULT_WEAPON].magSize,
+  // Carried over from the last night's sleep. A brand-new save owns only the
+  // starter carbine (engine/save.ts NEW_SAVE).
+  owned: SAVE.owned,
+  equippedWeapon: SAVE.equippedWeapon,
+  ammoInMag: WEAPON_STATS[SAVE.equippedWeapon].magSize,
   reloadEndsAt: -1,
   startReload: () => {
     const s = get();
@@ -325,6 +356,8 @@ export const useGame = create<GameState>((set, get) => ({
     }),
   respawn: () => set((s) => ({ playerHealth: MAX_PLAYER_HEALTH, isDead: false, respawnNonce: s.respawnNonce + 1 })),
 
+  day: SAVE.day,
+  dayOver: false,
   dayProgress: 0,
   chapter: 0,
   treasuresBanked: 0,
@@ -351,11 +384,9 @@ export const useGame = create<GameState>((set, get) => ({
         runtime.chapterName = CHAPTERS[chapter].name;
         runtime.chapterBrief = CHAPTERS[chapter].brief;
       }
-      // The light has gone: the run is over and the score is what you banked.
-      if (day >= DAY.nightfall) {
-        next.roundState = "lost";
-        next.roundReason = "timeout";
-      }
+      // The light has gone. This is no longer the end of anything — it unlocks
+      // going to bed. See `dayOver` and `sleep`.
+      if (day >= DAY.nightfall) next.dayOver = true;
       return next as GameState;
     }),
 
@@ -381,16 +412,90 @@ export const useGame = create<GameState>((set, get) => ({
     get().advanceDay(DAY.theftPenalty);
   },
 
+  sleep: () => {
+    const s = get();
+    // Guarded here rather than only at the keypress, because this is the one
+    // action that rolls the world over and it must not be reachable at noon.
+    if (!s.dayOver || s.roundState !== "playing" || s.isDead) return;
+
+    const day = s.day + 1;
+    // Your wallet, your lifetime earnings and your gear go through the night.
+    // Everything else is a fresh morning.
+    writeSave({
+      day,
+      villeBanked: s.villeBanked,
+      villeEarned: s.villeEarned,
+      owned: s.owned,
+      equippedWeapon: s.equippedWeapon,
+    });
+
+    // The board is new in the morning, and so is everything the village told you
+    // about the old one.
+    runtime.hintSilenced.fill(false);
+    runtime.hintStolen.fill(false);
+    runtime.hintClaimed.fill(false);
+    runtime.hintBanked.fill(false);
+    runtime.hintCracked.fill(false);
+    clearHintHistory();
+    reseedHints(false);
+    clearLeads();
+    runtime.guardianBriefed = false; // the guardian is back at the post at dawn
+    runtime.chapterAt = -1;
+    runtime.chapterName = CHAPTERS[0].name;
+    runtime.chapterBrief = CHAPTERS[0].brief;
+    runtime.treasureStolenAt = -1;
+    runtime.treasureCrackedAt = -1;
+    runtime.lootLostAt = -1;
+    runtime.lootSalvaged = 0;
+    runtime.revealRealUntil = -1;
+    runtime.sniffReadyAt = 0;
+    runtime.roundStartAt = performance.now();
+    // A new day starts in your own bed, not at whatever house you last ducked into.
+    runtime.refugeIndex = -1;
+
+    set((st) => ({
+      day,
+      dayOver: false,
+      dayProgress: 0,
+      chapter: 0,
+      treasuresBanked: 0,
+      // Supplies are a daily trip to the market, not a stockpile.
+      bombsLeft: bombCapacity(st.owned),
+      restoresLeft: REST.charges,
+      lockboxes: 0,
+      // You slept. Of course you are patched up.
+      playerHealth: MAX_PLAYER_HEALTH,
+      isDead: false,
+      ammoInMag: WEAPON_STATS[st.equippedWeapon].magSize,
+      reloadEndsAt: -1,
+      treasureClaimed: false,
+      claimedRarity: null,
+      treasureCracked: false,
+      // Anything still in your hands at bedtime was never banked, and the bank
+      // is the only thing that makes loot yours.
+      villeCarrying: 0,
+      // Puts you back in bed and remounts the NPCs for the new day.
+      respawnNonce: st.respawnNonce + 1,
+      roundNonce: st.roundNonce + 1,
+    }));
+  },
+
   roundState: "playing",
   roundReason: null,
   roundNonce: 0,
+  newGameNonce: 0,
   endRound: (reason) =>
     set((s) => {
       if (s.roundState !== "playing") return s;
       return { roundState: reason === "claimed" ? "won" : "lost", roundReason: reason };
     }),
   restart: () => {
+    // A genuine NEW GAME, not a new day. Sleeping is how you roll the day over
+    // and keep what you earned; this throws the save away and starts again at
+    // day one with nothing but the starter carbine.
+    clearSave();
     // Reset per-frame world state.
+    runtime.guardianBriefed = false;
     runtime.roundStartAt = performance.now();
     runtime.hintSilenced.fill(false);
     runtime.hintStolen.fill(false);
@@ -419,13 +524,52 @@ export const useGame = create<GameState>((set, get) => ({
       ammoInMag: WEAPON_STATS[s.equippedWeapon].magSize,
       reloadEndsAt: -1,
       isDead: false,
+      day: 1,
+      dayOver: false,
       dayProgress: 0,
       chapter: 0,
       treasuresBanked: 0,
+      villeCarrying: 0,
+      villeBanked: NEW_SAVE.villeBanked,
+      villeEarned: NEW_SAVE.villeEarned,
+      owned: [...NEW_SAVE.owned],
+      equippedWeapon: NEW_SAVE.equippedWeapon,
       roundState: "playing",
       roundReason: null,
       roundNonce: s.roundNonce + 1,
+      newGameNonce: s.newGameNonce + 1,
       respawnNonce: s.respawnNonce + 1,
     }));
   },
 }));
+
+/**
+ * Write the save whenever anything durable moves.
+ *
+ * Doing this only at bedtime would have been simpler and wrong: banking is the
+ * act that makes loot yours, and a player who banks four treasures and then
+ * reloads the tab must not come back poorer than when they left. Persisting on
+ * change means the save is never more than one action behind the game.
+ *
+ * Everything transient — health, ammo, the day's progress, supplies — is
+ * deliberately absent. Reloading mid-afternoon puts you back at dawn with your
+ * money and your gear, not mid-firefight with 12 health.
+ */
+useGame.subscribe((s, prev) => {
+  if (
+    s.day === prev.day &&
+    s.villeBanked === prev.villeBanked &&
+    s.villeEarned === prev.villeEarned &&
+    s.owned === prev.owned &&
+    s.equippedWeapon === prev.equippedWeapon
+  ) {
+    return;
+  }
+  writeSave({
+    day: s.day,
+    villeBanked: s.villeBanked,
+    villeEarned: s.villeEarned,
+    owned: s.owned,
+    equippedWeapon: s.equippedWeapon,
+  });
+});

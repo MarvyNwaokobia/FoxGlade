@@ -247,13 +247,14 @@ describe("the day", () => {
     expect(leads.rumour).toBeNull();
   });
 
-  it("ends the run at nightfall, scored on what was banked", () => {
+  it("opens the option to sleep at nightfall instead of ending the run", () => {
     useGame.getState().claimTreasure(0);
     useGame.getState().depositLoot();
     useGame.getState().advanceDay(DAY.nightfall);
     const s = useGame.getState();
-    expect(s.roundState).toBe("lost");
-    expect(s.roundReason).toBe("timeout");
+    // Night is a state you can still act in. It used to be a results screen.
+    expect(s.roundState).toBe("playing");
+    expect(s.dayOver).toBe(true);
     expect(s.villeBanked).toBe(LOOT.rare); // banked loot survives the night
   });
 
@@ -267,7 +268,16 @@ describe("the day", () => {
 });
 
 describe("restarting", () => {
-  it("keeps the wallet and the fox, resets the run", () => {
+  /**
+   * Restart means a NEW GAME now, not a new day.
+   *
+   * Carrying the wallet across a restart was the right behaviour when a restart
+   * was the only way to get a second run. Sleeping is that now, and it is the
+   * thing that keeps what you earned. Leaving restart as a second, quieter way
+   * to roll the day over would have given the game two different doors out of a
+   * day with two different rules about what you keep.
+   */
+  it("wipes back to day one and an empty wallet", () => {
     useGame.getState().claimTreasure(0);
     useGame.getState().depositLoot();
     useGame.setState({ villeBanked: 900 });
@@ -275,12 +285,15 @@ describe("restarting", () => {
     useGame.getState().advanceDay(0.5);
     useGame.getState().restart();
     const s = useGame.getState();
-    expect(s.villeBanked).toBe(900 - 90); // the wallet persists between days
-    expect(s.villeEarned).toBe(LOOT.rare); // …and so does the fox
+    expect(s.day).toBe(1);
+    expect(s.villeBanked).toBe(0);
+    expect(s.villeEarned).toBe(0); // the fox starts over too
+    expect(s.owned).toEqual(["w_rifle"]); // back to the starter carbine
     expect(s.dayProgress).toBe(0);
+    expect(s.dayOver).toBe(false);
     expect(s.treasuresBanked).toBe(0);
     expect(s.restoresLeft).toBe(REST.charges);
-    expect(s.lockboxes).toBe(0); // supplies are per-run: re-kit each morning
+    expect(s.lockboxes).toBe(0);
     expect(s.roundState).toBe("playing");
   });
 });

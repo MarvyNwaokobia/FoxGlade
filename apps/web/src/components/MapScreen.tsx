@@ -44,19 +44,20 @@ export function MapScreen() {
     };
   }, []);
 
-  // EVERY run opens with the map, not just the first one ever.
+  // Every new GAME opens with the map. A new DAY does not.
   //
-  // This was gated on a localStorage "have they seen it" flag, which meant it
-  // appeared once on a machine and then never again — so after a single session
-  // the game silently lost its opening beat. It's also just the wrong model: the
-  // map is how a run STARTS (here's the village, here's what you're doing), the
-  // same way the guardian re-briefs you each chapter. Teaching that only needs to
-  // happen once lives in the tutorial beats, which are still first-run only.
-  const roundNonce = useGame((s) => s.roundNonce);
+  // It was gated on a localStorage "seen it" flag once, which lost the opening
+  // beat entirely after one session, so it was moved onto the round nonce. That
+  // was right when a round was a session and wrong the moment days started
+  // following one another: sleeping bumps the same nonce, so waking in your own
+  // bed put a full-screen map of a village you live in between you and your own
+  // front door, every single morning. `newGameNonce` moves only when a game
+  // actually begins. Tab still opens it whenever you want it.
+  const newGameNonce = useGame((s) => s.newGameNonce);
   useEffect(() => {
     setClosing(false);
     setOpen(true);
-  }, [roundNonce]);
+  }, [newGameNonce]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

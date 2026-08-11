@@ -12,7 +12,7 @@ import {
   type LeadSource,
   type LeadView,
 } from "@/engine/world/leads";
-import { VILLAGE } from "@/engine/world/village";
+import { HOME_INDEX, VILLAGE } from "@/engine/world/village";
 import { REST } from "@/engine/config/round";
 import { CHAPTERS, clockLabel, DAY } from "@/engine/config/day";
 import { WEAPON_STATS } from "@/engine/config/shop";
@@ -140,10 +140,13 @@ export function Hud() {
   const villeBanked = useGame((s) => s.villeBanked);
   const villeEarned = useGame((s) => s.villeEarned);
   const lockboxes = useGame((s) => s.lockboxes);
-  const roundNonce = useGame((s) => s.roundNonce);
+  const newGameNonce = useGame((s) => s.newGameNonce);
+  const day = useGame((s) => s.day);
 
   // The control legend: up while you settle in, then out of the way. Bound to H
-  // so it's never actually lost, and reshown at the top of each run.
+  // so it's never actually lost, and reshown when a new GAME starts. Not each
+  // morning — the controls do not change overnight, and a legend that reappears
+  // every day is one you stop reading.
   const [showControls, setShowControls] = useState(true);
   const [controlsFading, setControlsFading] = useState(false);
   useEffect(() => {
@@ -164,7 +167,7 @@ export function Hud() {
       window.clearTimeout(gone);
       window.removeEventListener("keydown", onKey);
     };
-  }, [roundNonce]);
+  }, [newGameNonce]);
 
   // Mute toggle: reflect the persisted state, keep in sync, and bind M.
   useEffect(() => {
@@ -249,7 +252,11 @@ export function Hud() {
           d > 0.86 ? "#ff6b5a" : d > 0.62 ? "#ffb054" : "#e8eef2";
       }
       if (chapterEl.current) {
-        chapterEl.current.textContent = runtime.chapterName;
+        // Once the light has gone the chapter word stops being the useful thing
+        // and the instruction does, so the line under the clock says so.
+        chapterEl.current.textContent = useGame.getState().dayOver
+          ? "GO HOME AND SLEEP"
+          : runtime.chapterName;
       }
 
       // Chapter banner — announces the one new thing this stretch introduces.
@@ -375,7 +382,13 @@ export function Hud() {
       // moving, and anyone who watched you come in is on their way.
       if (shelterEl.current) {
         const canBank = runtime.nearBank && useGame.getState().villeCarrying > 0;
-        if (canBank) {
+        const canSleep = runtime.shelterIndex === HOME_INDEX && useGame.getState().dayOver;
+        if (canSleep) {
+          // Outranks everything else. Standing in your own room at the end of a
+          // spent day, turning in is the only thing you came here to do.
+          shelterEl.current.innerHTML = "the day is done. Press <b>E</b> to sleep.";
+          shelterEl.current.style.opacity = "1";
+        } else if (canBank) {
           shelterEl.current.innerHTML = "at the vault. Press <b>E</b> to bank it and grow your fox.";
           shelterEl.current.style.opacity = "1";
         } else if (runtime.nearMarket && !useGame.getState().shopOpen) {
@@ -384,6 +397,16 @@ export function Hud() {
         } else if (runtime.resting) {
           shelterEl.current.innerHTML = "patching up, <b>stay still</b>";
           shelterEl.current.style.opacity = "1";
+        } else if (
+          runtime.shelterIndex === HOME_INDEX &&
+          useGame.getState().playerHealth >= useGame.getState().maxPlayerHealth
+        ) {
+          // Your own room, unhurt. "Out of sight, they'll come looking" is a
+          // line about hiding, and it was greeting the player every single
+          // morning in the bed they had just woken up in. Nobody is looking for
+          // you yet. It comes back the moment you have been hit, because then
+          // you really did come in here to get away from something.
+          shelterEl.current.style.opacity = "0";
         } else if (runtime.sheltered) {
           const left = useGame.getState().restoresLeft;
           const atCap =
@@ -529,6 +552,10 @@ export function Hud() {
 
       {/* Loot wallet, top-left: banked total + what you're carrying (unbanked) */}
       <div style={styles.wallet}>
+        {/* Which day this is. The run is a life now rather than a session, and
+            the number that has been climbing since you first played is the only
+            thing on screen that says so. */}
+        <div style={styles.dayCount}>DAY {day}</div>
         <div style={styles.walletBanked}>🏦 {villeBanked} VILLE</div>
         {villeCarrying > 0 && <div style={styles.walletCarry}>◆ carrying {villeCarrying}, bank it</div>}
         {/* Growth stage is the fox's, and the fox IS the rank — so in a mode
@@ -938,6 +965,13 @@ const styles: Record<string, React.CSSProperties> = {
     left: 20,
     pointerEvents: "none",
     userSelect: "none",
+  },
+  dayCount: {
+    fontSize: 11,
+    letterSpacing: 2,
+    fontWeight: 700,
+    color: "rgba(232,238,242,0.55)",
+    marginBottom: 2,
   },
   walletBanked: {
     fontSize: 16,

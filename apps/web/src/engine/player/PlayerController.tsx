@@ -16,6 +16,7 @@ import {
   interiorIndexAt,
   ENTERABLES,
   INTERIORS,
+  HOME_INDEX,
 } from "@/engine/world/village";
 import { resolveColliders, raycastBoxes } from "@/engine/world/collision";
 import { useGame } from "@/engine/store";
@@ -139,7 +140,13 @@ export function PlayerController() {
       // which re-ran faceAndGrab and restarted the pick-up clip over and over. The
       // gesture is a one-shot on the press, not a hold.
       if (e.code === "KeyE" && !e.repeat) {
-        if (runtime.nearHintIsReal && runtime.nearHintIndex >= 0 && !runtime.hintClaimed[runtime.nearHintIndex]) {
+        // Bed first. Once the light has gone and you are standing in your own
+        // room, E is for turning in — there is nothing else in here to press it
+        // at, and the alternative (a key of its own) would be a control that
+        // does nothing for the entire day until the one moment it doesn't.
+        if (runtime.shelterIndex === HOME_INDEX && useGame.getState().dayOver) {
+          useGame.getState().sleep();
+        } else if (runtime.nearHintIsReal && runtime.nearHintIndex >= 0 && !runtime.hintClaimed[runtime.nearHintIndex]) {
           useGame.getState().claimTreasure(runtime.nearHintIndex);
           faceAndGrab(HINTS[runtime.nearHintIndex].pos); // reach-out pick-up gesture
         } else if (runtime.nearBank && useGame.getState().villeCarrying > 0) {
