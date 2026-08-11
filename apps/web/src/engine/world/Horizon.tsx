@@ -197,7 +197,13 @@ export function Horizon() {
   return (
     <group>
       <Hills color={hill.current} />
-      <Treeline color={tree.current} />
+      {/* Treeline is OFF for now: flat-shaded solid-green cones read fine at the
+          distance this was designed for, but the treeline's inner ring sits close
+          enough to the walls that it lands right behind the realistic buildings in
+          frame — a cartoon shape beside a photoreal one, which is the exact clash
+          Marvy has rejected environment passes over before. Poly Haven's real tree
+          scans are 60–400MB (too heavy for web) — this stays off until a
+          lighter-weight real tree asset exists (see [[foxglade-art-assets]]). */}
       <Watchtower color={hill.current} />
     </group>
   );
