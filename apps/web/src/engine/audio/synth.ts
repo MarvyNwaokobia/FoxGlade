@@ -180,6 +180,19 @@ export const SFX: Record<string, (ctx: AudioContext, out: AudioNode, t0: number,
 
   // Enemy fire: duller, lower, quieter than the player's — reads as "incoming".
   enemyGun(ctx, out, t0, vol) {
+    // Same snap-then-boom shape as the player's own crack (see gunshot
+    // above), so enemy fire stops being all-boom too — but muffled and
+    // quieter (a lower cutoff, less peak) rather than the player's bright
+    // snap, so the two still read as distinct at a glance... at an earshot.
+    const crack = noiseSource(ctx);
+    const chp = ctx.createBiquadFilter();
+    chp.type = "highpass";
+    chp.frequency.value = 2200;
+    const cg = env(ctx, t0, 0.35 * vol, 0.0006, 0.022);
+    crack.connect(chp).connect(cg).connect(out);
+    crack.start(t0);
+    crack.stop(t0 + 0.035);
+
     const n = noiseSource(ctx);
     const bp = ctx.createBiquadFilter();
     bp.type = "bandpass";
