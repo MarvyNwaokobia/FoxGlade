@@ -74,7 +74,7 @@ export function Merchant() {
 
   return (
     <group ref={group} position={[post.current.x, 0, post.current.z]}>
-      <NpcRig model="npc_distractor" state={anim.current} />
+      <NpcRig model="npc_merchant" state={anim.current} />
       {line && <SpeechBubble text={line} y={2.3} tone="merchant" />}
     </group>
   );

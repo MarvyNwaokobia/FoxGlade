@@ -64,31 +64,40 @@ const DEATH_DROP = -0.8; // metres, at full clip progress
 /** Seconds the corpse spends fading out before it unmounts (no more hard pop). */
 const DEATH_FADE_SEC = 0.5;
 
-export type NpcModelId = "npc_blocker" | "npc_distractor" | "npc_thief" | "guardian";
+export type NpcModelId = "npc_blocker" | "npc_distractor" | "npc_merchant" | "npc_thief" | "guardian";
 
 /**
  * Which mesh wears each ROLE. The keys are roles, the values are just files —
  * so casting the village is this table, and nothing else.
  *
- * The old casting drew one model from each of two completely different
- * families: a sci-fi trooper for the blocker, a modern tactical operator for
- * the guardian, and a medieval crusader for the villager, all standing on
- * cobblestone in front of Tudor half-timbering. Four fictions in one frame.
- * Meanwhile `phantom` (dark full plate) and `berserker` (a rough labourer) —
- * both already in the repo, both the right period — were sitting unused.
+ * `phantom` (dark full plate, sword and shield HELD in its hands, baked into
+ * the mesh) was cast as the blocker for period-consistency, but that's exactly
+ * what broke once the blocker started carrying a gun too: a knight visibly
+ * holding a sword, a shield AND a rifle at once. Back to `npc_blocker` — a
+ * bare-handed sci-fi trooper in tan/khaki armour, already in the repo, unused
+ * since the medieval recast — which reads as an armed gunman and nothing else.
+ * `berserker` (a bare-chested horned brawler) had the same problem the other
+ * way for the villager: it reads as a fighter, not the unarmed local who's
+ * about to casually tell you where the treasure is. `phantom` moves there
+ * instead — still not perfect (a plate knight isn't quite "unarmed local"
+ * either), but it's medieval, not a genre clash, and worlds better than a
+ * bare-chested brawler chatting about treasure. The merchant, who shared
+ * `berserker` with the villager before, gets its own key so the two can be
+ * recast independently from here.
  *
- * The rule the casting follows now is the oldest one there is: **you can see an
+ * The rule the casting follows is the oldest one there is: **you can see an
  * ally's face, and you cannot see a threat's.** The guardian is open-faced and
- * gold, which is the colour his kit and his bubble already use. The blocker is a
- * faceless helm. The thief is hooded. The villager has nothing to hide behind
- * and nothing to fight with.
+ * gold, which is the colour his kit and his bubble already use. The blocker is
+ * a faceless helm. The thief is hooded.
  */
 const MODEL_PATHS: Record<NpcModelId, string> = {
-  // Faceless dark plate — the widest, most menacing silhouette in the set.
-  npc_blocker: "/characters/glb/phantom.glb",
-  // A rough local. No armour, no weapon, no authority — which is exactly what
-  // makes it interesting that he's telling you where the treasure is.
-  npc_distractor: "/characters/glb/berserker.glb",
+  // Bare-handed sci-fi trooper, tan/khaki armour — an armed gunman, nothing
+  // held that isn't the gun itself.
+  npc_blocker: "/characters/glb/npc_blocker.glb",
+  // Dark full plate. Not unarmed, but medieval and not a fighter-brawler either.
+  npc_distractor: "/characters/glb/phantom.glb",
+  // The merchant's own key now — was sharing npc_distractor's berserker look.
+  npc_merchant: "/characters/glb/berserker.glb",
   // Hooded wanderer. This one was already right.
   npc_thief: "/characters/glb/npc_thief.glb",
   // Red-and-gold herald, face visible. It must be unmistakable at a glance,
@@ -124,14 +133,32 @@ const HIPS_PITCH_FIX_INV = HIPS_PITCH_FIX.clone().invert();
 const FIRE_HOLD = 0.22;
 
 // Armed NPCs carry the same procedural rifle as the player, socketed to the hand
-// bone with the same Valor grip (same Mixamo skeleton). Distractors are unarmed.
-// rx = -90° for the same reason as the player's grip (see PlayerRig for how the
-// axis and sign were established): the hand bone's local frame puts the gun's
-// authored +Z-forward along world -X, so armed NPCs were carrying their rifles
-// jutting out sideways too.
-// rz is the barrel roll — same measured -105.2° correction as the player's grip,
-// or armed NPCs carry their rifles on their side with the sights facing left.
-const NPC_GRIP = { rx: -Math.PI / 2, rz: -1.8368, oy: 0.02, oz: 0.04 };
+// bone with a grip offset. This was ONE constant shared by every armed model,
+// on the assumption every rig came from the "same Mixamo skeleton" as the
+// player's. It doesn't: swapping the blocker onto npc_blocker.glb (a
+// different downloaded rig) with the player's rx = -90° pointed the barrel
+// steeply DOWN (measured muzzle-forward Y ≈ -0.63 — the gun was aimed at the
+// ground near the blocker's own feet, which is exactly what read as "shooting
+// from the hip"), and rolled the weapon onto its side (up-vector Y ≈ -0.63,
+// i.e. most of the way to upside-down) rather than upright.
+//
+// Found the same way the player's grip was: measure the gun's actual world
+// +Z (forward) and +Y (up) against what a level, upright, forward-held rifle
+// should read, sweeping rx via the ?griprx= dev override (see GunMesh.ts)
+// until forward levelled out (rx = 0 → forward Y ≈ 0.11, up Y ≈ 0.91) instead
+// of rx = -90° (forward Y ≈ -0.63, up Y ≈ -0.63). rz (the roll) already
+// worked once rx did — same -105.2° value the player uses.
+//
+// Kept per-model rather than changed globally: the thief also carries this
+// rifle (visible, never fired) and hasn't been measured, so it stays on the
+// original value rather than being changed on an unverified assumption.
+const NPC_GRIP_DEFAULT = { rx: -Math.PI / 2, rz: -1.8368, oy: 0.02, oz: 0.04 };
+const NPC_GRIP_BY_MODEL: Partial<Record<NpcModelId, typeof NPC_GRIP_DEFAULT>> = {
+  npc_blocker: { rx: 0, rz: -1.8368, oy: 0.02, oz: 0.04 },
+};
+function npcGrip(model: NpcModelId) {
+  return NPC_GRIP_BY_MODEL[model] ?? NPC_GRIP_DEFAULT;
+}
 const _npcGunScratch = new THREE.Matrix4();
 const _npcGunWorld = new THREE.Matrix4();
 // Scratch for the archetype kit sockets.
@@ -149,6 +176,9 @@ const _kitUp = new THREE.Vector3(0, 1, 0);
 const MODEL_ROLE: Record<NpcModelId, Archetype> = {
   npc_blocker: "blocker",
   npc_distractor: "villager",
+  // Same silhouette treatment as the villager (sack over the shoulder) — the
+  // merchant's kit didn't change, only its own model key did.
+  npc_merchant: "villager",
   npc_thief: "thief",
   guardian: "guardian",
 };
@@ -455,7 +485,7 @@ export const NpcRig = memo(function NpcRig({
     // muzzle either way, so the shot and the barrel still agree.
     if (gunRef.current && handBoneRef.current) {
       handBoneRef.current.updateWorldMatrix(true, false);
-      handGunWorldMatrix(_npcGunWorld, handBoneRef.current.matrixWorld, NPC_GRIP);
+      handGunWorldMatrix(_npcGunWorld, handBoneRef.current.matrixWorld, npcGrip(model));
       if (state.muzzleOut) muzzleWorldPos(state.muzzleOut, gunRef.current, _npcGunWorld);
       _npcGunScratch.copy(groupRef.current.matrixWorld).invert();
       gunRef.current.matrix.multiplyMatrices(_npcGunScratch, _npcGunWorld);
