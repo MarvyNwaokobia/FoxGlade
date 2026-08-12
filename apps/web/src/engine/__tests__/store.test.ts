@@ -3,7 +3,7 @@ import { useGame, carryCap, bombCapacity } from "@/engine/store";
 import { runtime } from "@/engine/runtime";
 import { HINTS } from "@/engine/world/hints";
 import { LOOT, REST } from "@/engine/config/round";
-import { DAY, CHAPTERS } from "@/engine/config/day";
+import { DAY, CHAPTERS, treasuresForDay } from "@/engine/config/day";
 import { SUPPLY_CAP, BAG_CAP } from "@/engine/config/shop";
 import { clearLeads, leads } from "@/engine/world/leads";
 import { forgetEverything, isDangerous } from "@/engine/fox/foxMemory";
@@ -116,6 +116,64 @@ describe("banking", () => {
   it("is a no-op with an empty bag", () => {
     useGame.getState().depositLoot();
     expect(useGame.getState().treasuresBanked).toBe(0);
+  });
+});
+
+describe("day quota (DESIGN §14.10)", () => {
+  it("ends the day once the quota is resolved, even with plenty of daylight left", () => {
+    useGame.setState({ day: 3, treasuresRequired: 3, treasuresResolved: 0, dayProgress: 0.05, chapter: 0, dayOver: false });
+    for (let n = 0; n < 3; n++) {
+      const idx = HINTS.findIndex((h) => h.real);
+      useGame.getState().claimTreasure(idx);
+      useGame.getState().depositLoot();
+    }
+    expect(useGame.getState().treasuresResolved).toBe(3);
+    // depositLoot only updates the tally; PlayerController always follows a bank
+    // with advanceDay (see the KeyE handler) — that's the call that checks it.
+    useGame.getState().advanceDay(0);
+    const s = useGame.getState();
+    expect(s.dayOver).toBe(true);
+    expect(s.dayProgress).toBeLessThan(DAY.nightfall);
+  });
+
+  it("counts a theft toward the quota exactly like a bank does", () => {
+    useGame.setState({ day: 2, treasuresRequired: 2, treasuresResolved: 0, treasuresStolen: 0, dayOver: false });
+    useGame.getState().loseTreasureToThief();
+    expect(useGame.getState().treasuresResolved).toBe(1);
+    expect(useGame.getState().treasuresStolen).toBe(1);
+    expect(useGame.getState().dayOver).toBe(false);
+
+    useGame.getState().loseTreasureToThief();
+    expect(useGame.getState().treasuresResolved).toBe(2);
+    expect(useGame.getState().dayOver).toBe(true);
+  });
+
+  it("puts a new treasure on the board right away when quota remains, rather than waiting for the chapter to turn over", () => {
+    useGame.setState({ day: 2, treasuresRequired: 2, treasuresResolved: 0, dayOver: false, chapter: 0 });
+    const idx = HINTS.findIndex((h) => h.real);
+    useGame.getState().claimTreasure(idx);
+    useGame.getState().depositLoot();
+    expect(useGame.getState().treasuresResolved).toBe(1);
+    expect(HINTS.some((h) => h.real)).toBe(true); // the next one is already out there
+  });
+
+  it("does not reseed once the last of the quota is resolved — there's nothing left to hunt", () => {
+    useGame.setState({ day: 1, treasuresRequired: 1, treasuresResolved: 0, dayOver: false, chapter: 0 });
+    const idx = HINTS.findIndex((h) => h.real);
+    useGame.getState().claimTreasure(idx);
+    useGame.getState().depositLoot();
+    // The board wasn't touched: the slot that was real is still marked banked.
+    expect(runtime.hintBanked[idx]).toBe(true);
+  });
+
+  it("raises next day's quota and resets the tally on sleep", () => {
+    useGame.setState({ day: 2, treasuresRequired: 2, treasuresResolved: 2, treasuresStolen: 1, dayOver: true, isDead: false });
+    useGame.getState().sleep();
+    const s = useGame.getState();
+    expect(s.day).toBe(3);
+    expect(s.treasuresRequired).toBe(treasuresForDay(3));
+    expect(s.treasuresResolved).toBe(0);
+    expect(s.treasuresStolen).toBe(0);
   });
 });
 

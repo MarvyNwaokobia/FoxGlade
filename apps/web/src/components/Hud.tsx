@@ -142,6 +142,8 @@ export function Hud() {
   const lockboxes = useGame((s) => s.lockboxes);
   const newGameNonce = useGame((s) => s.newGameNonce);
   const day = useGame((s) => s.day);
+  const treasuresRequired = useGame((s) => s.treasuresRequired);
+  const treasuresResolved = useGame((s) => s.treasuresResolved);
 
   // The control legend: up while you settle in, then out of the way. Bound to H
   // so it's never actually lost, and reshown when a new GAME starts. Not each
@@ -555,7 +557,9 @@ export function Hud() {
         {/* Which day this is. The run is a life now rather than a session, and
             the number that has been climbing since you first played is the only
             thing on screen that says so. */}
-        <div style={styles.dayCount}>DAY {day}</div>
+        <div style={styles.dayCount}>
+          DAY {day} <span style={styles.dayQuota}>· {treasuresResolved}/{treasuresRequired} found</span>
+        </div>
         <div style={styles.walletBanked}>🏦 {villeBanked} VILLE</div>
         {villeCarrying > 0 && <div style={styles.walletCarry}>◆ carrying {villeCarrying}, bank it</div>}
         {/* Growth stage is the fox's, and the fox IS the rank — so in a mode
@@ -972,6 +976,10 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     color: "rgba(232,238,242,0.55)",
     marginBottom: 2,
+  },
+  dayQuota: {
+    letterSpacing: 0.5,
+    color: "rgba(232,238,242,0.4)",
   },
   walletBanked: {
     fontSize: 16,

@@ -4,7 +4,7 @@ import { LOOT, REST } from "@/engine/config/round";
 import { HINTS, reseedHints, clearHintHistory, type Rarity } from "@/engine/world/hints";
 import { bearingTo, clearLeads, setLead } from "@/engine/world/leads";
 import { rememberDanger } from "@/engine/fox/foxMemory";
-import { DAY, CHAPTERS, chapterAt } from "@/engine/config/day";
+import { DAY, CHAPTERS, chapterAt, treasuresForDay } from "@/engine/config/day";
 import {
   SHOP_ITEMS,
   DEFAULT_WEAPON,
@@ -120,6 +120,18 @@ interface GameState {
   chapter: number;
   /** Treasures banked this run — the score. */
   treasuresBanked: number;
+  /** How many treasures today's quota asks for (DESIGN §14.10, `treasuresForDay`).
+   *  Climbs with `day` — the difficulty curve now runs through the quota, not
+   *  just through more blockers. */
+  treasuresRequired: number;
+  /** How many of today's treasures are settled one way or another — banked by
+   *  you, or gotten away with by a thief. The day ends (see `dayOver`) once this
+   *  reaches `treasuresRequired`, same as it does at nightfall. */
+  treasuresResolved: number;
+  /** Of `treasuresResolved`, how many a thief got away with — the day-end tally
+   *  reports this alongside `treasuresBanked` so "3 of 5, thieves took 2" reads
+   *  as a story, not just a missed number. */
+  treasuresStolen: number;
   /** Push the day forward (drift each frame, or a jump on a bank). */
   advanceDay: (amount: number) => void;
   /** A thief got away with the chapter's treasure. Costs you time and puts a new
@@ -196,12 +208,28 @@ export const useGame = create<GameState>((set, get) => ({
     // after, as a side effect) needs the amount/rarity this specific bank secured.
     const amount = before.villeCarrying;
     const rarity = before.claimedRarity;
+    const resolved = before.treasuresResolved + (secured ? 1 : 0);
+    const quotaLeft = secured && resolved < before.treasuresRequired;
     set((s) => ({
       villeBanked: s.villeBanked + s.villeCarrying, // spendable wallet
       villeEarned: s.villeEarned + s.villeCarrying, // lifetime — drives the fox
       villeCarrying: 0,
-      ...(secured ? { treasuresBanked: s.treasuresBanked + 1, treasureClaimed: false, claimedRarity: null } : {}),
+      ...(secured
+        ? { treasuresBanked: s.treasuresBanked + 1, treasuresResolved: resolved, treasureClaimed: false, claimedRarity: null }
+        : {}),
     }));
+    // Today's quota isn't full yet — put the next treasure on the board right
+    // away, same as a theft does, so the hunt doesn't stall until the next
+    // chapter happens to roll over on its own.
+    if (quotaLeft) {
+      runtime.hintSilenced.fill(false);
+      runtime.hintStolen.fill(false);
+      runtime.hintClaimed.fill(false);
+      runtime.hintBanked.fill(false);
+      runtime.hintCracked.fill(false);
+      reseedHints(get().chapter >= 2);
+      clearLeads();
+    }
     // Real on-chain mint/reward, only for an actually-secured treasure (not a
     // salvaged partial carry) and only if a wallet is connected — see relay.ts.
     if (secured && rarity) {
@@ -371,6 +399,9 @@ export const useGame = create<GameState>((set, get) => ({
   dayProgress: 0,
   chapter: 0,
   treasuresBanked: 0,
+  treasuresRequired: treasuresForDay(SAVE.day),
+  treasuresResolved: 0,
+  treasuresStolen: 0,
   advanceDay: (amount) =>
     set((s) => {
       if (s.roundState !== "playing") return s;
@@ -394,9 +425,10 @@ export const useGame = create<GameState>((set, get) => ({
         runtime.chapterName = CHAPTERS[chapter].name;
         runtime.chapterBrief = CHAPTERS[chapter].brief;
       }
-      // The light has gone. This is no longer the end of anything — it unlocks
-      // going to bed. See `dayOver` and `sleep`.
-      if (day >= DAY.nightfall) next.dayOver = true;
+      // The day is spent either at nightfall, or the moment today's quota is
+      // fully resolved (banked or lost to a thief) — whichever comes first. Both
+      // unlock going to bed; neither ends the game. See `dayOver` and `sleep`.
+      if (day >= DAY.nightfall || s.treasuresResolved >= s.treasuresRequired) next.dayOver = true;
       return next as GameState;
     }),
 
@@ -412,12 +444,17 @@ export const useGame = create<GameState>((set, get) => ({
     // always did — at nightfall.
     const s = get();
     if (s.roundState !== "playing") return;
+    const resolved = s.treasuresResolved + 1;
+    set({ treasuresResolved: resolved, treasuresStolen: s.treasuresStolen + 1 });
     runtime.hintSilenced.fill(false);
     runtime.hintStolen.fill(false);
     runtime.hintClaimed.fill(false);
     runtime.hintBanked.fill(false);
     runtime.hintCracked.fill(false);
-    reseedHints(s.chapter >= 2);
+    // Only put a fresh one on the board if today's quota still needs it — once
+    // the last of them is resolved, there's nothing left to hunt and the day is
+    // over regardless of which way it went.
+    if (resolved < s.treasuresRequired) reseedHints(s.chapter >= 2);
     clearLeads();
     get().advanceDay(DAY.theftPenalty);
   },
@@ -469,6 +506,9 @@ export const useGame = create<GameState>((set, get) => ({
       dayProgress: 0,
       chapter: 0,
       treasuresBanked: 0,
+      treasuresRequired: treasuresForDay(day),
+      treasuresResolved: 0,
+      treasuresStolen: 0,
       // Supplies are a daily trip to the market, not a stockpile.
       bombsLeft: bombCapacity(st.owned),
       restoresLeft: REST.charges,
@@ -539,6 +579,9 @@ export const useGame = create<GameState>((set, get) => ({
       dayProgress: 0,
       chapter: 0,
       treasuresBanked: 0,
+      treasuresRequired: treasuresForDay(1),
+      treasuresResolved: 0,
+      treasuresStolen: 0,
       villeCarrying: 0,
       villeBanked: NEW_SAVE.villeBanked,
       villeEarned: NEW_SAVE.villeEarned,

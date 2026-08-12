@@ -56,6 +56,15 @@ export const DAY = {
   nightfall: 1.0,
 } as const;
 
+/**
+ * How many treasures must be RESOLVED — banked by you, or lost to a thief —
+ * before the day is spent (DESIGN §14.10). This is the difficulty curve now,
+ * not just more blockers: day 1 asks for two, and it climbs from there.
+ */
+export function treasuresForDay(day: number): number {
+  return Math.min(day, 6);
+}
+
 /** Which chapter a given day-progress falls in. */
 export function chapterAt(day: number): number {
   let idx = 0;
