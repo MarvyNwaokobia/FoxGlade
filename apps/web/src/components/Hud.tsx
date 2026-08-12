@@ -107,6 +107,8 @@ export function Hud() {
   const timerEl = useRef<HTMLDivElement>(null);
   const chapterEl = useRef<HTMLDivElement>(null);
   const bannerEl = useRef<HTMLDivElement>(null);
+  const dayStartEl = useRef<HTMLDivElement>(null);
+  const dayEndEl = useRef<HTMLDivElement>(null);
   const runEl = useRef<HTMLDivElement>(null);
   const crouchEl = useRef<HTMLDivElement>(null);
   const shelterEl = useRef<HTMLDivElement>(null);
@@ -272,6 +274,42 @@ export function Hud() {
           bannerEl.current.style.opacity = String(age < 4200 ? 1 : (5200 - age) / 1000);
         } else {
           bannerEl.current.style.opacity = "0";
+        }
+      }
+
+      // Day-start toast: "DAY N — find X treasures before night falls."
+      // One-shot, fired from store.ts (sleep / restart / a death-restart) via
+      // runtime.dayAnnounceAt (DESIGN §14.10).
+      if (dayStartEl.current) {
+        const age = now - runtime.dayAnnounceAt;
+        if (runtime.dayAnnounceAt > 0 && age < 5200) {
+          const req = useGame.getState().treasuresRequired;
+          dayStartEl.current.innerHTML =
+            `<div style="font-size:26px;font-weight:800;letter-spacing:1px">DAY ${useGame.getState().day}</div>` +
+            `<div style="font-size:15px;opacity:0.85;margin-top:4px">Find ${req} treasure${req === 1 ? "" : "s"} before night falls.</div>`;
+          dayStartEl.current.style.opacity = String(age < 4200 ? 1 : (5200 - age) / 1000);
+        } else {
+          dayStartEl.current.style.opacity = "0";
+        }
+      }
+
+      // Day-end summary: fires once `dayOver` flips true — quota resolved, or
+      // nightfall — and reports the split rather than a pass/fail, since a
+      // thief winning a race isn't a failure state (DESIGN §14.10).
+      if (dayEndEl.current) {
+        const age = now - runtime.dayEndAt;
+        if (runtime.dayEndAt > 0 && age < 5200) {
+          const st = useGame.getState();
+          const line =
+            st.treasuresStolen > 0
+              ? `${st.treasuresBanked} banked, ${st.treasuresStolen} lost to thieves.`
+              : `${st.treasuresBanked} of ${st.treasuresRequired} banked. Nothing lost.`;
+          dayEndEl.current.innerHTML =
+            `<div style="font-size:26px;font-weight:800;letter-spacing:1px">DAY ${st.day} DONE</div>` +
+            `<div style="font-size:15px;opacity:0.85;margin-top:4px">${line} Head home and rest.</div>`;
+          dayEndEl.current.style.opacity = String(age < 4200 ? 1 : (5200 - age) / 1000);
+        } else {
+          dayEndEl.current.style.opacity = "0";
         }
       }
 
@@ -605,6 +643,10 @@ export function Hud() {
 
       {/* Chapter banner — text set from the game loop */}
       <div ref={bannerEl} style={styles.chapterBanner} />
+
+      {/* Day-start / day-end toasts — text set from the game loop */}
+      <div ref={dayStartEl} style={styles.chapterBanner} />
+      <div ref={dayEndEl} style={styles.chapterBanner} />
 
       {/* Downed overlay (mid-round setback, not round end) */}
       {isDead && roundState === "playing" && (

@@ -215,6 +215,55 @@ describe("going down", () => {
   });
 });
 
+describe("day-start / day-end toasts (DESIGN §14.10)", () => {
+  it("fires the day-end toast exactly once, when the quota resolves", () => {
+    useGame.setState({ day: 2, treasuresRequired: 1, treasuresResolved: 0, dayOver: false });
+    runtime.dayEndAt = -1;
+    useGame.getState().advanceDay(0);
+    expect(useGame.getState().dayOver).toBe(false);
+    expect(runtime.dayEndAt).toBe(-1); // quota not met yet — no toast
+
+    useGame.setState({ treasuresResolved: 1 });
+    useGame.getState().advanceDay(0);
+    expect(useGame.getState().dayOver).toBe(true);
+    const firstFire = runtime.dayEndAt;
+    expect(firstFire).toBeGreaterThan(-1);
+
+    // Calling advanceDay again while already dayOver must not re-fire it — the
+    // toast is a one-shot for the MOMENT the day ended, not a running flag.
+    useGame.getState().advanceDay(0);
+    expect(runtime.dayEndAt).toBe(firstFire);
+  });
+
+  it("fires the day-start toast on sleep, restart, and a death day-restart", () => {
+    runtime.dayAnnounceAt = -1;
+    useGame.getState().sleep(); // not dayOver yet — should be a no-op, not a fire
+    expect(runtime.dayAnnounceAt).toBe(-1);
+
+    useGame.setState({ dayOver: true, isDead: false });
+    useGame.getState().sleep();
+    expect(runtime.dayAnnounceAt).toBeGreaterThan(-1);
+
+    runtime.dayAnnounceAt = -1;
+    useGame.getState().restart();
+    expect(runtime.dayAnnounceAt).toBeGreaterThan(-1);
+
+    runtime.dayAnnounceAt = -1;
+    useGame.setState({ extraLives: 0 });
+    useGame.getState().damagePlayer(1000);
+    useGame.getState().respawn();
+    expect(runtime.dayAnnounceAt).toBeGreaterThan(-1);
+  });
+
+  it("does not fire the day-start toast when a Warding Charm resumes the day in place", () => {
+    runtime.dayAnnounceAt = -1;
+    useGame.setState({ extraLives: 1 });
+    useGame.getState().damagePlayer(1000);
+    useGame.getState().respawn();
+    expect(runtime.dayAnnounceAt).toBe(-1);
+  });
+});
+
 describe("respawn / the Warding Charm (DESIGN §14.10)", () => {
   it("with no charm, restarts the CURRENT day rather than the whole game", () => {
     useGame.setState({

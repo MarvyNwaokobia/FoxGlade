@@ -438,6 +438,7 @@ export const useGame = create<GameState>((set, get) => ({
     runtime.chapterBrief = CHAPTERS[0].brief;
     runtime.guardianBriefed = false;
     runtime.roundStartAt = performance.now();
+    runtime.dayAnnounceAt = performance.now();
     clearHintHistory();
     reseedHints(false);
     clearLeads();
@@ -498,7 +499,10 @@ export const useGame = create<GameState>((set, get) => ({
       // The day is spent either at nightfall, or the moment today's quota is
       // fully resolved (banked or lost to a thief) — whichever comes first. Both
       // unlock going to bed; neither ends the game. See `dayOver` and `sleep`.
-      if (day >= DAY.nightfall || s.treasuresResolved >= s.treasuresRequired) next.dayOver = true;
+      if (!s.dayOver && (day >= DAY.nightfall || s.treasuresResolved >= s.treasuresRequired)) {
+        next.dayOver = true;
+        runtime.dayEndAt = performance.now(); // one-shot: fires the day-end summary toast
+      }
       return next as GameState;
     }),
 
@@ -567,6 +571,7 @@ export const useGame = create<GameState>((set, get) => ({
     runtime.revealRealUntil = -1;
     runtime.sniffReadyAt = 0;
     runtime.roundStartAt = performance.now();
+    runtime.dayAnnounceAt = performance.now();
     // A new day starts in your own bed, not at whatever house you last ducked into.
     runtime.refugeIndex = -1;
 
@@ -618,6 +623,7 @@ export const useGame = create<GameState>((set, get) => ({
     // Reset per-frame world state.
     runtime.guardianBriefed = false;
     runtime.roundStartAt = performance.now();
+    runtime.dayAnnounceAt = performance.now();
     runtime.hintSilenced.fill(false);
     runtime.hintStolen.fill(false);
     runtime.hintClaimed.fill(false);
