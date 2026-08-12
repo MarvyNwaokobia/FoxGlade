@@ -153,8 +153,20 @@ function step(
 }
 
 export const SFX: Record<string, (ctx: AudioContext, out: AudioNode, t0: number, vol: number) => void> = {
-  // Player rifle: bright noise crack + a short low body thump.
+  // Player rifle: a sharp high crack (the supersonic snap), a bright noise
+  // body underneath it, and a short low thump. Real gunfire reads as
+  // snap-THEN-boom — the crack used to be the same 900Hz-highpass layer as
+  // the body, so there was only the boom; this adds the snap ahead of it.
   gunshot(ctx, out, t0, vol) {
+    const crack = noiseSource(ctx);
+    const chp = ctx.createBiquadFilter();
+    chp.type = "highpass";
+    chp.frequency.value = 3200;
+    const cg = env(ctx, t0, 0.6 * vol, 0.0004, 0.018);
+    crack.connect(chp).connect(cg).connect(out);
+    crack.start(t0);
+    crack.stop(t0 + 0.03);
+
     const n = noiseSource(ctx);
     const hp = ctx.createBiquadFilter();
     hp.type = "highpass";

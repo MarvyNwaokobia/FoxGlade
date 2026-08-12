@@ -76,8 +76,8 @@ export function Projectiles() {
   return (
     <instancedMesh ref={ref} args={[undefined, undefined, MAX_PROJECTILES]} frustumCulled={false}>
       {/* A slim cylinder along +Z (scaled to TRACER_LENGTH above), not a ball. */}
-      <cylinderGeometry args={[0.035, 0.02, 1, 6, 1, true]} />
-      <meshBasicMaterial color="#ffdca0" transparent opacity={0.95} depthWrite={false} toneMapped={false} />
+      <cylinderGeometry args={[0.028, 0.014, 1, 6, 1, true]} />
+      <meshBasicMaterial color="#fff0c2" transparent opacity={0.95} depthWrite={false} toneMapped={false} />
     </instancedMesh>
   );
 }
