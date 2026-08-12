@@ -85,6 +85,11 @@ interface GameState {
    *  which is the only kind worth selling. */
   lockboxes: number;
 
+  /** Warding Charms carried (SUPPLY_CAP.extraLives caps it at 1 — see shop.ts).
+   *  Spent automatically the next time you'd go down for good; while you have
+   *  one, dying resumes today's hunt in place instead of restarting the day. */
+  extraLives: number;
+
   playerHealth: number;
   maxPlayerHealth: number;
   /** Restores left this run (see REST.charges). Spent to heal in a safe room;
@@ -99,6 +104,15 @@ interface GameState {
   respawnNonce: number;
   damagePlayer: (amount: number) => void;
   healPlayer: (amount: number) => void;
+  /**
+   * Coming back from going down (DESIGN §14.10). With a Warding Charm in hand it
+   * spends the charm and resumes TODAY exactly where you fell — the old
+   * behaviour. With none, the day restarts from dawn: quota progress, the
+   * board, and time of day all roll back to the start, same as waking up on a
+   * fresh morning, except it's still the same day number and nothing banked or
+   * owned is touched. Zero free retries by default is the point — see the
+   * Warding Charm in shop.ts.
+   */
   respawn: () => void;
 
   /** Which day you are on, 1-indexed. Survives sleeping (see engine/save.ts). */
@@ -278,6 +292,9 @@ export const useGame = create<GameState>((set, get) => ({
           case "s_lockbox":
             if (s.lockboxes >= SUPPLY_CAP.lockboxes) return s;
             return { villeBanked: s.villeBanked - item.price, lockboxes: s.lockboxes + 1 };
+          case "s_extralife":
+            if (s.extraLives >= SUPPLY_CAP.extraLives) return s;
+            return { villeBanked: s.villeBanked - item.price, extraLives: s.extraLives + 1 };
           case "s_chart": {
             // Reading it at the stall IS the purchase. Nothing to carry, and the
             // bearing is drawn from where you're standing.
@@ -322,6 +339,7 @@ export const useGame = create<GameState>((set, get) => ({
     }),
 
   lockboxes: 0,
+  extraLives: 0,
   playerHealth: MAX_PLAYER_HEALTH,
   maxPlayerHealth: MAX_PLAYER_HEALTH,
   restoresLeft: REST.charges,
@@ -392,7 +410,59 @@ export const useGame = create<GameState>((set, get) => ({
       if (s.isDead || s.roundState !== "playing") return s;
       return { playerHealth: Math.min(s.maxPlayerHealth, s.playerHealth + amount) };
     }),
-  respawn: () => set((s) => ({ playerHealth: MAX_PLAYER_HEALTH, isDead: false, respawnNonce: s.respawnNonce + 1 })),
+  respawn: () => {
+    const s = get();
+    if (s.extraLives > 0) {
+      // Spend the charm, come back at your refuge, today's hunt untouched.
+      set({ playerHealth: MAX_PLAYER_HEALTH, isDead: false, respawnNonce: s.respawnNonce + 1, extraLives: s.extraLives - 1 });
+      return;
+    }
+    // No charm left: the day restarts from dawn. Wallet, lifetime earnings and
+    // gear go through untouched — exactly like sleeping — but everything about
+    // TODAY specifically (quota progress, time of day, the board) rolls back,
+    // and you wake at home rather than at whatever refuge you were using.
+    runtime.hintSilenced.fill(false);
+    runtime.hintStolen.fill(false);
+    runtime.hintClaimed.fill(false);
+    runtime.hintBanked.fill(false);
+    runtime.hintCracked.fill(false);
+    runtime.refugeIndex = -1;
+    runtime.lootLostAt = -1;
+    runtime.lootSalvaged = 0;
+    runtime.treasureStolenAt = -1;
+    runtime.treasureCrackedAt = -1;
+    runtime.revealRealUntil = -1;
+    runtime.sniffReadyAt = 0;
+    runtime.chapterAt = -1;
+    runtime.chapterName = CHAPTERS[0].name;
+    runtime.chapterBrief = CHAPTERS[0].brief;
+    runtime.guardianBriefed = false;
+    runtime.roundStartAt = performance.now();
+    clearHintHistory();
+    reseedHints(false);
+    clearLeads();
+    set({
+      dayOver: false,
+      dayProgress: 0,
+      chapter: 0,
+      treasuresBanked: 0,
+      treasuresResolved: 0,
+      treasuresStolen: 0,
+      bombsLeft: bombCapacity(s.owned),
+      restoresLeft: REST.charges,
+      lockboxes: 0,
+      playerHealth: MAX_PLAYER_HEALTH,
+      isDead: false,
+      ammoInMag: WEAPON_STATS[s.equippedWeapon].magSize,
+      reloadEndsAt: -1,
+      treasureClaimed: false,
+      claimedRarity: null,
+      treasureCracked: false,
+      villeCarrying: 0,
+      respawnNonce: s.respawnNonce + 1,
+      roundNonce: s.roundNonce + 1, // remounts/revives the NPCs, same as sleep
+    });
+  },
 
   day: SAVE.day,
   dayOver: false,
@@ -513,6 +583,7 @@ export const useGame = create<GameState>((set, get) => ({
       bombsLeft: bombCapacity(st.owned),
       restoresLeft: REST.charges,
       lockboxes: 0,
+      extraLives: 0,
       // You slept. Of course you are patched up.
       playerHealth: MAX_PLAYER_HEALTH,
       isDead: false,
@@ -571,6 +642,7 @@ export const useGame = create<GameState>((set, get) => ({
       playerHealth: MAX_PLAYER_HEALTH,
       restoresLeft: REST.charges,
       lockboxes: 0, // supplies are per-run: you re-kit at the market every day
+      extraLives: 0,
       ammoInMag: WEAPON_STATS[s.equippedWeapon].magSize,
       reloadEndsAt: -1,
       isDead: false,

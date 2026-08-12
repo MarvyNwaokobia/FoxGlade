@@ -140,6 +140,7 @@ export function Hud() {
   const villeBanked = useGame((s) => s.villeBanked);
   const villeEarned = useGame((s) => s.villeEarned);
   const lockboxes = useGame((s) => s.lockboxes);
+  const extraLives = useGame((s) => s.extraLives);
   const newGameNonce = useGame((s) => s.newGameNonce);
   const day = useGame((s) => s.day);
   const treasuresRequired = useGame((s) => s.treasuresRequired);
@@ -608,7 +609,7 @@ export function Hud() {
       {/* Downed overlay (mid-round setback, not round end) */}
       {isDead && roundState === "playing" && (
         <div style={styles.deathOverlay}>
-          <div style={styles.deathTitle}>You were downed</div>
+          <div style={styles.deathTitle}>{extraLives > 0 ? "You were downed" : "You didn't make it"}</div>
           {runtime.lootLostAmount > 0 && (
             <div style={styles.deathLoss}>
               you dropped {runtime.lootLostAmount} VILLE — the treasure is back on the board
@@ -619,8 +620,13 @@ export function Hud() {
               🔒 the lockbox held — {runtime.lootSalvaged} VILLE still on you
             </div>
           )}
+          {extraLives === 0 && (
+            <div style={styles.deathLoss}>no Warding Charm — today starts over from dawn</div>
+          )}
           <div style={styles.deathHint}>
-            press <b>R</b> to come back {runtime.refugeIndex >= 0 ? "at your refuge" : "at the gate"}
+            {extraLives > 0
+              ? <>press <b>R</b> to come back {runtime.refugeIndex >= 0 ? "at your refuge" : "at the gate"}</>
+              : <>press <b>R</b> to wake at dawn and start the day again</>}
           </div>
         </div>
       )}

@@ -215,6 +215,75 @@ describe("going down", () => {
   });
 });
 
+describe("respawn / the Warding Charm (DESIGN §14.10)", () => {
+  it("with no charm, restarts the CURRENT day rather than the whole game", () => {
+    useGame.setState({
+      day: 4,
+      treasuresRequired: 4,
+      treasuresResolved: 2,
+      treasuresStolen: 1,
+      treasuresBanked: 1,
+      dayProgress: 0.5,
+      chapter: 2,
+      villeBanked: 500,
+      villeEarned: 500,
+      owned: ["w_rifle", "w_smg"],
+    });
+    useGame.getState().claimTreasure(HINTS.findIndex((h) => h.real));
+    useGame.getState().damagePlayer(1000); // goes down
+    expect(useGame.getState().isDead).toBe(true);
+
+    useGame.getState().respawn();
+    const s = useGame.getState();
+    expect(s.isDead).toBe(false);
+    expect(s.day).toBe(4); // same day, not day 1 and not day 5
+    expect(s.dayProgress).toBe(0);
+    expect(s.chapter).toBe(0);
+    expect(s.treasuresResolved).toBe(0);
+    expect(s.treasuresStolen).toBe(0);
+    expect(s.treasuresBanked).toBe(0);
+    expect(s.treasureClaimed).toBe(false);
+    expect(s.villeCarrying).toBe(0);
+    // What was already earned/owned is untouched — same promise sleeping makes.
+    expect(s.villeBanked).toBe(500);
+    expect(s.villeEarned).toBe(500);
+    expect(s.owned).toEqual(["w_rifle", "w_smg"]);
+  });
+
+  it("a Warding Charm resumes today in place instead, and is spent doing it", () => {
+    useGame.setState({
+      day: 4,
+      treasuresRequired: 4,
+      treasuresResolved: 2,
+      dayProgress: 0.5,
+      chapter: 2,
+      extraLives: 1,
+    });
+    useGame.getState().damagePlayer(1000);
+    useGame.getState().respawn();
+    const s = useGame.getState();
+    expect(s.isDead).toBe(false);
+    expect(s.extraLives).toBe(0); // spent
+    expect(s.dayProgress).toBe(0.5); // untouched — this is the resume path
+    expect(s.chapter).toBe(2);
+    expect(s.treasuresResolved).toBe(2);
+  });
+
+  it("caps Warding Charms at one", () => {
+    useGame.setState({ villeBanked: 5000 });
+    for (let i = 0; i < 5; i++) useGame.getState().buyItem("s_extralife");
+    expect(useGame.getState().extraLives).toBe(SUPPLY_CAP.extraLives);
+  });
+
+  it("does not carry a Warding Charm over to the next day", () => {
+    useGame.setState({ villeBanked: 5000, dayOver: true, isDead: false });
+    useGame.getState().buyItem("s_extralife");
+    expect(useGame.getState().extraLives).toBe(1);
+    useGame.getState().sleep();
+    expect(useGame.getState().extraLives).toBe(0);
+  });
+});
+
 describe("the lockbox", () => {
   beforeEach(() => {
     useGame.setState({ villeBanked: 1000 });

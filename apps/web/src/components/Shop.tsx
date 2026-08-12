@@ -37,6 +37,7 @@ export function Shop() {
   const restoresLeft = useGame((s) => s.restoresLeft);
   const bombsLeft = useGame((s) => s.bombsLeft);
   const lockboxes = useGame((s) => s.lockboxes);
+  const extraLives = useGame((s) => s.extraLives);
 
   // Supplies open the stall. On most visits that's what you're here for — the
   // permanents are a once-every-few-runs purchase.
@@ -93,6 +94,8 @@ export function Shop() {
         return { have: bombsLeft, cap: bombCapacity(owned) };
       case "s_lockbox":
         return { have: lockboxes, cap: SUPPLY_CAP.lockboxes };
+      case "s_extralife":
+        return { have: extraLives, cap: SUPPLY_CAP.extraLives };
       default:
         return null;
     }

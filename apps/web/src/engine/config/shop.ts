@@ -56,7 +56,7 @@ export const BOMB_CAP = { base: 2, upgraded: 4 } as const;
  * Consumable caps. A run can't stockpile past these, so the answer to "what do
  * I do with 900 VILLE" is never "buy fourteen bandages".
  */
-export const SUPPLY_CAP = { restores: 4, lockboxes: 2 } as const;
+export const SUPPLY_CAP = { restores: 4, lockboxes: 2, extraLives: 1 } as const;
 
 export const SHOP_ITEMS: ShopItem[] = [
   // ── Supplies (the SINK) ─────────────────────────────────────────────────────
@@ -107,6 +107,17 @@ export const SHOP_ITEMS: ShopItem[] = [
     desc: "Go down and you keep half your carried loot instead of losing it all.",
     price: 90,
     icon: "🔒",
+    consumable: true,
+  },
+  {
+    // Capped at one (SUPPLY_CAP.extraLives) — a real decision on the way in,
+    // not a stockpile. Without it, going down for good sends you back to dawn.
+    id: "s_extralife",
+    category: "supply",
+    name: "Warding Charm",
+    desc: "If this day would end in your death, it brings you back where you fell instead.",
+    price: 150,
+    icon: "🧿",
     consumable: true,
   },
   // ── Weapons (equip one; the Carbine is owned from the start) ──
