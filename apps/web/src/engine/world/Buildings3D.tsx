@@ -6,6 +6,7 @@ import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { type Building } from "./village";
 import { runtime } from "@/engine/runtime";
+import { TINTS, dayTintIndex } from "./dayTint";
 
 /**
  * Realistic building models (CC-BY) placed on the village layout. Each solid
@@ -34,8 +35,9 @@ export type ModelKey = keyof typeof MODELS;
 
 // Per-building colour tints so the one house model reads as many distinct houses
 // (weathering: neutral, whitewashed cream, cool grey stone, sandy timber, mossy).
-// Subtle multipliers — variation, not recolouring. Picked by the building's seed.
-export const TINTS = [0xffffff, 0xe9ddc4, 0xc7cad2, 0xdcc9a6, 0xc2c8b2, 0xd6c4bd];
+// Subtle multipliers — variation, not recolouring. Picked by the building's seed
+// (and, per day, by `dayTintIndex` — see ./dayTint).
+export { TINTS, dayTintIndex };
 
 /** The weathering tint a building (by seed) is rendered with — so its doorway/trim
  *  can be tinted to MATCH the building instead of clashing. */
@@ -185,12 +187,14 @@ export function BuildingModel({
   );
 }
 
-/** Renders realistic models for the given solid buildings. */
-export function Buildings3D({ buildings }: { buildings: { b: Building; i: number }[] }) {
+/** Renders realistic models for the given solid buildings. `daySeed` (from
+ *  `dayTintIndex`) shifts every building's weathering/rotation/scale variant
+ *  together, in step with the day (§14.10 slice 4). */
+export function Buildings3D({ buildings, daySeed = 0 }: { buildings: { b: Building; i: number }[]; daySeed?: number }) {
   return (
     <>
       {buildings.map(({ b, i }) => (
-        <BuildingModel key={i} b={b} model={chooseModel(b, i)} seed={i} />
+        <BuildingModel key={i} b={b} model={chooseModel(b, i)} seed={i + daySeed} />
       ))}
     </>
   );

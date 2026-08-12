@@ -7,10 +7,11 @@ import * as THREE from "three";
 import { BUILDINGS, ENTERABLES, VILLAGE, wallSegments, doorOpening, WALL_T, type Building } from "./village";
 import { HINTS } from "./hints";
 import { THEME } from "./theme";
-import { Buildings3D, BuildingModel, chooseModel, tintColor } from "./Buildings3D";
+import { Buildings3D, BuildingModel, chooseModel, tintColor, dayTintIndex, TINTS } from "./Buildings3D";
 import { runtime } from "@/engine/runtime";
 import { softShadowTexture } from "./softShadow";
 import { perfOff } from "@/engine/scene/perf";
+import { useGame } from "@/engine/store";
 
 const HALF = VILLAGE.half;
 const WALL_H = 3;
@@ -35,6 +36,11 @@ export interface VillageMaterials {
  * the realism the concept renders were aiming for, all free.
  */
 export function useVillageMaterials(): VillageMaterials {
+  // Which day it is (DESIGN §14.10 slice 4) — folded into the memo below so the
+  // walled town's stone/thatch/timber picks up a subtle whole-village tint that
+  // shifts with the day, on top of the per-building weathering variety that
+  // already existed. Day 1 resolves to the neutral (untouched) tint.
+  const day = useGame((s) => s.day);
   const tex = useTexture({
     groundMap: "/textures/cobblestone_05_diff.jpg",
     groundNor: "/textures/cobblestone_05_nor_gl.jpg",
@@ -106,8 +112,15 @@ export function useVillageMaterials(): VillageMaterials {
       roughness: 1,
     });
 
+    // Retint the walled town's surfaces as a group — NOT the outside grass, which
+    // reads odd multiplied by a stone-weathering palette. `.color` defaults to
+    // white (an identity multiply on the diffuse map), so this is additive to
+    // nothing on day 1 (dayTintIndex(1) === 0 === 0xffffff).
+    const dayTint = new THREE.Color(TINTS[dayTintIndex(day)]);
+    [ground, wall, roof, timber, rampart].forEach((m) => m.color.copy(dayTint));
+
     return { ground, grass, wall, rampart, roof, timber };
-  }, [tex]);
+  }, [tex, day]);
 }
 
 /**
@@ -265,7 +278,17 @@ function BuildingBlock({ b, mats }: { b: Building; mats: VillageMaterials }) {
  * interior shows, keeping the seamless walk-in + world-pause. Collision comes
  * from the wall strips in COLLIDERS, so entry works regardless of the model.
  */
-function EnterableHouse({ b, eIndex, mats }: { b: Building; eIndex: number; mats: VillageMaterials }) {
+function EnterableHouse({
+  b,
+  eIndex,
+  mats,
+  daySeed = 0,
+}: {
+  b: Building;
+  eIndex: number;
+  mats: VillageMaterials;
+  daySeed?: number;
+}) {
   const op = doorOpening(b)!;
   const doorYaw = Math.atan2(op.nx, op.nz);
   const interior = useRef<THREE.Group>(null);
@@ -286,14 +309,14 @@ function EnterableHouse({ b, eIndex, mats }: { b: Building; eIndex: number; mats
   // clashing with it.
   const doorMat = useMemo(() => {
     const m = (mats.timber as THREE.MeshStandardMaterial).clone();
-    m.color.multiply(tintColor(eIndex + 3));
+    m.color.multiply(tintColor(eIndex + 3 + daySeed));
     return m;
-  }, [mats.timber, eIndex]);
+  }, [mats.timber, eIndex, daySeed]);
 
   return (
     <group>
       {/* Realistic exterior (hidden while you're inside) */}
-      <BuildingModel b={b} model={model} seed={eIndex + 3} hideForShelterIndex={eIndex} />
+      <BuildingModel b={b} model={model} seed={eIndex + 3 + daySeed} hideForShelterIndex={eIndex} />
 
       {/* Furnished stone interior walls + roof (shown only while inside) */}
       <group ref={interior} visible={false}>
@@ -767,6 +790,9 @@ function MarketBuilding({ b, mats }: { b: Building; mats: VillageMaterials }) {
  */
 export function Village() {
   const mats = useVillageMaterials();
+  // Same day-tint index as the materials above, applied to which TINTS entry
+  // each building's model lands on — the two shift together (§14.10 slice 4).
+  const daySeed = dayTintIndex(useGame((s) => s.day));
   return (
     <>
       {/* Natural grass landscape stretching to the horizon (the town sits IN a
@@ -788,6 +814,7 @@ export function Village() {
       {!perfOff("noBuildings") && (
         <Buildings3D
           buildings={BUILDINGS.map((b, i) => ({ b, i })).filter(({ b }) => !b.door && b.h >= 2)}
+          daySeed={daySeed}
         />
       )}
       {/* Enterable buildings: the open-air MARKET enclosure renders specially; the
@@ -796,7 +823,7 @@ export function Village() {
         b.kind === "market" ? (
           <MarketBuilding key={`e${e}`} b={b} mats={mats} />
         ) : (
-          <EnterableHouse key={`e${e}`} b={b} eIndex={e} mats={mats} />
+          <EnterableHouse key={`e${e}`} b={b} eIndex={e} mats={mats} daySeed={daySeed} />
         )
       )}
       {/* Crates → small timber boxes */}
