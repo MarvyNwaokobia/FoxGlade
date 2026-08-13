@@ -29,6 +29,21 @@ export const CLIP_NAMES = {
   crouchStrafe: "crouchStrafe", // crouched sideways (right; reversed = left)
   turn: "turn", // turn-in-place shuffle (kills the idle foot-slide)
   vault: "vault", // hurdle / vault over a low obstacle
+  // ── Combat-ready locomotion (Blockers only) — a rifle held UP and tracked
+  // while walking/running/strafing/planted, so an engaged enemy visibly
+  // advances in a shooting stance instead of the plain unarmed-looking
+  // `walk`/`run` cycle above. `combatStrafeA/B` and `aimIdle` are ported from
+  // Valor's Slim Shooter Pack and load today. `combatWalk`/`combatRun` are
+  // load-gated (see ALL_ANIMS below): the pack's `walking.fbx`/`rifle run.fbx`
+  // fail to parse in three's FBXLoader ("Unknown property type" — the same
+  // known limitation already noted for other files in this pack), so those two
+  // are NOT wired to that broken source. AnimationStateMachine.hasClip() lets
+  // NpcRig fall back to the plain Walk/Run clip until real ones land here.
+  combatWalk: "combatWalk",
+  combatRun: "combatRun",
+  combatStrafeA: "combatStrafeA",
+  combatStrafeB: "combatStrafeB",
+  aimIdle: "aimIdle",
 } as const;
 
 const ALL_ANIMS: Record<string, string> = {
@@ -56,6 +71,17 @@ const ALL_ANIMS: Record<string, string> = {
   [CLIP_NAMES.crouchStrafe]: "/characters/raw/Walk Crouching Right.fbx",
   [CLIP_NAMES.turn]: "/characters/raw/Turning.fbx",
   [CLIP_NAMES.vault]: "/characters/raw/Vault Over Box.fbx",
+  // Not supplied yet (load-skipped like jump/sit/drink/grab/crouch above) — the
+  // Slim Shooter Pack's own walking/run FBX fail to parse, so these deliberately
+  // point at a path nothing has dropped a file at. Mixamo-download "Walking"/
+  // "Running" with the Rifle weapon trait (the same way Rifle Idle.fbx and
+  // Strafe Left/Right.fbx were sourced — those parse fine) and save here to
+  // light this up; until then NpcRig falls back to the plain walk/run clip.
+  [CLIP_NAMES.combatWalk]: "/characters/raw/Rifle Walking.fbx",
+  [CLIP_NAMES.combatRun]: "/characters/raw/Rifle Running.fbx",
+  [CLIP_NAMES.combatStrafeA]: "/characters/raw/Slim Shooter Pack/strafe.fbx",
+  [CLIP_NAMES.combatStrafeB]: "/characters/raw/Slim Shooter Pack/strafe (2).fbx",
+  [CLIP_NAMES.aimIdle]: "/characters/raw/Slim Shooter Pack/rifle aiming idle.fbx",
 };
 
 const allClips: Map<string, THREE.AnimationClip> = new Map();

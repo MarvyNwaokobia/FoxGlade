@@ -31,6 +31,11 @@ export enum AnimState {
   CrouchWalk = "crouchWalk",
   Turn = "turn",
   Vault = "vault",
+  // Combat-ready variants (Blockers, once engaged): rifle held up and tracked
+  // through the whole cycle instead of a plain unarmed walk/run/idle.
+  Aim = "aim",
+  CombatWalk = "combatWalk",
+  CombatRun = "combatRun",
 }
 
 export type HitDirection = "front" | "back" | "side";
@@ -77,12 +82,21 @@ export interface AnimationMap {
 // timing; the player uses tempo 1.0.
 export function buildAnimMap(tempo = 1.0): AnimationMap {
   const strafes = { left: CLIP_NAMES.strafeLeft, right: CLIP_NAMES.strafeRight };
+  const combatStrafes = { left: CLIP_NAMES.combatStrafeA, right: CLIP_NAMES.combatStrafeB };
   return {
     [AnimState.Idle]: { clip: CLIP_NAMES.rifleIdle, loop: true, speed: tempo, fadeIn: 0.2, fadeOut: 0.2, canInterrupt: true },
     [AnimState.Walk]: { clip: CLIP_NAMES.walk, clipsByMove: strafes, loop: true, speed: 1.0, fadeIn: 0.15, fadeOut: 0.15, canInterrupt: true },
     // No run-speed strafe clips exist — sideways running reuses the walk strafes
     // with cadence over-cranked by matchLocomotionSpeed (clamped, reads fine).
     [AnimState.Run]: { clip: CLIP_NAMES.run, clipsByMove: strafes, loop: true, speed: 1.0 * tempo, fadeIn: 0.12, fadeOut: 0.12, canInterrupt: true },
+    // Planted, lining up a shot — the aiming-idle stance instead of the neutral
+    // ready pose. Same timings as Idle, different clip.
+    [AnimState.Aim]: { clip: CLIP_NAMES.aimIdle, loop: true, speed: tempo, fadeIn: 0.2, fadeOut: 0.2, canInterrupt: true },
+    // Closing distance while engaged — rifle held up through the whole stride
+    // instead of the plain Walk/Run above. Which strafe file reads as left vs.
+    // right isn't determinable from the source filenames; verify at playtest.
+    [AnimState.CombatWalk]: { clip: CLIP_NAMES.combatWalk, clipsByMove: combatStrafes, loop: true, speed: 1.0, fadeIn: 0.15, fadeOut: 0.15, canInterrupt: true },
+    [AnimState.CombatRun]: { clip: CLIP_NAMES.combatRun, clipsByMove: combatStrafes, loop: true, speed: 1.0 * tempo, fadeIn: 0.12, fadeOut: 0.12, canInterrupt: true },
     [AnimState.Reload]: { clip: CLIP_NAMES.reloading, loop: true, speed: 1.15, fadeIn: 0.1, fadeOut: 0.12, canInterrupt: true },
     [AnimState.Dodge]: { clip: CLIP_NAMES.dodge, loop: false, speed: 1.3, fadeIn: 0.05, fadeOut: 0.12, duration: 0.5, canInterrupt: false, nextState: AnimState.Idle },
     [AnimState.HitLight]: { clip: CLIP_NAMES.hitReaction, loop: false, speed: 1.3, fadeIn: 0.04, fadeOut: 0.12, canInterrupt: false, nextState: AnimState.Idle },
@@ -217,6 +231,21 @@ export class AnimationStateMachine {
 
   get state(): AnimState {
     return this.currentState;
+  }
+
+  /**
+   * Whether this state's clip is actually loaded right now (respecting the
+   * current travel direction for directional states). Some states are
+   * load-gated on a Mixamo file Marvy hasn't dropped in yet (see MixamoLoader) —
+   * this lets a caller check first and fall back to a state it KNOWS has a
+   * clip, instead of calling `transition()` and having it silently no-op,
+   * which would freeze the character's animation while its body keeps moving.
+   */
+  hasClip(state: AnimState): boolean {
+    const config = this.animMap[state];
+    if (!config) return false;
+    const name = config.clipsByMove ? this.clipForDir(config, this.moveDir).name : config.clip;
+    return this.clips.has(name);
   }
 
   /** Name of the clip currently playing. */
@@ -456,7 +485,7 @@ export class AnimationStateMachine {
   matchLocomotionSpeed(worldSpeed: number) {
     if (!this.activeAction || this.paused) return;
     const s = this.currentState;
-    if (s !== AnimState.Walk && s !== AnimState.Run && s !== AnimState.CrouchWalk) {
+    if (!this.isLoco(s)) {
       this.clearLocoBlend();
       return;
     }
@@ -493,7 +522,13 @@ export class AnimationStateMachine {
   }
 
   private isLoco(s: AnimState): boolean {
-    return s === AnimState.Walk || s === AnimState.Run || s === AnimState.CrouchWalk;
+    return (
+      s === AnimState.Walk ||
+      s === AnimState.Run ||
+      s === AnimState.CrouchWalk ||
+      s === AnimState.CombatWalk ||
+      s === AnimState.CombatRun
+    );
   }
 
   pause() {

@@ -193,6 +193,9 @@ export function Blocker({
     if (aware && anim.current.aimDir) {
       anim.current.aimDir.copy(to).sub(from).normalize();
     }
+    // Only once actually ENGAGED (not just the brief alert reaction beat) does
+    // it switch into the combat-ready walk/run/aim variants — see NpcRig.tsx.
+    anim.current.combatReady = awareness.current === "engaged";
     if (marker.current) marker.current.visible = awareness.current === "alert";
 
     // Move only once ENGAGED (idle/alert hold position — the alert beat is a

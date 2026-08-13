@@ -39,6 +39,10 @@ export interface NpcRigState {
    *  gun along it, exactly like the player's — so an enemy visibly levels its
    *  rifle at you instead of carrying it in a fixed pose while rounds appear. */
   aimDir?: THREE.Vector3;
+  /** True once this NPC has actually engaged (not just noticed) — switches its
+   *  idle/walk/run into the combat-ready variants (rifle held up and tracked)
+   *  instead of the plain unarmed locomotion. Blocker-only; unset elsewhere. */
+  combatReady?: boolean;
   /** OUT: world position of this NPC's barrel tip, written by the rig each frame.
    *  The AI spawns its rounds and its muzzle flash from here, so gunfire leaves
    *  the gun rather than the middle of the chest. */
@@ -353,10 +357,22 @@ export const NpcRig = memo(function NpcRig({
         if (state.moveFwd !== undefined && state.moveRight !== undefined) {
           animMachine.setMoveDirection(state.moveFwd, state.moveRight);
         }
-        animMachine.transition(state.running ? AnimState.Run : AnimState.Walk);
+        // Engaged Blockers close distance in the combat-ready cycle (rifle held
+        // up) instead of the plain unarmed walk/run — see AnimState.CombatWalk.
+        // combatWalk/combatRun are load-gated (see MixamoLoader): fall back to
+        // the plain clip, which is always present, rather than freezing the
+        // animation on a state whose clip hasn't been supplied yet.
+        const combatLoco = state.running ? AnimState.CombatRun : AnimState.CombatWalk;
+        if (state.combatReady && animMachine.hasClip(combatLoco)) {
+          animMachine.transition(combatLoco);
+        } else {
+          animMachine.transition(state.running ? AnimState.Run : AnimState.Walk);
+        }
         animMachine.matchLocomotionSpeed(state.speed);
       } else {
-        animMachine.transition(AnimState.Idle);
+        // Planted and engaged (e.g. lining up a telegraphed shot): show the
+        // aiming stance rather than the neutral ready-idle.
+        animMachine.transition(state.combatReady ? AnimState.Aim : AnimState.Idle);
       }
     }
 

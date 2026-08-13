@@ -7,33 +7,48 @@ import type { Rect, Box3 } from "./village";
  * the centre is inside a box it ejects along the nearest edge. Called every
  * frame after integration, so the player slides along walls rather than passing
  * through them.
+ *
+ * Runs the push-out pass several times rather than once. A single pass corrects
+ * against each collider independently, so near a building CORNER — where two
+ * wall segments or two building boxes sit close together, which is every corner
+ * in the village and especially the deliberately tight alleys — resolving out of
+ * box A can push the circle back into box B and vice versa, leaving it straddling
+ * both. That reads as "half in the building, half out." Repeating the pass lets
+ * the position converge to a spot clear of every box; it stops early once a full
+ * pass makes no correction, so the common case (nothing nearby) stays one pass.
  */
 export function resolveColliders(p: THREE.Vector3, r: number, colliders: Rect[]) {
-  for (const c of colliders) {
-    const cx = Math.max(c.minX, Math.min(p.x, c.maxX));
-    const cz = Math.max(c.minZ, Math.min(p.z, c.maxZ));
-    const dx = p.x - cx;
-    const dz = p.z - cz;
-    const d2 = dx * dx + dz * dz;
-    if (d2 > r * r) continue;
+  const ITERATIONS = 4;
+  for (let iter = 0; iter < ITERATIONS; iter++) {
+    let corrected = false;
+    for (const c of colliders) {
+      const cx = Math.max(c.minX, Math.min(p.x, c.maxX));
+      const cz = Math.max(c.minZ, Math.min(p.z, c.maxZ));
+      const dx = p.x - cx;
+      const dz = p.z - cz;
+      const d2 = dx * dx + dz * dz;
+      if (d2 > r * r) continue;
 
-    if (d2 > 1e-8) {
-      const d = Math.sqrt(d2);
-      const push = r - d;
-      p.x += (dx / d) * push;
-      p.z += (dz / d) * push;
-    } else {
-      // Centre inside the box — eject along the shallowest edge.
-      const toLeft = p.x - c.minX;
-      const toRight = c.maxX - p.x;
-      const toBack = p.z - c.minZ;
-      const toFront = c.maxZ - p.z;
-      const minPen = Math.min(toLeft, toRight, toBack, toFront);
-      if (minPen === toLeft) p.x = c.minX - r;
-      else if (minPen === toRight) p.x = c.maxX + r;
-      else if (minPen === toBack) p.z = c.minZ - r;
-      else p.z = c.maxZ + r;
+      corrected = true;
+      if (d2 > 1e-8) {
+        const d = Math.sqrt(d2);
+        const push = r - d;
+        p.x += (dx / d) * push;
+        p.z += (dz / d) * push;
+      } else {
+        // Centre inside the box — eject along the shallowest edge.
+        const toLeft = p.x - c.minX;
+        const toRight = c.maxX - p.x;
+        const toBack = p.z - c.minZ;
+        const toFront = c.maxZ - p.z;
+        const minPen = Math.min(toLeft, toRight, toBack, toFront);
+        if (minPen === toLeft) p.x = c.minX - r;
+        else if (minPen === toRight) p.x = c.maxX + r;
+        else if (minPen === toBack) p.z = c.minZ - r;
+        else p.z = c.maxZ + r;
+      }
     }
+    if (!corrected) break;
   }
 }
 
