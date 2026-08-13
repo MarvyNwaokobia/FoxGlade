@@ -8,13 +8,39 @@
 
 export type ShopCategory = "supply" | "weapon" | "attachment" | "bomb" | "bag";
 
+/**
+ * How special an item reads on the card — a worn-stone common through to the
+ * game's own gold reserved for the one truly rare weapon in the catalogue.
+ * Tuned off price, roughly: what several runs' surplus buys is rare, not common.
+ */
+export type Rarity = "common" | "uncommon" | "rare" | "epic" | "legendary";
+
+/** Same warm, worn palette the village itself is built from (theme.ts) — not
+ *  a bolted-on sci-fi rarity scale. Legendary reuses the game's own gold. */
+export const RARITY_COLOR: Record<Rarity, string> = {
+  common: "#9c8f7a",
+  uncommon: "#7fae62",
+  rare: "#5c93c9",
+  epic: "#a672c9",
+  legendary: "#f2c14e",
+};
+
+export const RARITY_LABEL: Record<Rarity, string> = {
+  common: "Common",
+  uncommon: "Uncommon",
+  rare: "Rare",
+  epic: "Epic",
+  legendary: "Legendary",
+};
+
 export interface ShopItem {
   id: string;
   category: ShopCategory;
   name: string;
   desc: string;
   price: number; // VILLE (0 = owned from the start)
-  icon: string; // emoji glyph for the card (procedural gun renders come later)
+  icon: string; // emoji glyph — used only by the compact on-chain trade list now
+  rarity: Rarity;
   gunId?: WeaponId; // weapons only — which gun model + stats to equip
   /** Consumables can be bought over and over; permanents once. This flag is the
    *  difference between a shop that empties and an economy that runs. */
@@ -77,6 +103,7 @@ export const SHOP_ITEMS: ShopItem[] = [
     desc: "One more patch-up this run.",
     price: 60,
     icon: "✚",
+    rarity: "common",
     consumable: true,
   },
   {
@@ -86,6 +113,7 @@ export const SHOP_ITEMS: ShopItem[] = [
     desc: "One more bomb this run.",
     price: 45,
     icon: "💣",
+    rarity: "common",
     consumable: true,
   },
   {
@@ -98,6 +126,7 @@ export const SHOP_ITEMS: ShopItem[] = [
     desc: "Read it here for a fresh, narrow bearing on the treasure.",
     price: 75,
     icon: "🗺️",
+    rarity: "common",
     consumable: true,
   },
   {
@@ -107,6 +136,7 @@ export const SHOP_ITEMS: ShopItem[] = [
     desc: "Go down and you keep half your carried loot instead of losing it all.",
     price: 90,
     icon: "🔒",
+    rarity: "uncommon",
     consumable: true,
   },
   {
@@ -118,6 +148,7 @@ export const SHOP_ITEMS: ShopItem[] = [
     desc: "If this day would end in your death, it brings you back where you fell instead.",
     price: 150,
     icon: "🧿",
+    rarity: "rare",
     consumable: true,
   },
   // ── Weapons (equip one; the Carbine is owned from the start) ──
@@ -133,19 +164,19 @@ export const SHOP_ITEMS: ShopItem[] = [
   // bandages and charges — so unlocking one is a stretch you saved toward, not
   // something you trip over on run three. These are a first pass off the loot
   // table (common 100 / rare 300) and want a playtest before they're trusted.
-  { id: "w_sidearm", category: "weapon", name: "Flintlock", desc: "Snappy and light, a backup piece.", price: 110, icon: "🔫", gunId: "sidearm" },
-  { id: "w_smg", category: "weapon", name: "Repeater", desc: "Spits lead. Little weight behind it.", price: 300, icon: "🔫", gunId: "smg" },
-  { id: "w_rifle", category: "weapon", name: "Carbine", desc: "The balanced all-rounder.", price: 0, icon: "🔫", gunId: "assault_rifle" },
-  { id: "w_marksman", category: "weapon", name: "Long Rifle", desc: "Heavy hit, slow cadence. One shot, one thief.", price: 600, icon: "🎯", gunId: "marksman" },
-  { id: "w_exotic", category: "weapon", name: "The Relic", desc: "Nobody will say where it came from.", price: 1500, icon: "⚡", gunId: "legendary" },
+  { id: "w_sidearm", category: "weapon", name: "Flintlock", desc: "Snappy and light, a backup piece.", price: 110, icon: "🔫", rarity: "common", gunId: "sidearm" },
+  { id: "w_smg", category: "weapon", name: "Repeater", desc: "Spits lead. Little weight behind it.", price: 300, icon: "🔫", rarity: "uncommon", gunId: "smg" },
+  { id: "w_rifle", category: "weapon", name: "Carbine", desc: "The balanced all-rounder.", price: 0, icon: "🔫", rarity: "common", gunId: "assault_rifle" },
+  { id: "w_marksman", category: "weapon", name: "Long Rifle", desc: "Heavy hit, slow cadence. One shot, one thief.", price: 600, icon: "🎯", rarity: "rare", gunId: "marksman" },
+  { id: "w_exotic", category: "weapon", name: "The Relic", desc: "Nobody will say where it came from.", price: 1500, icon: "⚡", rarity: "legendary", gunId: "legendary" },
   // ── Attachments (global feel upgrades, bought once) ──
-  { id: "a_sight", category: "attachment", name: "Brass Sight", desc: "Cuts recoil for steadier aim.", price: 240, icon: "🔭" },
-  { id: "a_grip", category: "attachment", name: "Wrapped Grip", desc: "Faster fire on any gun.", price: 260, icon: "✊" },
+  { id: "a_sight", category: "attachment", name: "Brass Sight", desc: "Cuts recoil for steadier aim.", price: 240, icon: "🔭", rarity: "uncommon" },
+  { id: "a_grip", category: "attachment", name: "Wrapped Grip", desc: "Faster fire on any gun.", price: 260, icon: "✊", rarity: "uncommon" },
   // ── Bombs ──
-  { id: "b_satchel", category: "bomb", name: "Bomb Satchel", desc: "Carry 4 bombs per run instead of 2.", price: 200, icon: "💣" },
+  { id: "b_satchel", category: "bomb", name: "Bomb Satchel", desc: "Carry 4 bombs per run instead of 2.", price: 200, icon: "💣", rarity: "uncommon" },
   // ── Bags (raise how much loot you can hold before banking) ──
-  { id: "g_satchel", category: "bag", name: "Satchel", desc: "Hold more treasure between bank runs.", price: 380, icon: "🎒" },
-  { id: "g_rucksack", category: "bag", name: "Rucksack", desc: "Hold even more before you must bank.", price: 900, icon: "🧳" },
+  { id: "g_satchel", category: "bag", name: "Satchel", desc: "Hold more treasure between bank runs.", price: 380, icon: "🎒", rarity: "rare" },
+  { id: "g_rucksack", category: "bag", name: "Rucksack", desc: "Hold even more before you must bank.", price: 900, icon: "🧳", rarity: "epic" },
 ];
 
 export const CATEGORY_LABEL: Record<ShopCategory, string> = {

@@ -3,12 +3,15 @@
 import { useEffect, useState } from "react";
 import { bombCapacity, useGame } from "@/engine/store";
 import { weaponThumb } from "./weaponThumb";
+import { ItemIcon } from "./shopIcons";
 import {
   SHOP_ITEMS,
   CATEGORY_ORDER,
   CATEGORY_LABEL,
   SUPPLY_CAP,
   WEAPON_STATS,
+  RARITY_COLOR,
+  RARITY_LABEL,
   type ShopCategory,
   type ShopItem,
   type WeaponId,
@@ -45,6 +48,7 @@ export function Shop() {
   const [selId, setSelId] = useState<string | null>(null);
   const walletAddress = useWallet((s) => s.address);
   const [mintConfirm, setMintConfirm] = useState<ShopItem | null>(null);
+  const [confirmItem, setConfirmItem] = useState<ShopItem | null>(null);
 
   // Release the mouse from pointer-lock so it can click the overlay.
   useEffect(() => {
@@ -101,21 +105,24 @@ export function Shop() {
     }
   }
 
-  // The footer's primary action depends on the selected item's state.
+  // The footer's primary action depends on the selected item's state. Any
+  // action that actually SPENDS ville opens the confirm modal rather than
+  // buying immediately — equipping something you already own stays instant,
+  // there's nothing to sign for.
   function action(i: ShopItem) {
     if (i.consumable) {
       const s = stock(i);
       if (s && s.have >= s.cap) return { label: "PACK FULL", disabled: true, onClick: () => {} };
       if (!canAfford(i)) return { label: `NEED ${i.price - villeBanked} MORE`, disabled: true, onClick: () => {} };
       const verb = i.id === "s_chart" ? "READ IT" : "BUY";
-      return { label: `${verb} · ${i.price} VILLE`, disabled: false, onClick: () => buyItem(i.id) };
+      return { label: `${verb} · ${i.price} VILLE`, disabled: false, onClick: () => setConfirmItem(i) };
     }
     if (isEquipped(i)) return { label: "EQUIPPED", disabled: true, onClick: () => {} };
     if (isOwned(i) && i.gunId) return { label: "EQUIP", disabled: false, onClick: () => equipWeapon(i.gunId!) };
     if (isOwned(i)) return { label: "OWNED", disabled: true, onClick: () => {} };
     if (!canAfford(i)) return { label: `NEED ${i.price - villeBanked} MORE`, disabled: true, onClick: () => {} };
     const verb = i.category === "weapon" ? "SIGN & EQUIP" : "SIGN";
-    return { label: `${verb} · ${i.price} VILLE`, disabled: false, onClick: () => buyItem(i.id) };
+    return { label: `${verb} · ${i.price} VILLE`, disabled: false, onClick: () => setConfirmItem(i) };
   }
 
   return (
@@ -175,18 +182,22 @@ export function Shop() {
                 const own = isOwned(i);
                 const equipped = isEquipped(i);
                 const stats = i.gunId ? WEAPON_STATS[i.gunId] : null;
-                // Weapons show the actual weapon. Everything else keeps its glyph.
+                // Weapons show the actual weapon. Everything else gets a real
+                // illustrated icon (shopIcons.tsx) — no more raw emoji glyphs.
                 const thumb = i.gunId ? weaponThumb(i.gunId) : null;
                 // Can't afford it? Say so on the card, rather than making the player
                 // tap through to a dead Sign button to find out.
                 const short = !own && i.price > villeBanked ? i.price - villeBanked : 0;
                 const carried = i.consumable ? stock(i) : null;
+                const rc = RARITY_COLOR[i.rarity];
                 return (
                   <button
                     key={i.id}
                     onClick={() => setSelId(i.id)}
                     style={{
                       ...styles.card,
+                      borderColor: selected ? GOLD : `${rc}45`,
+                      background: `radial-gradient(120% 90% at 50% 0%, ${rc}14, rgba(255,255,255,0.03) 65%)`,
                       ...(selected ? styles.cardSelected : null),
                       ...(short ? styles.cardUnaffordable : null),
                     }}
@@ -206,11 +217,21 @@ export function Shop() {
                         {i.price === 0 ? "FREE" : `${i.price}`}
                       </span>
                     )}
-                    {thumb ? (
-                      <img src={thumb} alt="" style={styles.cardThumb} />
-                    ) : (
-                      <span style={styles.cardIcon}>{i.icon}</span>
-                    )}
+                    {/* Rarity tag, top-left — a small pip + word, not a tactical stencil. */}
+                    <span style={{ ...styles.rarityTag, color: rc }}>
+                      <span style={{ ...styles.rarityDot, background: rc }} />
+                      {RARITY_LABEL[i.rarity]}
+                    </span>
+                    {/* The art, on a soft glow "cast" in the rarity colour — the thing
+                        that reads as a lit display case rather than a flat sticker. */}
+                    <div style={styles.artWrap}>
+                      <div style={{ ...styles.artGlow, background: `radial-gradient(closest-side, ${rc}40, transparent 72%)` }} />
+                      {thumb ? (
+                        <img src={thumb} alt="" style={styles.cardThumb} />
+                      ) : (
+                        <ItemIcon itemId={i.id} size={54} color={rc} />
+                      )}
+                    </div>
                     <span style={styles.cardName}>{i.name}</span>
                     {stats && (
                       <span style={styles.cardStats}>
@@ -231,7 +252,7 @@ export function Shop() {
                     {sel.gunId && weaponThumb(sel.gunId) ? (
                       <img src={weaponThumb(sel.gunId)!} alt="" style={styles.footThumb} />
                     ) : (
-                      <span style={styles.footIcon}>{sel.icon}</span>
+                      <ItemIcon itemId={sel.id} size={34} color={RARITY_COLOR[sel.rarity]} />
                     )}
                     <div>
                       <div style={styles.footName}>{sel.name}</div>
@@ -280,6 +301,107 @@ export function Shop() {
           onConfirm={() => buyItemOnChain(onChainItemId(mintConfirm.id), 1)}
         />
       )}
+      {confirmItem && (
+        <PurchaseConfirm
+          item={confirmItem}
+          onClose={() => setConfirmItem(null)}
+          onConfirm={() => {
+            buyItem(confirmItem.id);
+            setConfirmItem(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * The actual "sign here" moment — a real confirmation with the item in front
+ * of you, not an inline button that just fires. Same panel-on-scrim pattern
+ * as OnChainConfirm (this game's one other confirm dialog), sized up for the
+ * art + stats a purchase decision actually wants to see before you commit.
+ */
+function PurchaseConfirm({
+  item,
+  onClose,
+  onConfirm,
+}: {
+  item: ShopItem;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const rc = RARITY_COLOR[item.rarity];
+  const thumb = item.gunId ? weaponThumb(item.gunId) : null;
+  const stats = item.gunId ? WEAPON_STATS[item.gunId] : null;
+  const verb = item.category === "weapon" ? "Sign & Equip" : item.id === "s_chart" ? "Read It" : "Sign & Buy";
+
+  return (
+    <div style={pcStyles.root} onClick={onClose}>
+      <div style={pcStyles.panel} onClick={(e) => e.stopPropagation()}>
+        <div style={pcStyles.header}>
+          <div style={pcStyles.title}>Confirm Purchase</div>
+          <button style={pcStyles.closeBtn} onClick={onClose} aria-label="Close">
+            ✕
+          </button>
+        </div>
+
+        <div style={{ ...pcStyles.artPanel, background: `${rc}12`, borderColor: `${rc}35` }}>
+          <div style={pcStyles.artRow}>
+            <div style={pcStyles.artWrap}>
+              <div
+                style={{
+                  ...pcStyles.artGlow,
+                  background: `radial-gradient(closest-side, ${rc}55, transparent 72%)`,
+                }}
+              />
+              {thumb ? (
+                <img src={thumb} alt="" style={pcStyles.artThumb} />
+              ) : (
+                <ItemIcon itemId={item.id} size={56} color={rc} />
+              )}
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div style={pcStyles.itemName}>{item.name}</div>
+              <div style={{ ...pcStyles.rarityLabel, color: rc }}>{RARITY_LABEL[item.rarity]}</div>
+            </div>
+          </div>
+          <div style={pcStyles.desc}>{item.desc}</div>
+          {stats && (
+            <div style={pcStyles.statGrid}>
+              <div style={pcStyles.stat}>
+                <span style={pcStyles.statLabel}>Damage</span>
+                <span style={pcStyles.statValue}>{stats.damage.toFixed(2)}×</span>
+              </div>
+              <div style={pcStyles.stat}>
+                <span style={pcStyles.statLabel}>Fire Rate</span>
+                <span style={pcStyles.statValue}>{Math.round(1 / stats.fireInterval)}/s</span>
+              </div>
+              <div style={pcStyles.stat}>
+                <span style={pcStyles.statLabel}>Magazine</span>
+                <span style={pcStyles.statValue}>{stats.magSize}</span>
+              </div>
+              <div style={pcStyles.stat}>
+                <span style={pcStyles.statLabel}>Reload</span>
+                <span style={pcStyles.statValue}>{stats.reloadTime}s</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div style={pcStyles.priceRow}>
+          <span style={pcStyles.priceLabel}>Total</span>
+          <span style={pcStyles.priceValue}>{item.price} VILLE</span>
+        </div>
+
+        <div style={pcStyles.row}>
+          <button style={pcStyles.cancel} onClick={onClose}>
+            Cancel
+          </button>
+          <button style={pcStyles.confirm} onClick={onConfirm}>
+            {verb}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -345,7 +467,9 @@ const styles: Record<string, React.CSSProperties> = {
   tab: {
     color: "rgba(232,238,242,0.6)",
     background: "transparent",
-    border: "1px solid rgba(255,255,255,0.1)",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "rgba(255,255,255,0.1)",
     borderRadius: 999,
     padding: "7px 16px",
     fontSize: 13,
@@ -370,21 +494,53 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: "column",
     alignItems: "center",
     gap: 6,
-    padding: "18px 12px 14px",
-    background: "rgba(255,255,255,0.04)",
-    border: "1px solid rgba(255,255,255,0.1)",
+    padding: "22px 12px 14px",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "rgba(255,255,255,0.1)",
     borderRadius: 12,
+    // A soft top-down "case" shadow inside the card — the same trick that
+    // makes a shelf alcove read as lit rather than a flat swatch.
+    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -18px 26px rgba(0,0,0,0.35)",
     cursor: "pointer",
     color: INK,
   },
   cardSelected: {
-    borderColor: GOLD,
-    background: "rgba(242,193,78,0.1)",
-    boxShadow: "0 0 0 1px rgba(242,193,78,0.5) inset",
+    boxShadow: "0 0 0 1.5px rgba(242,193,78,0.65) inset, inset 0 -18px 26px rgba(0,0,0,0.3)",
   },
-  cardIcon: { fontSize: 40, lineHeight: 1 },
+  /** A soft radial cast behind the art, tinted per-rarity — the "lit display
+   *  case" the art sits in, rather than a flat icon floating on the card. */
+  artWrap: {
+    position: "relative",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "100%",
+    height: 68,
+  },
+  artGlow: {
+    position: "absolute",
+    inset: -6,
+    borderRadius: "50%",
+    pointerEvents: "none",
+  },
+  rarityTag: {
+    position: "absolute",
+    top: 8,
+    left: 10,
+    display: "flex",
+    alignItems: "center",
+    gap: 4,
+    fontSize: 8.5,
+    fontWeight: 800,
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    opacity: 0.9,
+  },
+  rarityDot: { width: 5, height: 5, borderRadius: "50%", display: "inline-block" },
   /** The rendered weapon. Wide and short — a gun is a horizontal object. */
   cardThumb: {
+    position: "relative",
     width: "100%",
     maxWidth: 118,
     height: 62,
@@ -435,7 +591,6 @@ const styles: Record<string, React.CSSProperties> = {
     minHeight: 64,
   },
   footInfo: { display: "flex", alignItems: "center", gap: 12, minWidth: 0 },
-  footIcon: { fontSize: 30 },
   footName: { color: INK, fontWeight: 700, fontSize: 15 },
   footDesc: { color: "rgba(232,238,242,0.55)", fontSize: 12 },
   footHint: { color: "rgba(232,238,242,0.4)", fontSize: 13 },
@@ -467,5 +622,90 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     cursor: "pointer",
     whiteSpace: "nowrap",
+  },
+};
+
+const pcStyles: Record<string, React.CSSProperties> = {
+  root: {
+    position: "fixed",
+    inset: 0,
+    zIndex: 80,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "rgba(0,0,0,0.6)",
+    fontFamily: "system-ui, sans-serif",
+    padding: 16,
+  },
+  panel: {
+    width: "min(380px, 92vw)",
+    background: "linear-gradient(180deg, rgba(26,22,17,0.98), rgba(16,14,11,0.98))",
+    border: "1px solid rgba(242,193,78,0.4)",
+    borderRadius: 16,
+    boxShadow: "0 24px 80px rgba(0,0,0,0.6)",
+    padding: 18,
+    color: INK,
+  },
+  header: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 },
+  title: { color: GOLD, fontWeight: 800, fontSize: 16, letterSpacing: 0.5 },
+  closeBtn: {
+    color: INK,
+    background: "rgba(255,255,255,0.06)",
+    border: "1px solid rgba(255,255,255,0.15)",
+    borderRadius: 8,
+    width: 28,
+    height: 28,
+    fontSize: 13,
+    cursor: "pointer",
+  },
+  artPanel: { borderRadius: 12, border: "1px solid", padding: 14 },
+  artRow: { display: "flex", alignItems: "center", gap: 14 },
+  artWrap: { position: "relative", width: 72, height: 72, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
+  artGlow: { position: "absolute", inset: -8, borderRadius: "50%", pointerEvents: "none" },
+  artThumb: { position: "relative", width: "100%", height: "100%", objectFit: "contain" },
+  itemName: { fontWeight: 800, fontSize: 16, color: INK },
+  rarityLabel: { fontSize: 10.5, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", marginTop: 2 },
+  desc: { fontSize: 12, color: "rgba(232,238,242,0.65)", marginTop: 10, lineHeight: 1.4 },
+  statGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, 1fr)",
+    gap: 8,
+    marginTop: 12,
+    paddingTop: 10,
+    borderTop: "1px solid rgba(255,255,255,0.08)",
+  },
+  stat: { display: "flex", flexDirection: "column", alignItems: "center", gap: 2 },
+  statLabel: { fontSize: 8.5, color: "rgba(232,238,242,0.45)", textTransform: "uppercase", letterSpacing: 0.4 },
+  statValue: { fontSize: 12.5, fontWeight: 800, color: INK },
+  priceRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: "14px 2px 4px",
+  },
+  priceLabel: { fontSize: 13, color: "rgba(232,238,242,0.55)" },
+  priceValue: { fontSize: 18, fontWeight: 800, color: GOLD },
+  row: { display: "flex", gap: 10, marginTop: 10 },
+  cancel: {
+    flex: 1,
+    color: INK,
+    background: "rgba(255,255,255,0.06)",
+    border: "1px solid rgba(255,255,255,0.15)",
+    borderRadius: 8,
+    padding: "12px 14px",
+    fontSize: 13.5,
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+  confirm: {
+    flex: 1,
+    color: "#1a140f",
+    background: GOLD,
+    border: "none",
+    borderRadius: 8,
+    padding: "12px 14px",
+    fontSize: 13.5,
+    fontWeight: 800,
+    cursor: "pointer",
   },
 };
