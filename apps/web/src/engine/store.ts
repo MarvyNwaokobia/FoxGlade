@@ -4,7 +4,7 @@ import { LOOT, REST } from "@/engine/config/round";
 import { HINTS, reseedHints, clearHintHistory, type Rarity } from "@/engine/world/hints";
 import { bearingTo, clearLeads, setLead } from "@/engine/world/leads";
 import { rememberDanger } from "@/engine/fox/foxMemory";
-import { DAY, CHAPTERS, chapterAt, treasuresForDay, chapterBriefFor } from "@/engine/config/day";
+import { DAY, CHAPTERS, treasuresForDay, phaseRequiredFor, chapterBriefFor } from "@/engine/config/day";
 import {
   SHOP_ITEMS,
   DEFAULT_WEAPON,
@@ -147,21 +147,33 @@ interface GameState {
    * on in the dark for whatever is still out there, or turn in and bank the day.
    */
   dayOver: boolean;
-  /** How far through the day the run is (0 = dawn, 1 = nightfall). Advanced by
-   *  banking treasure and, slowly, by time passing. This IS the clock now. */
+  /** How far the sun has moved (0 = dawn, 1 = nightfall). Drifts slowly on its
+   *  own for atmosphere and as a backstop nightfall — it no longer decides
+   *  which CHAPTER you're in; resolving treasures does (see `phaseResolved`). */
   dayProgress: number;
-  /** Index into CHAPTERS, derived from dayProgress. Gates which systems are live. */
+  /** Index into CHAPTERS. Gates which systems are live (blockers, liars,
+   *  thieves) — advanced only by resolving `phaseRequired` treasures for the
+   *  current chapter, never by `dayProgress`. */
   chapter: number;
   /** Treasures banked this run — the score. */
   treasuresBanked: number;
   /** How many treasures today's quota asks for (DESIGN §14.10, `treasuresForDay`).
    *  Climbs with `day` — the difficulty curve now runs through the quota, not
-   *  just through more blockers. */
+   *  just through more blockers. Equal to `phaseRequired` summed across every
+   *  chapter of the day. */
   treasuresRequired: number;
   /** How many of today's treasures are settled one way or another — banked by
-   *  you, or gotten away with by a thief. The day ends (see `dayOver`) once this
-   *  reaches `treasuresRequired`, same as it does at nightfall. */
+   *  you, or gotten away with by a thief — across the WHOLE day. Informational
+   *  (the HUD's "3/7 found"); `phaseResolved` is what actually gates anything. */
   treasuresResolved: number;
+  /** How many treasures have been resolved (banked or lost to a thief) toward
+   *  THIS chapter's own share. Once it reaches `phaseRequired`, the chapter
+   *  turns over — or, from Night, the day ends. */
+  phaseResolved: number;
+  /** How many treasures the current chapter needs resolved before it turns
+   *  over (`phaseRequiredFor`, day.ts) — Dawn's fixed one treasure, or this
+   *  day's share of the quota for Morning/Afternoon/Dusk/Night. */
+  phaseRequired: number;
   /** Of `treasuresResolved`, how many a thief got away with — the day-end tally
    *  reports this alongside `treasuresBanked` so "3 of 5, thieves took 2" reads
    *  as a story, not just a missed number. */
@@ -229,6 +241,8 @@ export const useGame = create<GameState>((set, get) => {
       dayOver: false,
       dayProgress: 0,
       chapter: 0,
+      phaseResolved: 0,
+      phaseRequired: phaseRequiredFor(s.day, 0),
       treasuresBanked: 0,
       treasuresResolved: 0,
       treasuresStolen: 0,
@@ -246,6 +260,62 @@ export const useGame = create<GameState>((set, get) => {
       respawnNonce: s.respawnNonce + 1,
       roundNonce: s.roundNonce + 1, // remounts/revives the NPCs, same as sleep
     });
+  }
+
+  /**
+   * A treasure got settled — banked by the player, or gotten away with by a
+   * thief. Either way it counts toward the CURRENT chapter's share
+   * (`phaseRequired`, day.ts) — this is the one place that decides whether a
+   * chapter turns over or the day ends (Marvy's call, 2026-08-14: gating on
+   * this instead of on elapsed time is what guarantees every chapter gets
+   * real playtime, not just Morning).
+   *
+   * Looped rather than a single step because a day with a light quota can
+   * hand a later chapter a zero share (see `periodQuotas`) — one resolve can
+   * legitimately cascade through an empty Dusk straight into Night, or end
+   * the day outright.
+   */
+  function resolveTreasure(): void {
+    const s = get();
+    let chapter = s.chapter;
+    let phaseResolved = s.phaseResolved + 1;
+    let phaseRequired = s.phaseRequired;
+    let dayOver = false;
+    let chapterChanged = false;
+    while (phaseResolved >= phaseRequired) {
+      if (chapter >= CHAPTERS.length - 1) {
+        dayOver = true;
+        break;
+      }
+      chapter += 1;
+      chapterChanged = true;
+      phaseResolved = 0;
+      phaseRequired = phaseRequiredFor(s.day, chapter);
+    }
+    set({
+      chapter,
+      phaseResolved,
+      phaseRequired,
+      treasuresResolved: s.treasuresResolved + 1,
+      ...(dayOver ? { dayOver: true } : {}),
+    });
+    if (!dayOver) {
+      // Still more to hunt today — put a fresh treasure on the board. Old
+      // directions are worse than none once it's moved, so the leads/hints
+      // for the last one go with it.
+      runtime.hintSilenced.fill(false);
+      runtime.hintStolen.fill(false);
+      runtime.hintClaimed.fill(false);
+      runtime.hintBanked.fill(false);
+      runtime.hintCracked.fill(false);
+      reseedHints(chapter >= 2);
+      clearLeads();
+    }
+    if (chapterChanged) {
+      runtime.chapterAt = performance.now();
+      runtime.chapterName = CHAPTERS[chapter].name;
+      runtime.chapterBrief = chapterBriefFor(s.day, chapter);
+    }
   }
 
   return {
@@ -289,17 +359,15 @@ export const useGame = create<GameState>((set, get) => {
     for (let i = 0; i < runtime.hintClaimed.length; i++) {
       if (runtime.hintClaimed[i]) runtime.hintBanked[i] = true;
     }
-    // Banking a CLAIMED treasure no longer ENDS the run — it advances the day.
-    // That's the core of the long-form structure: the sun is the clock, and you
-    // are the one pushing it. Bank often and night comes fast but nothing is at
-    // risk; push for one more treasure and you keep the light but carry the loss.
+    // Banking a CLAIMED treasure no longer ENDS the run — it resolves this
+    // chapter's share of the day's quota (see `resolveTreasure`). Banking
+    // itself doesn't touch the clock at all now: the day moves on what you've
+    // found, not on how many bank runs you happened to make.
     const secured = before.treasureClaimed && before.roundState === "playing";
     // Captured before the reducer clears them below — the on-chain relay (fired
     // after, as a side effect) needs the amount/rarity this specific bank secured.
     const amount = before.villeCarrying;
     const rarity = before.claimedRarity;
-    const resolved = before.treasuresResolved + (secured ? 1 : 0);
-    const quotaLeft = secured && resolved < before.treasuresRequired;
     set((s) => ({
       villeBanked: s.villeBanked + s.villeCarrying, // spendable wallet
       villeEarned: s.villeEarned + s.villeCarrying, // lifetime — drives the fox
@@ -307,7 +375,6 @@ export const useGame = create<GameState>((set, get) => {
       ...(secured
         ? {
             treasuresBanked: s.treasuresBanked + 1,
-            treasuresResolved: resolved,
             treasureClaimed: false,
             claimedRarity: null,
             // Coming home to a bank run is what wears rust off — see FOX_RUST.
@@ -315,18 +382,7 @@ export const useGame = create<GameState>((set, get) => {
           }
         : {}),
     }));
-    // Today's quota isn't full yet — put the next treasure on the board right
-    // away, same as a theft does, so the hunt doesn't stall until the next
-    // chapter happens to roll over on its own.
-    if (quotaLeft) {
-      runtime.hintSilenced.fill(false);
-      runtime.hintStolen.fill(false);
-      runtime.hintClaimed.fill(false);
-      runtime.hintBanked.fill(false);
-      runtime.hintCracked.fill(false);
-      reseedHints(get().chapter >= 2);
-      clearLeads();
-    }
+    if (secured) resolveTreasure();
     // Real on-chain mint/reward, only for an actually-secured treasure (not a
     // salvaged partial carry) and only if a wallet is connected — see relay.ts.
     if (secured && rarity) {
@@ -519,40 +575,25 @@ export const useGame = create<GameState>((set, get) => {
   dayOver: false,
   dayProgress: 0,
   chapter: 0,
+  phaseResolved: 0,
+  phaseRequired: phaseRequiredFor(SAVE.day, 0),
   treasuresBanked: 0,
   treasuresRequired: treasuresForDay(SAVE.day),
   treasuresResolved: 0,
   treasuresStolen: 0,
+  // Purely the sun now — atmosphere plus a backstop nightfall. Chapter changes
+  // and the day actually ending both happen through `resolveTreasure` instead.
   advanceDay: (amount) =>
     set((s) => {
       if (s.roundState !== "playing") return s;
       const day = Math.min(DAY.nightfall, s.dayProgress + amount);
-      const chapter = chapterAt(day);
-      const next: Partial<GameState> = { dayProgress: day, chapter };
-      // A new chapter moves the treasures — that's what keeps the hunt going
-      // instead of the board being solved once and then static.
-      if (chapter !== s.chapter) {
-        reseedHints(chapter >= 2);
-        // Everything you were told was about the LAST board. Keeping those
-        // wedges up would be worse than showing nothing — it would be lying to
-        // you with the game's own voice.
-        clearLeads();
-        runtime.hintSilenced.fill(false);
-        runtime.hintStolen.fill(false);
-        runtime.hintClaimed.fill(false);
-        runtime.hintBanked.fill(false);
-        runtime.hintCracked.fill(false);
-        runtime.chapterAt = performance.now();
-        runtime.chapterName = CHAPTERS[chapter].name;
-        runtime.chapterBrief = chapterBriefFor(s.day, chapter);
-      }
-      // The day is spent either at nightfall, or the moment today's quota is
-      // fully resolved (banked or lost to a thief) — whichever comes first.
+      const next: Partial<GameState> = { dayProgress: day };
       // `dayOver` is a hard stop (Marvy's call): PlayerController pauses the
       // world the instant it flips true and the HUD puts up the day-end
       // overlay — sleep to Day N+1 or retry today, same choice a no-charm
-      // death offers. Neither ends the game.
-      if (day >= DAY.nightfall || s.treasuresResolved >= s.treasuresRequired) next.dayOver = true;
+      // death offers. Neither ends the game. Nightfall is a backstop for a
+      // player who never resolves the day's quota, not the normal way out.
+      if (day >= DAY.nightfall) next.dayOver = true;
       return next as GameState;
     }),
 
@@ -562,24 +603,15 @@ export const useGame = create<GameState>((set, get) => {
     // one, so a single theft became an instant, unrecoverable loss — with no
     // warning and nothing you could do after the fact.
     //
-    // A theft should cost you, not delete the session. So: the treasure is gone,
-    // the day jumps forward (you burned the light chasing something you didn't
-    // get), and a fresh one is hidden somewhere else. The run still ends where it
-    // always did — at nightfall.
+    // A theft should cost you, not delete the session. So: the treasure is gone
+    // and a fresh one is hidden somewhere else, same as a bank does — a theft
+    // still resolves this chapter's share (`resolveTreasure`), it just doesn't
+    // pay you. The sun gets a small atmospheric nudge on top; the run still
+    // ends where it always did, at Night's quota or nightfall.
     const s = get();
     if (s.roundState !== "playing") return;
-    const resolved = s.treasuresResolved + 1;
-    set({ treasuresResolved: resolved, treasuresStolen: s.treasuresStolen + 1 });
-    runtime.hintSilenced.fill(false);
-    runtime.hintStolen.fill(false);
-    runtime.hintClaimed.fill(false);
-    runtime.hintBanked.fill(false);
-    runtime.hintCracked.fill(false);
-    // Only put a fresh one on the board if today's quota still needs it — once
-    // the last of them is resolved, there's nothing left to hunt and the day is
-    // over regardless of which way it went.
-    if (resolved < s.treasuresRequired) reseedHints(s.chapter >= 2);
-    clearLeads();
+    set({ treasuresStolen: s.treasuresStolen + 1 });
+    resolveTreasure();
     get().advanceDay(DAY.theftPenalty);
   },
 
@@ -630,6 +662,8 @@ export const useGame = create<GameState>((set, get) => {
       dayOver: false,
       dayProgress: 0,
       chapter: 0,
+      phaseResolved: 0,
+      phaseRequired: phaseRequiredFor(day, 0),
       treasuresBanked: 0,
       treasuresRequired: treasuresForDay(day),
       treasuresResolved: 0,
@@ -706,6 +740,8 @@ export const useGame = create<GameState>((set, get) => {
       dayOver: false,
       dayProgress: 0,
       chapter: 0,
+      phaseResolved: 0,
+      phaseRequired: phaseRequiredFor(1, 0),
       treasuresBanked: 0,
       treasuresRequired: treasuresForDay(1),
       treasuresResolved: 0,

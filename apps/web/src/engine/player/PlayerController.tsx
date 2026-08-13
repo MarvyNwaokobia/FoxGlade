@@ -162,10 +162,9 @@ export function PlayerController() {
           useGame.getState().claimTreasure(runtime.nearHintIndex);
           faceAndGrab(HINTS[runtime.nearHintIndex].pos); // reach-out pick-up gesture
         } else if (runtime.nearBank && useGame.getState().villeCarrying > 0) {
-          const hadClaim = useGame.getState().treasureClaimed;
+          // Banking resolves this chapter's quota share (store.ts resolveTreasure) —
+          // it no longer touches the clock directly, see config/day.ts.
           useGame.getState().depositLoot();
-          // Securing a treasure pushes the sun along — see config/day.ts.
-          if (hadClaim) useGame.getState().advanceDay(DAY.bankAdvance);
           faceAndGrab(VILLAGE.bank); // deposit gesture at the vault
         } else if (runtime.nearMarket) {
           useGame.getState().openShop();

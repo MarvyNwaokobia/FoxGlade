@@ -1,21 +1,21 @@
 import { describe, it, expect } from "vitest";
-import { periodQuotas, chapterBriefFor, treasuresForDay } from "../day";
+import { periodQuotas, chapterBriefFor, treasuresForDay, DAWN_QUOTA } from "../day";
 
 describe("periodQuotas", () => {
-  it("sums to the day's total quota", () => {
+  it("sums to the day's total quota, after Dawn's own one", () => {
     for (let day = 1; day <= 10; day++) {
-      const [m, a, d] = periodQuotas(day);
-      expect(m + a + d).toBe(treasuresForDay(day));
+      const [m, a, d, n] = periodQuotas(day);
+      expect(m + a + d + n).toBe(treasuresForDay(day) - DAWN_QUOTA);
     }
   });
 
   it("gives the remainder to earlier periods first", () => {
-    // treasuresForDay is day+2 capped at 8, so day 1 already totals 3.
-    expect(periodQuotas(1)).toEqual([1, 1, 1]); // total 3
-    expect(periodQuotas(2)).toEqual([2, 1, 1]); // total 4
-    expect(periodQuotas(3)).toEqual([2, 2, 1]); // total 5
-    expect(periodQuotas(4)).toEqual([2, 2, 2]); // total 6
-    expect(periodQuotas(6)).toEqual([3, 3, 2]); // total 8 (capped)
+    // treasuresForDay is day+2 capped at 8; Dawn always claims one of those first.
+    expect(periodQuotas(1)).toEqual([1, 1, 0, 0]); // total 3, minus Dawn's 1 = 2
+    expect(periodQuotas(2)).toEqual([1, 1, 1, 0]); // total 4, minus 1 = 3
+    expect(periodQuotas(3)).toEqual([1, 1, 1, 1]); // total 5, minus 1 = 4
+    expect(periodQuotas(4)).toEqual([2, 1, 1, 1]); // total 6, minus 1 = 5
+    expect(periodQuotas(6)).toEqual([2, 2, 2, 1]); // total 8 (capped), minus 1 = 7
   });
 });
 
@@ -24,10 +24,11 @@ describe("chapterBriefFor", () => {
     expect(chapterBriefFor(1, 0)).toBe("Find the first treasure. Bank it at the vault.");
   });
 
-  it("folds the period's treasure count into Morning/Afternoon/Dusk", () => {
-    expect(chapterBriefFor(4, 1)).toContain("Find 2 treasures by midday.");
-    expect(chapterBriefFor(4, 2)).toContain("Find 2 treasures by dusk.");
-    expect(chapterBriefFor(4, 3)).toContain("Find 2 treasures before nightfall.");
+  it("folds the period's treasure count into Morning/Afternoon/Dusk/Night", () => {
+    expect(chapterBriefFor(6, 1)).toContain("Find 2 treasures by midday.");
+    expect(chapterBriefFor(6, 2)).toContain("Find 2 treasures by dusk.");
+    expect(chapterBriefFor(6, 3)).toContain("Find 2 treasures before nightfall.");
+    expect(chapterBriefFor(6, 4)).toContain("Find 1 treasure before you turn in.");
   });
 
   it("uses singular phrasing for a quota of one", () => {
@@ -42,7 +43,7 @@ describe("chapterBriefFor", () => {
     expect(brief).toBe("Thieves are racing you for what's left.");
   });
 
-  it("tells Night to bank up and head home", () => {
-    expect(chapterBriefFor(3, 4)).toContain("Bank what you're carrying, then head home to rest.");
+  it("tells Night to bank up and head home when there's nothing left to allocate it", () => {
+    expect(chapterBriefFor(1, 4)).toContain("Bank what you're carrying, then head home to rest.");
   });
 });

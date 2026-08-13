@@ -7,10 +7,15 @@
  * systems all shouting at a new player inside two and a half minutes — because
  * the day can be divided into CHAPTERS that each introduce exactly one thing.
  *
- * The clock is driven mostly by YOU: banking a treasure advances the day. So the
- * pacing is a decision, not a timer. Push for one more treasure before banking
- * and you keep the light; bank often and night comes quickly but you keep what
- * you've earned. Time also creeps forward on its own so dawdling isn't free.
+ * Which CHAPTER you're in is driven by what you've RESOLVED, not by the clock
+ * (Marvy's call, 2026-08-14): each chapter has its own share of today's treasure
+ * quota (`periodQuotas`/`phaseRequiredFor`), and the chapter doesn't turn over
+ * until that share is settled — banked or lost to a thief, either way counts.
+ * That's what guarantees every phase gets real playtime instead of the day
+ * ending mid-transition before a later chapter's blockers were ever met. The
+ * sun (`dayProgress`) still moves on its own, slowly, for atmosphere and as a
+ * backstop nightfall so idling forever isn't free — but it no longer decides
+ * which chapter you're in.
  */
 
 export interface Chapter {
@@ -18,8 +23,6 @@ export interface Chapter {
   name: string;
   /** One-line brief — what this stretch of the day is teaching. */
   brief: string;
-  /** Where the sun sits when this chapter begins (0 = dawn, 1 = full night). */
-  dayAt: number;
   /** Are any villagers lying yet? Early chapters are honest on purpose: you learn
    *  to trust people, and only then does the game start betraying that. */
   liars: boolean;
@@ -37,24 +40,23 @@ export interface Chapter {
  * something that shows up long after you've started exploring.
  */
 export const CHAPTERS: Chapter[] = [
-  { name: "Dawn",      brief: "Find the first treasure. Bank it at the vault.", dayAt: 0.00, liars: false, thieves: false },
-  { name: "Morning",   brief: "Armed blockers are awake now.",                   dayAt: 0.02, liars: false, thieves: false },
-  { name: "Afternoon", brief: "Not everyone in the village tells the truth.",    dayAt: 0.40, liars: true,  thieves: false },
-  { name: "Dusk",      brief: "Thieves are racing you for what's left.",         dayAt: 0.62, liars: true,  thieves: true },
-  { name: "Night",     brief: "Last of the light. Take what you can.",           dayAt: 0.82, liars: true,  thieves: true },
+  { name: "Dawn",      brief: "Find the first treasure. Bank it at the vault.", liars: false, thieves: false },
+  { name: "Morning",   brief: "Armed blockers are awake now.",                   liars: false, thieves: false },
+  { name: "Afternoon", brief: "Not everyone in the village tells the truth.",    liars: true,  thieves: false },
+  { name: "Dusk",      brief: "Thieves are racing you for what's left.",         liars: true,  thieves: true },
+  { name: "Night",     brief: "Last of the light. Take what you can.",           liars: true,  thieves: true },
 ];
 
 export const DAY = {
-  /** Seconds of real time for the sun to cross the whole sky UNAIDED. Long: the
-   *  day is meant to be pushed along by banking, with idle drift as a backstop
-   *  so standing still still costs you light. */
+  /** Seconds of real time for the sun to cross the whole sky UNAIDED. This is
+   *  purely atmospheric now (and a backstop nightfall) — CHAPTERS turn over on
+   *  resolved treasures, not on this drift. */
   driftSeconds: 420,
-  /** How much of the day a single banked treasure burns. Roughly a chapter. */
-  bankAdvance: 0.2,
-  /** How much of the day a thief costs you when it gets clean away. Less than a
-   *  bank (you gained nothing), but enough that losing one hurts. */
+  /** How much of the day a thief costs you when it gets clean away — a small
+   *  atmospheric nudge to the sun, on top of the phase it actually resolves. */
   theftPenalty: 0.09,
-  /** Past this the run is over — the light has gone. */
+  /** Past this the run is over regardless of quota — the light has gone. A
+   *  backstop, not the normal way a day ends. */
   nightfall: 1.0,
 } as const;
 
@@ -75,51 +77,61 @@ export function treasuresForDay(day: number): number {
   return Math.min(day + 2, 8);
 }
 
+/** Dawn always asks for exactly one treasure — the tutorial bank that gets a
+ *  first-time player moving before any blocker is awake (CHAPTERS[0]). */
+export const DAWN_QUOTA = 1;
+
 /**
- * Splits the day's total quota across the three chapters that actually ask you
- * to go find something — Morning, Afternoon, Dusk (CHAPTERS indices 1–3).
- * Informational only (Marvy's call, DESIGN §14.10 addendum): it doesn't gate
- * spawning or hold back the clock, same as the day-wide quota already
- * doesn't — it exists purely so the chapter banner can tell a player how many
- * treasures THIS stretch of the day is asking for, the way a good HUD narrates
- * "3 to find this morning" instead of leaving them to infer it. Remainder goes
- * to the earlier periods first, so a light day (1–2 treasures) doesn't spread
- * a single treasure's "find 1" instruction across all three chapters.
+ * Splits what's left of the day's quota, after Dawn's one, across the four
+ * chapters that actually field blockers — Morning, Afternoon, Dusk, Night
+ * (CHAPTERS indices 1–4).
+ *
+ * This is what GATES the day now (Marvy's call, 2026-08-14): a chapter
+ * doesn't turn over until its own share here has been resolved, so a low
+ * quota can no longer be met mid-Morning and skip everything after it in the
+ * same instant. The day itself only ends once Night's share is resolved too.
+ * Remainder goes to the earlier periods first, so a light day (1–2 left after
+ * Dawn) doesn't spread a single "find 1" instruction across all four.
  */
-export function periodQuotas(day: number): [number, number, number] {
-  const total = treasuresForDay(day);
-  const base = Math.floor(total / 3);
-  const extra = total % 3;
-  return [base + (extra > 0 ? 1 : 0), base + (extra > 1 ? 1 : 0), base];
+export function periodQuotas(day: number): [number, number, number, number] {
+  const total = Math.max(0, treasuresForDay(day) - DAWN_QUOTA);
+  const base = Math.floor(total / 4);
+  const extra = total % 4;
+  return [
+    base + (extra > 0 ? 1 : 0),
+    base + (extra > 1 ? 1 : 0),
+    base + (extra > 2 ? 1 : 0),
+    base,
+  ];
+}
+
+/** How many treasures chapter `chapter` needs resolved before the day can
+ *  move past it — Dawn's fixed one, or this day's share for that period. */
+export function phaseRequiredFor(day: number, chapter: number): number {
+  return chapter === 0 ? DAWN_QUOTA : periodQuotas(day)[chapter - 1];
 }
 
 const PERIOD_DEADLINE: Record<number, string> = {
   1: "by midday",
   2: "by dusk",
   3: "before nightfall",
+  4: "before you turn in",
 };
 
 /**
  * The chapter banner's brief line, with the period's treasure count folded in
- * for Morning/Afternoon/Dusk, and an explicit "bank up and head home" nudge
- * for Night — the "it's nighttime now, go bank and rest" instruction Marvy
- * asked for. Dawn keeps its own tutorial-specific brief untouched.
+ * for Morning/Afternoon/Dusk/Night, and an explicit "bank up and head home"
+ * fallback for a Night with nothing left to ask for. Dawn keeps its own
+ * tutorial-specific brief untouched.
  */
 export function chapterBriefFor(day: number, chapter: number): string {
   const base = CHAPTERS[chapter].brief;
-  if (chapter >= 1 && chapter <= 3) {
+  if (chapter >= 1 && chapter <= 4) {
     const q = periodQuotas(day)[chapter - 1];
     if (q > 0) return `${base} Find ${q} treasure${q === 1 ? "" : "s"} ${PERIOD_DEADLINE[chapter]}.`;
   }
   if (chapter === 4) return `${base} Bank what you're carrying, then head home to rest.`;
   return base;
-}
-
-/** Which chapter a given day-progress falls in. */
-export function chapterAt(day: number): number {
-  let idx = 0;
-  for (let i = 0; i < CHAPTERS.length; i++) if (day >= CHAPTERS[i].dayAt) idx = i;
-  return idx;
 }
 
 /**

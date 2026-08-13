@@ -3,7 +3,7 @@ import { useGame, carryCap, bombCapacity } from "@/engine/store";
 import { runtime } from "@/engine/runtime";
 import { HINTS } from "@/engine/world/hints";
 import { LOOT, REST } from "@/engine/config/round";
-import { DAY, CHAPTERS, treasuresForDay } from "@/engine/config/day";
+import { DAY, treasuresForDay } from "@/engine/config/day";
 import { SUPPLY_CAP, BAG_CAP } from "@/engine/config/shop";
 import { clearLeads, leads } from "@/engine/world/leads";
 import { forgetEverything, isDangerous } from "@/engine/fox/foxMemory";
@@ -94,11 +94,11 @@ describe("claiming", () => {
 
 describe("banking", () => {
   it("moves carried loot into the wallet AND the lifetime total", () => {
-    // Quota capped at 1 so this bank finishes the day's hunt outright — a
-    // quota still open would reseed this slot for the next find and clear
-    // `hintBanked` on it as part of that, which is a different behaviour
-    // (see the "day quota" describe block) than what's under test here.
-    useGame.setState({ treasuresRequired: 1 });
+    // Night with one left in its own share so this bank finishes the day's
+    // hunt outright — a phase still open would reseed this slot for the next
+    // find and clear `hintBanked` on it as part of that, which is a different
+    // behaviour (see the "day quota" describe block) than what's under test here.
+    useGame.setState({ chapter: 4, phaseResolved: 0, phaseRequired: 1 });
     useGame.getState().claimTreasure(0);
     useGame.getState().depositLoot();
     const s = useGame.getState();
@@ -126,23 +126,22 @@ describe("banking", () => {
 
 describe("day quota (DESIGN §14.10)", () => {
   it("ends the day once the quota is resolved, even with plenty of daylight left", () => {
-    useGame.setState({ day: 3, treasuresRequired: 3, treasuresResolved: 0, dayProgress: 0.05, chapter: 0, dayOver: false });
+    // Already on Night with 3 left in its own share — resolving all three
+    // ends the day outright, regardless of how little the sun has moved.
+    useGame.setState({ day: 3, dayProgress: 0.05, chapter: 4, phaseResolved: 0, phaseRequired: 3, dayOver: false });
     for (let n = 0; n < 3; n++) {
       const idx = HINTS.findIndex((h) => h.real);
       useGame.getState().claimTreasure(idx);
       useGame.getState().depositLoot();
     }
-    expect(useGame.getState().treasuresResolved).toBe(3);
-    // depositLoot only updates the tally; PlayerController always follows a bank
-    // with advanceDay (see the KeyE handler) — that's the call that checks it.
-    useGame.getState().advanceDay(0);
     const s = useGame.getState();
+    expect(s.treasuresResolved).toBe(3);
     expect(s.dayOver).toBe(true);
     expect(s.dayProgress).toBeLessThan(DAY.nightfall);
   });
 
   it("counts a theft toward the quota exactly like a bank does", () => {
-    useGame.setState({ day: 2, treasuresRequired: 2, treasuresResolved: 0, treasuresStolen: 0, dayOver: false });
+    useGame.setState({ day: 2, chapter: 4, phaseResolved: 0, phaseRequired: 2, treasuresResolved: 0, treasuresStolen: 0, dayOver: false });
     useGame.getState().loseTreasureToThief();
     expect(useGame.getState().treasuresResolved).toBe(1);
     expect(useGame.getState().treasuresStolen).toBe(1);
@@ -163,12 +162,13 @@ describe("day quota (DESIGN §14.10)", () => {
   });
 
   it("does not reseed once the last of the quota is resolved — there's nothing left to hunt", () => {
-    useGame.setState({ day: 1, treasuresRequired: 1, treasuresResolved: 0, dayOver: false, chapter: 0 });
+    useGame.setState({ day: 1, chapter: 4, phaseResolved: 0, phaseRequired: 1, dayOver: false });
     const idx = HINTS.findIndex((h) => h.real);
     useGame.getState().claimTreasure(idx);
     useGame.getState().depositLoot();
     // The board wasn't touched: the slot that was real is still marked banked.
     expect(runtime.hintBanked[idx]).toBe(true);
+    expect(useGame.getState().dayOver).toBe(true);
   });
 
   it("raises next day's quota and resets the tally on sleep", () => {
@@ -195,7 +195,7 @@ describe("going down", () => {
   });
 
   it("cannot take back loot that was already banked", () => {
-    useGame.setState({ treasuresRequired: 1 }); // see note above — isolates from the quota reseed path
+    useGame.setState({ chapter: 4, phaseResolved: 0, phaseRequired: 1 }); // see note above — isolates from the quota reseed path
     useGame.getState().claimTreasure(0);
     useGame.getState().depositLoot();
     useGame.getState().damagePlayer(1000);
@@ -428,8 +428,11 @@ describe("the market", () => {
 });
 
 describe("the day", () => {
-  it("advances a chapter and moves the board with it", () => {
-    useGame.getState().advanceDay(CHAPTERS[1].dayAt);
+  it("advances a chapter once its treasure share is resolved, not on a timer", () => {
+    // Day 1's Dawn asks for exactly one treasure (DAWN_QUOTA) — banking it
+    // is what turns the chapter over now, not dayProgress crossing a threshold.
+    useGame.getState().claimTreasure(0);
+    useGame.getState().depositLoot();
     expect(useGame.getState().chapter).toBe(1);
     // Old directions are worse than none once the treasure has moved.
     expect(leads.lead).toBeNull();
