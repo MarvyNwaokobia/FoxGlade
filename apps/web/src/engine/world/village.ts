@@ -47,9 +47,9 @@ export const VILLAGE = {
   half: 36,
   spawn: new THREE.Vector3(0, 0, 30),
   spawnYaw: 0 as number, // 0 = facing north (-Z), into the village
-  market: new THREE.Vector3(-19, 0, 7), // shop trigger inside the market enclosure
+  market: new THREE.Vector3(26, 0, 24), // shop trigger inside the market enclosure
   /** Vault pad inside the bank building (the enterable house on the plaza). */
-  bank: new THREE.Vector3(-26, 0, -4.5),
+  bank: new THREE.Vector3(-29, 0, -6.5),
   /**
    * HOME. Every day starts here, in this room, rather than out at the gate.
    *
@@ -75,29 +75,31 @@ export const VILLAGE = {
 /**
  * ORGANIC layout (§14.1): buildings scattered at irregular spacings and sizes —
  * alleys, nooks, and dead-ends rather than neat rows. A loose main route winds
- * north from the gate, a market plaza sits west, a shallow treasure courtyard
- * hides east, and the deep-north cluster guards the rare treasure nook.
- * (Boxes stay axis-aligned so collision remains trivial; rotated buildings come
- * with the art pass.)
+ * north from the gate, a shallow treasure courtyard hides east, and the
+ * deep-north cluster guards the rare treasure nook. (Boxes stay axis-aligned so
+ * collision remains trivial; rotated buildings come with the art pass.)
  *
  * Only three buildings are enterable, and only one is a furnished "house":
  * HOME (your bedroom), the bank (the vault), and the market (an open-air
  * enclosure, not a room). Every other building is a solid block — a village
  * of identical walk-in houses read as a maze of empty rooms, not a home you
  * come back to.
+ *
+ * HOME, the bank, and the market each sit in their own separate corner of the
+ * village (2026-08-13, Marvy: they used to cluster within ~15m of each other
+ * in one west-side "district" — a home you could bank from without leaving
+ * your own doorstep). Now each is a real cross-village trip: ~33m from home
+ * to either the bank or the market, and ~63m between the bank and the market.
  */
 export const BUILDINGS: Building[] = [
   // South cluster around the gate — staggered, not mirrored
   { x: -18, z: 24, w: 9, d: 7, h: 5 },
-  { x: -7, z: 20, w: 6, d: 9, h: 6, door: { side: "E" } },
+  { x: -7, z: 20, w: 6, d: 9, h: 6, door: { side: "E" } }, // HOME
   { x: 9, z: 25, w: 12, d: 6, h: 4 },
   { x: 17, z: 15, w: 7, d: 7, h: 6 },
 
-  // West district: the BANK (enterable) + the open-air MARKETPLACE enclosure.
-  // The market is a big walled square with a wide south gate — impenetrable walls,
-  // stalls inside, no roof — and a no-combat safe zone (interior → sheltered).
-  { x: -26, z: -3, w: 9, d: 7, h: 6, door: { side: "S" } }, // bank
-  { x: -19, z: 9, w: 15, d: 12, h: 3.4, door: { side: "S", width: 4 }, kind: "market" },
+  // The BANK — out on the west edge, well clear of both home and the market.
+  { x: -29, z: -5, w: 9, d: 7, h: 6, door: { side: "S" } }, // bank
 
   // Central weave — tight alleys and a bent main route
   { x: -3, z: 12, w: 8, d: 5, h: 6 },
@@ -105,6 +107,11 @@ export const BUILDINGS: Building[] = [
   { x: -6, z: -1, w: 6, d: 7, h: 4 },
   { x: 3, z: -7, w: 9, d: 5, h: 5 },
   { x: 14, z: 1, w: 6, d: 6, h: 5 },
+
+  // The open-air MARKETPLACE — a big walled square out past the southeast
+  // corner of the gate cluster, far from both home and the bank. Impenetrable
+  // walls, stalls inside, no roof — a no-combat safe zone (interior → sheltered).
+  { x: 26, z: 26, w: 15, d: 12, h: 3.4, door: { side: "S", width: 4 }, kind: "market" },
 
   // East courtyard hiding the shallow (common) treasure pocket
   { x: 23, z: -7, w: 8, d: 7, h: 6 },
