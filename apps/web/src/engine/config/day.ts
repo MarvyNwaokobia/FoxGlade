@@ -37,7 +37,7 @@ export interface Chapter {
 export const CHAPTERS: Chapter[] = [
   { name: "Dawn",      brief: "Find the first treasure. Bank it at the vault.", dayAt: 0.00, blockers: 0, liars: false, thieves: false },
   { name: "Morning",   brief: "Armed blockers are awake now.",                   dayAt: 0.18, blockers: 2, liars: false, thieves: false },
-  { name: "Afternoon", brief: "Not everyone in the village tells the truth.",    dayAt: 0.40, blockers: 3, liars: true,  thieves: false },
+  { name: "Afternoon", brief: "Not everyone in the village tells the truth.",    dayAt: 0.40, blockers: 4, liars: true,  thieves: false },
   { name: "Dusk",      brief: "Thieves are racing you for what's left.",         dayAt: 0.62, blockers: 4, liars: true,  thieves: true },
   { name: "Night",     brief: "Last of the light. Take what you can.",           dayAt: 0.82, blockers: 5, liars: true,  thieves: true },
 ];
