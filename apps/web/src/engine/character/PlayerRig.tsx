@@ -22,6 +22,7 @@ import { runtime } from "@/engine/runtime";
 import { useGame } from "@/engine/store";
 import type { WeaponId } from "@/engine/config/shop";
 import { makeGunMesh, handGunWorldMatrix, muzzleWorldPos } from "./GunMesh";
+import { buildGunModel, useGunModelScene } from "./gunModels";
 
 /** Every material on an object, so the camera fade can reach them. */
 function collectMaterials(obj: THREE.Object3D): THREE.Material[] {
@@ -270,6 +271,12 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
   const rigHipY = useRef(1); // this rig's bind hip height (m), for scaling clip drops
 
   const { scene, animations } = useGLTF(MODEL_PATHS[model]);
+  // The real weapon mesh (ported from Valor), for THIS rig only — it's the
+  // player's own body (PlayerRig only ever mounts once, from
+  // PlayerController), not the shared NPC rig, so reading the player's
+  // equipped weapon here is safe.
+  const equippedWeaponId = useGame((s) => s.equippedWeapon);
+  const gunGltfScene = useGunModelScene(equippedWeaponId);
 
   /**
    * How far to settle the rig for the clip currently playing — derived from that
@@ -400,8 +407,8 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
 
         // Socket the rifle as a SIBLING, driven from the hand bone each frame.
         if (SHOW_GUN && !gunRef.current) {
-          const id = useGame.getState().equippedWeapon;
-          const gun = makeGunMesh(id);
+          const id = equippedWeaponId; // matches gunGltfScene (same source render)
+          const gun = buildGunModel(gunGltfScene, id);
           gun.matrixAutoUpdate = false;
           groupRef.current.add(gun);
           gunRef.current = gun;
@@ -640,13 +647,13 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
     // socket convention (origin at grip, +Z forward), so the hand-follow below is
     // unchanged — only the mesh differs.
     if (SHOW_GUN && gunRef.current && groupRef.current) {
-      const id = useGame.getState().equippedWeapon;
+      const id = equippedWeaponId; // matches gunGltfScene (same source render)
       if (id !== currentGunId.current) {
         const stale = new Set(collectMaterials(gunRef.current));
         materials.current = materials.current.filter((m) => !stale.has(m));
         groupRef.current.remove(gunRef.current);
         disposeGroup(gunRef.current);
-        const gun = makeGunMesh(id);
+        const gun = buildGunModel(gunGltfScene, id);
         gun.matrixAutoUpdate = false;
         groupRef.current.add(gun);
         gunRef.current = gun;

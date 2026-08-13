@@ -7,7 +7,8 @@ import { FIRST_PERSON } from "@/engine/config/feel";
 import { gameMode } from "@/engine/config/mode";
 import { runtime } from "@/engine/runtime";
 import { useGame } from "@/engine/store";
-import { makeGunMesh, muzzleWorldPos } from "@/engine/character/GunMesh";
+import { muzzleWorldPos } from "@/engine/character/GunMesh";
+import { buildGunModel, useGunModelScene } from "@/engine/character/gunModels";
 import { makeViewArms } from "@/engine/character/ViewArms";
 import { BOXES3D } from "@/engine/world/village";
 import { raycastBoxes } from "@/engine/world/collision";
@@ -38,6 +39,9 @@ import { raycastBoxes } from "@/engine/world/collision";
 export function ViewModel() {
   const { camera, scene } = useThree();
   const equipped = useGame((s) => s.equippedWeapon);
+  // The real weapon mesh (ported from Valor) — preloaded per URL, so this is
+  // an instant cache hit after first load, not a re-suspend on weapon swap.
+  const gltfScene = useGunModelScene(equipped);
 
   const holder = useMemo(() => {
     const g = new THREE.Group();
@@ -93,7 +97,7 @@ export function ViewModel() {
   // Build (and rebuild) the weapon for whatever is equipped.
   useEffect(() => {
     if (!gameMode().firstPerson) return;
-    const gun = makeGunMesh(equipped);
+    const gun = buildGunModel(gltfScene, equipped);
     gun.rotation.y = Math.PI; // barrel (+Z) → camera forward (-Z)
     gun.scale.setScalar(FIRST_PERSON.gunScale);
 
@@ -149,7 +153,7 @@ export function ViewModel() {
       });
       gunRef.current = null;
     };
-  }, [equipped, holder]);
+  }, [equipped, gltfScene, holder]);
 
   useFrame((_, rawDt) => {
     const gun = gunRef.current;
