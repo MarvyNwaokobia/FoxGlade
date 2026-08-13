@@ -68,6 +68,23 @@ const DEATH_DROP = -0.8; // metres, at full clip progress
 /** Seconds the corpse spends fading out before it unmounts (no more hard pop). */
 const DEATH_FADE_SEC = 0.5;
 
+/**
+ * Knockback: a shot doesn't just make the body fall over in place — it PUSHES
+ * it (Valor's KnockbackPhysics: tilt + slide + bounce off a fake-physics sim,
+ * not the death clip alone). The death clip already handles the fall itself
+ * (bones tip the body over), so this only adds the two things the clip can't:
+ * a horizontal shove away from whatever it was facing (almost always away
+ * from the shooter — an engaged NPC is turned to face the player), with
+ * friction, and a couple of quick, damped vertical bounces as it lands —
+ * layered ON TOP of the existing clip-driven drop, not replacing it.
+ */
+const KNOCK_SPEED = 2.4; // m/s, local space, decays via KNOCK_FRICTION_TIME
+const KNOCK_FRICTION_TIME = 0.4; // seconds to bleed off to a stop
+const KNOCK_SIDE_SPREAD = 0.5; // radians either side of straight-back
+const BOUNCE_HEIGHT = 0.16; // metres, first bounce
+const BOUNCE_DAMPING = 0.42; // each successive bounce is this fraction of the last
+const BOUNCE_FREQ = 9; // rad/s — how fast the bounce oscillation settles
+
 export type NpcModelId = "npc_blocker" | "npc_distractor" | "npc_merchant" | "npc_thief" | "guardian";
 
 /**
@@ -220,6 +237,11 @@ export const NpcRig = memo(function NpcRig({
   const deathDrop = useRef(0); // eased downward offset that settles the corpse
   const lastHitAt = useRef(-1);
   const deathAt = useRef(-1); // when the death fade started
+  // Knockback slide: local-space (relative to the body's own facing), so it
+  // reads as "pushed backward" regardless of which way the corpse landed
+  // facing world-wise. Set once at the moment of death, decays via friction.
+  const knockOffset = useRef(new THREE.Vector3());
+  const knockVel = useRef(new THREE.Vector3());
   const hitPunch = useRef(0); // 1 on a fresh hit, decays → stagger + flash amount
 
   const { scene, animations } = useGLTF(MODEL_PATHS[model]);
@@ -340,7 +362,14 @@ export const NpcRig = memo(function NpcRig({
       // Committed death one-shot (clamps + holds on the final frame).
       if (!deathPlayed.current) {
         deathPlayed.current = true;
+        deathAt.current = performance.now();
         animMachine.transition(AnimState.Death, true);
+        // The shove: mostly straight back (local -Z — the body is already
+        // turned to face whatever shot it), with a little side variance so a
+        // room full of corpses doesn't all kick back on the identical line.
+        const side = (Math.random() - 0.5) * 2 * KNOCK_SIDE_SPREAD;
+        knockVel.current.set(Math.sin(side) * KNOCK_SPEED, 0, -Math.cos(side) * KNOCK_SPEED);
+        knockOffset.current.set(0, 0, 0);
       }
     } else if (!frozen) {
       const firedRecently = state.fireAt > 0 && (performance.now() - state.fireAt) / 1000 < FIRE_HOLD;
@@ -380,14 +409,26 @@ export const NpcRig = memo(function NpcRig({
     // and is done the instant the animation is, instead of continuing to glide
     // downward through the floor afterwards.
     deathDrop.current = state.dead ? DEATH_DROP * animMachine.getActiveProgress() : 0;
-    groupRef.current.position.y = deathDrop.current;
+    const deathElapsed = state.dead && deathAt.current > 0 ? (performance.now() - deathAt.current) / 1000 : 0;
+    if (state.dead) {
+      // Slide: friction bleeds the shove off to a stop over KNOCK_FRICTION_TIME.
+      const friction = Math.max(0, 1 - deathElapsed / KNOCK_FRICTION_TIME);
+      knockOffset.current.addScaledVector(knockVel.current, dt * friction);
+      // Bounce: a couple of quick, damped vertical hops layered on the clip's
+      // own drop — a body that lands, not one that simply stops moving.
+      const bounce =
+        deathElapsed < 0.5
+          ? Math.abs(Math.sin(deathElapsed * BOUNCE_FREQ)) * BOUNCE_HEIGHT * Math.pow(BOUNCE_DAMPING, deathElapsed * BOUNCE_FREQ)
+          : 0;
+      groupRef.current.position.set(knockOffset.current.x, deathDrop.current + bounce, knockOffset.current.z);
+    } else {
+      groupRef.current.position.set(0, deathDrop.current, 0);
+    }
 
     // Fade the body out over its last half-second instead of vanishing mid-frame.
     if (state.dead) {
-      if (deathAt.current < 0) deathAt.current = performance.now();
-      const elapsed = (performance.now() - deathAt.current) / 1000;
       const fadeStart = DEATH_LINGER_MS / 1000 - DEATH_FADE_SEC;
-      const fade = THREE.MathUtils.clamp(1 - (elapsed - fadeStart) / DEATH_FADE_SEC, 0, 1);
+      const fade = THREE.MathUtils.clamp(1 - (deathElapsed - fadeStart) / DEATH_FADE_SEC, 0, 1);
       for (const m of materials.current) {
         m.transparent = fade < 0.99;
         m.opacity = fade;

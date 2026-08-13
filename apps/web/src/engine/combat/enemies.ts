@@ -17,7 +17,10 @@ export interface Enemy {
   headHeight?: number; // centre of the head sphere (default: hitHeight + 0.6)
   headRadius?: number; // head sphere radius (default 0.28) — a hit here is a headshot
   bodyRadius: number; // physical radius for movement collision (tighter)
-  takeHit: (damage: number) => void;
+  /** Returns true if this hit was the killing blow — the blood system needs to
+   *  know synchronously (a bigger pool burst on a kill vs a regular spray on a
+   *  non-lethal hit), and React state isn't readable that fast. */
+  takeHit: (damage: number) => boolean;
 }
 
 export const enemies = new Set<Enemy>();
@@ -87,7 +90,14 @@ export function fireHitscan(
   camera: THREE.Camera,
   damageMult = 1,
   aimAssist = false,
-): { hit: boolean; point: THREE.Vector3; headshot: boolean; wallNormal: THREE.Vector3 | null } {
+): {
+  hit: boolean;
+  point: THREE.Vector3;
+  headshot: boolean;
+  wallNormal: THREE.Vector3 | null;
+  /** True only when `hit` is a body hit AND it was the killing blow. */
+  lethal: boolean;
+} {
   const origin = camera.position.clone();
   let dir = camera.getWorldDirection(new THREE.Vector3());
   if (aimAssist) dir = assistedDirection(origin, dir);
@@ -124,6 +134,7 @@ export function fireHitscan(
 
   let hit = false;
   let headshot = false;
+  let lethal = false;
   let endDist = wallDist;
   let stoppedAtWall = hitWall;
   if (best && bestT < wallDist) {
@@ -132,9 +143,9 @@ export function fireHitscan(
     endDist = bestT;
     stoppedAtWall = false;
     const dmg = GUN.damage * damageMult * (bestHead ? GUN.headshotMult : 1) * rangeFalloff(bestT);
-    best.takeHit(dmg);
+    lethal = best.takeHit(dmg);
   }
 
   const point = origin.clone().addScaledVector(dir, endDist);
-  return { hit, point, headshot, wallNormal: stoppedAtWall ? _wallNormal.clone() : null };
+  return { hit, point, headshot, wallNormal: stoppedAtWall ? _wallNormal.clone() : null, lethal };
 }

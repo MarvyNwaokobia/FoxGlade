@@ -51,6 +51,10 @@ export function Blocker({
 }) {
   const S = useMemo(() => blockerStats(role), [role]);
   const [health, setHealth] = useState<number>(S.health);
+  // Mirrors `health` synchronously — takeHit needs to know INSTANTLY whether a
+  // hit was the killing blow (for the blood-pool burst), and React state isn't
+  // readable synchronously right after the setState call that changes it.
+  const healthRef = useRef<number>(S.health);
   const [removed, setRemoved] = useState(false); // unmount after the death lies out
   const dead = health <= 0;
   const group = useRef<THREE.Group>(null);
@@ -94,11 +98,12 @@ export function Blocker({
         // landing rounds bought you nothing until the third one killed it.
         cooldown.current = Math.max(cooldown.current, S.hitStagger);
         telegraphUntil.current = 0;
-        setHealth((h) => {
-          const next = Math.max(0, h - damage);
-          if (next === 0) enemies.delete(enemy);
-          return next;
-        });
+        const before = healthRef.current;
+        const next = Math.max(0, before - damage);
+        healthRef.current = next;
+        setHealth(next);
+        if (next === 0) enemies.delete(enemy);
+        return before > 0 && next === 0;
       },
     };
     enemies.add(enemy);

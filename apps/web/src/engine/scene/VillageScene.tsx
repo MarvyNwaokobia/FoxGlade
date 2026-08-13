@@ -11,6 +11,9 @@ import { Environment } from "@react-three/drei";
 import { Projectiles } from "@/engine/combat/ProjectileLayer";
 import { ShotFX } from "@/engine/combat/ShotFxLayer";
 import { DecalFX } from "@/engine/combat/DecalFxLayer";
+import { BloodFX } from "@/engine/combat/BloodFxLayer";
+import { BloodStainFX } from "@/engine/combat/BloodStainFxLayer";
+import { DustFX } from "@/engine/combat/DustFxLayer";
 import { Bombs } from "@/engine/combat/BombLayer";
 import { Interiors } from "@/engine/world/Interiors";
 import { Props } from "@/engine/world/Props";
@@ -78,6 +81,9 @@ export function VillageScene({
       <Projectiles />
       <ShotFX />
       <DecalFX />
+      <BloodFX />
+      <BloodStainFX />
+      <DustFX />
       <Bombs />
       {/* Post-processing (bloom + vignette) is a heavy full-screen pass — gated
           by the quality setting (off on Low/Med, on for High). */}

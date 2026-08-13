@@ -23,6 +23,8 @@ import { useGame } from "@/engine/store";
 import { fireHitscan, enemies } from "@/engine/combat/enemies";
 import { spawnShot } from "@/engine/combat/shotfx";
 import { spawnDecal } from "@/engine/combat/decals";
+import { spawnBlood } from "@/engine/combat/blood";
+import { spawnBloodStain } from "@/engine/combat/bloodStains";
 import { spawnBomb, predictLanding } from "@/engine/combat/bombs";
 import { audio } from "@/engine/audio/audio";
 import { HINTS, HINT_RADIUS } from "@/engine/world/hints";
@@ -1084,6 +1086,24 @@ export function PlayerController() {
       // shoulder regardless of where the gun actually was.
       spawnShot(runtime.muzzlePos, shot.point, shot.hit, shot.wallNormal);
       if (shot.wallNormal) spawnDecal(shot.point, shot.wallNormal);
+      // A landed body hit sprays; a killing one sprays harder and leaves a pool
+      // on the ground below (Valor's flesh-surface burst + death pool, same
+      // read via FoxGlade's own pooled-mesh VFX — see blood.ts).
+      if (shot.hit) {
+        spawnBlood(shot.point, camera.position, shot.lethal);
+        const groundPos = new THREE.Vector3(shot.point.x, 0, shot.point.z);
+        if (shot.lethal) {
+          spawnBloodStain(groundPos, 0.85 + Math.random() * 0.3);
+          if (Math.random() < 0.5) {
+            spawnBloodStain(
+              groundPos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.6, 0, (Math.random() - 0.5) * 0.6)),
+              0.32 + Math.random() * 0.18
+            );
+          }
+        } else if (Math.random() < 0.7) {
+          spawnBloodStain(groundPos, 0.3 + Math.random() * 0.16);
+        }
+      }
     }
   });
 

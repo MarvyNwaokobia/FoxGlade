@@ -60,6 +60,8 @@ export function Thief({
   const [started, setStarted] = useState(startDelay <= 0);
   const [escaped, setEscaped] = useState(false);
   const [health, setHealth] = useState<number>(THIEF.health);
+  // Synchronous mirror of `health` — see Blocker.tsx for why takeHit needs it.
+  const healthRef = useRef<number>(THIEF.health);
   const [removed, setRemoved] = useState(false);
   const live = useRef<{ enemy: Enemy; ref: ThiefRef } | null>(null);
   const anim = useRef<NpcRigState>({ moving: false, running: true, fireAt: -1, speed });
@@ -96,14 +98,15 @@ export function Thief({
         // Being shot at makes it RUN. A racer that doesn't panic when rounds
         // start landing near it reads as scenery, not a rival.
         panicUntil.current = performance.now() + PANIC_TIME * 1000;
-        setHealth((h) => {
-          const next = Math.max(0, h - damage);
-          if (next === 0) {
-            enemies.delete(enemy);
-            thieves.delete(ref);
-          }
-          return next;
-        });
+        const before = healthRef.current;
+        const next = Math.max(0, before - damage);
+        healthRef.current = next;
+        setHealth(next);
+        if (next === 0) {
+          enemies.delete(enemy);
+          thieves.delete(ref);
+        }
+        return before > 0 && next === 0;
       },
     };
     enemies.add(enemy);

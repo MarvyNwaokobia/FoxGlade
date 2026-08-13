@@ -48,6 +48,8 @@ export function Distractor({
   truthful: boolean;
 }) {
   const [health, setHealth] = useState(MAX_HEALTH);
+  // Synchronous mirror of `health` — see Blocker.tsx for why takeHit needs it.
+  const healthRef = useRef<number>(MAX_HEALTH);
   const [removed, setRemoved] = useState(false);
   const dead = health <= 0;
   const group = useRef<THREE.Group>(null);
@@ -78,14 +80,15 @@ export function Distractor({
       bodyRadius: 0.45,
       takeHit: (damage) => {
         anim.current.hitAt = performance.now();
-        setHealth((h) => {
-          const next = Math.max(0, h - damage);
-          if (next === 0) {
-            enemies.delete(enemy);
-            runtime.hintSilenced[hintIndex] = true;
-          }
-          return next;
-        });
+        const before = healthRef.current;
+        const next = Math.max(0, before - damage);
+        healthRef.current = next;
+        setHealth(next);
+        if (next === 0) {
+          enemies.delete(enemy);
+          runtime.hintSilenced[hintIndex] = true;
+        }
+        return before > 0 && next === 0;
       },
     };
     enemies.add(enemy);

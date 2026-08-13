@@ -2,12 +2,16 @@
 
 import { useEffect, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
+import * as THREE from "three";
 import { audio } from "./audio";
 import { AUDIO } from "@/engine/config/audio";
 import { runtime } from "@/engine/runtime";
 import { useGame } from "@/engine/store";
 import { explosions } from "@/engine/combat/bombs";
 import { VILLAGE } from "@/engine/world/village";
+import { spawnDust } from "@/engine/combat/dust";
+
+const _dustPos = new THREE.Vector3();
 
 /**
  * Turns game state into sound. Lives inside the Canvas for `useFrame`. Per-frame
@@ -132,6 +136,12 @@ export function AudioDriver() {
       if (st.stepAccum >= stride) {
         st.stepAccum = 0;
         audio.play(surface, AUDIO.stepVolume);
+        // Same trigger as the sound — a step makes both. Wood floors don't
+        // kick up dust (Valor's scuff() is an outdoor-ground effect too).
+        if (!indoors) {
+          _dustPos.set(px, 0.05, pz);
+          spawnDust(_dustPos, runtime.running ? 0.42 : 0.3);
+        }
       }
     } else {
       // Standing/airborne: prime the accumulator so the next step lands promptly.

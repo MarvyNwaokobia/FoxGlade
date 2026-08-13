@@ -47,7 +47,7 @@ const jitter = (i: number, salt: number) => {
  * hole and the player's contact shadow (softShadow.ts): no image asset.
  */
 let _smokeTex: THREE.CanvasTexture | null = null;
-function smokePuffTexture(): THREE.CanvasTexture {
+export function smokePuffTexture(): THREE.CanvasTexture {
   if (_smokeTex) return _smokeTex;
   const s = 64;
   const c = document.createElement("canvas");
