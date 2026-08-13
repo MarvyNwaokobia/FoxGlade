@@ -50,6 +50,19 @@ import { bearingTo, setLead } from "@/engine/world/leads";
 const SPEAK_RANGE = 5.5;
 const WALK_SPEED = 2.6;
 const LEAVE_DIST = 26; // how far it walks off before vanishing
+/**
+ * How long the player has to have been OUTSIDE before the guardian is allowed
+ * to speak (Marvy's call, 2026-08-13). The post sits close enough to the door
+ * that distance alone was already satisfied the instant `sheltered` flipped
+ * false — so the freeze used to land on the very frame you crossed the
+ * threshold, before you'd taken a step or the over-the-shoulder camera (which
+ * pulls in tight near walls, see PlayerController's collision-solved boom)
+ * had any room to ease back out. The result was a hard-frozen shot of a wall,
+ * not the player standing outside facing the guardian. This buffer just lets
+ * a couple of real steps and the camera's own follow happen BEFORE anything
+ * locks — the gate itself is still immediate once it fires.
+ */
+const STEP_OUT_GRACE = 0.7; // seconds
 
 type Phase = "gone" | "waiting" | "speaking" | "leaving";
 const _goal = new THREE.Vector3();
@@ -60,6 +73,9 @@ export function Guardian() {
   const phase = useRef<Phase>("gone");
   const facing = useRef(Math.PI);
   const briefCount = useRef(0);
+  /** performance.now the player was last seen stepping OUT of shelter; -1
+   *  while sheltered. Drives STEP_OUT_GRACE. */
+  const unshelteredAt = useRef(-1);
   const [line, setLine] = useState<string | null>(null);
   const [visible, setVisible] = useState(false);
   const anim = useRef<NpcRigState>({ moving: false, running: false, fireAt: -1, speed: WALK_SPEED });
@@ -69,6 +85,7 @@ export function Guardian() {
   useEffect(() => {
     phase.current = "gone";
     briefCount.current = 0;
+    unshelteredAt.current = -1;
     runtime.guardianBriefed = false;
     runtime.guardianGate = false;
     setLine(null);
@@ -106,6 +123,13 @@ export function Guardian() {
       setVisible(true);
     }
 
+    // Tracks how long it's been since the player was last inside, so the
+    // "waiting" case below can require a beat of actually being outside
+    // before it's allowed to trigger — see STEP_OUT_GRACE.
+    if (runtime.sheltered) unshelteredAt.current = -1;
+    else if (unshelteredAt.current < 0) unshelteredAt.current = performance.now();
+    const steppedOutFor = unshelteredAt.current > 0 ? (performance.now() - unshelteredAt.current) / 1000 : 0;
+
     const d = Math.hypot(runtime.playerPos.x - pos.current.x, runtime.playerPos.z - pos.current.z);
     let moving = false;
 
@@ -118,8 +142,10 @@ export function Guardian() {
         // `sheltered` is the real gate, not distance. Your door is close enough
         // to the post that raw range let it deliver the whole briefing through
         // the bedroom wall while you were still waking up, which threw away the
-        // one beat this scene exists for. It speaks when you are OUTSIDE.
-        if (!runtime.sheltered && d <= SPEAK_RANGE) {
+        // one beat this scene exists for. It speaks when you are OUTSIDE — and
+        // now only once you've BEEN outside for a beat (STEP_OUT_GRACE), not on
+        // the exact frame you cross the threshold.
+        if (!runtime.sheltered && d <= SPEAK_RANGE && steppedOutFor >= STEP_OUT_GRACE) {
           phase.current = "speaking";
           runtime.guardianGate = true;
           const real = HINTS.find((h) => h.real);
