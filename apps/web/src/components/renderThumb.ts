@@ -68,7 +68,7 @@ export function renderThumb(
 
   // Orthographic so everything is drawn at a true relative scale — a
   // rucksack should LOOK bigger than a lockbox on the card, because it is.
-  const reach = Math.max(size.x, size.y, size.z) * (framing.reachScale ?? 0.62);
+  const reach = Math.max(size.x, size.y, size.z) * (framing.reachScale ?? 0.54);
   const cam = new THREE.OrthographicCamera(-reach, reach, reach, -reach, 0.01, 100);
   cam.position.set(0, 0, 10);
   cam.lookAt(0, 0, 0);

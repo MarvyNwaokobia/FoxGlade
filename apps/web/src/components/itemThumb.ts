@@ -19,5 +19,5 @@ export function itemThumb(itemId: string): string | null {
   if (hit) return hit;
   const model = buildItemModel(itemId);
   if (!model) return null;
-  return renderThumb(cache, itemId, () => model, { reachScale: 0.68 });
+  return renderThumb(cache, itemId, () => model, { reachScale: 0.58 });
 }
