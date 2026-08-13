@@ -116,35 +116,71 @@ function sack(color: number): THREE.Object3D {
   return g;
 }
 
-/** A tall staff topped with a lit lantern — a vertical you can spot anywhere. */
+/**
+ * A tall staff topped with a real caged lantern — a vertical you can spot
+ * anywhere. (2026-08-14, Marvy, on the first build of this: "what is the
+ * guardian holding? Are those lantern? Oh my God" — it was a bare glowing cube
+ * floating near the shaft with a disconnected ring, nothing that actually read
+ * as a lantern housing. Rebuilt with a real cage: a collar at the tip, four
+ * corner posts, a light behind them, a peaked roof, and a hanging ring — the
+ * silhouette detail that makes it recognisable at a glance instead of "a lit
+ * box on a stick.")
+ */
 function staff(color: number): THREE.Object3D {
   const g = new THREE.Group();
+  const brass = matte(0x8a6a3a, 0.5);
   // Chunky on purpose. At 22 mm the shaft was three pixels wide across a plaza —
   // technically present, useless as the landmark it exists to be. The whole
   // point of the guardian's kit is that you can pick him out at range.
   const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 2.0, 8), matte(0x4a3a26, 1));
   g.add(shaft);
-  const cap = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.032, 6, 14), matte(0x6a6b70, 0.5));
-  cap.position.y = 1.0;
-  cap.rotation.x = Math.PI / 2;
-  g.add(cap);
-  // The lantern: emissive and tone-mapping-exempt so it holds up at night, when
-  // knowing which figure is the honest one matters most.
+
+  // The lantern housing sits ON TOP of the shaft (which ends at y=1) rather
+  // than embedded partway down it, so it reads as a topper, not a growth.
+  const TOP = 1.0;
+  const CAGE_H = 0.26;
+  const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.1, 0.05, 10), brass);
+  collar.position.y = TOP;
+  g.add(collar);
+
+  // Four corner posts + base/roof rings — an actual cage, not a solid box, so
+  // the light shows THROUGH bars the way a real lantern does.
+  for (const [dx, dz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]] as const) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, CAGE_H, 5), brass);
+    post.position.set(dx * 0.08, TOP + CAGE_H / 2 + 0.03, dz * 0.08);
+    g.add(post);
+  }
+  const baseRing = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.012, 6, 12), brass);
+  baseRing.position.y = TOP + 0.03;
+  baseRing.rotation.x = Math.PI / 2;
+  g.add(baseRing);
+  const roofRing = baseRing.clone();
+  roofRing.position.y = TOP + CAGE_H + 0.03;
+  g.add(roofRing);
+
+  // The light itself, sized to sit INSIDE the cage rather than replace it —
+  // emissive and tone-mapping-exempt so it holds up at night, when knowing
+  // which figure is the honest one matters most. Bright enough to find at
+  // night, dim enough not to blow out: at 2.2 with toneMapped off, the bloom
+  // pass turned it into a pale cone the size of the guardian's head once the
+  // lanterns came up at dusk.
   const glass = new THREE.Mesh(
-    new THREE.BoxGeometry(0.17, 0.22, 0.17),
-    new THREE.MeshStandardMaterial({
-      color,
-      emissive: color,
-      // Bright enough to find at night, dim enough not to blow out. At 2.2 with
-      // toneMapped off, the bloom pass turned it into a pale cone the size of the
-      // guardian's head once the lanterns came up at dusk.
-      emissiveIntensity: 1.15,
-      roughness: 0.4,
-      toneMapped: false,
-    })
+    new THREE.CylinderGeometry(0.06, 0.06, CAGE_H * 0.75, 8),
+    new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.15, roughness: 0.4, toneMapped: false })
   );
-  glass.position.set(0, 0.86, 0);
+  glass.position.y = TOP + CAGE_H / 2 + 0.03;
   g.add(glass);
+
+  // Peaked roof cap + a small hanging ring — the two details that finish the
+  // read as "lantern" rather than "lit cube."
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.09, 8), brass);
+  roof.position.y = TOP + CAGE_H + 0.075;
+  g.add(roof);
+  const hook = new THREE.Mesh(new THREE.TorusGeometry(0.025, 0.007, 5, 10), brass);
+  hook.position.y = TOP + CAGE_H + 0.13;
+  hook.rotation.x = Math.PI / 2;
+  g.add(hook);
+
   return g;
 }
 

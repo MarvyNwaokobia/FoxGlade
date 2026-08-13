@@ -108,16 +108,23 @@ export function SpeechBubble({
     // Nudge back on-screen. An NPC standing near the edge of the frame anchors
     // its bubble half off it — half a sentence, cut down the middle. A speaker
     // at the edge of view should still be readable; the bubble slides in and
-    // keeps pointing at them.
-    let shift = 0;
+    // keeps pointing at them. This is anchored above the NPC's HEAD in world
+    // space, so a tall speaker (the guardian) or a close/low camera routinely
+    // projects that point above the top of the viewport entirely — you'd have
+    // to tilt the camera up to ever see the line. Vertical clamp matches the
+    // horizontal one already here for the same reason.
+    let shiftX = 0;
+    let shiftY = 0;
     const rect = el.getBoundingClientRect();
     if (rect.width > 0) {
       const margin = 8;
-      if (rect.left < margin) shift = margin - rect.left;
-      else if (rect.right > window.innerWidth - margin) shift = window.innerWidth - margin - rect.right;
+      if (rect.left < margin) shiftX = margin - rect.left;
+      else if (rect.right > window.innerWidth - margin) shiftX = window.innerWidth - margin - rect.right;
+      if (rect.top < margin) shiftY = margin - rect.top;
+      else if (rect.bottom > window.innerHeight - margin) shiftY = window.innerHeight - margin - rect.bottom;
     }
 
-    el.style.transform = `translateX(${shift.toFixed(1)}px) scale(${scale.toFixed(3)})`;
+    el.style.transform = `translate(${shiftX.toFixed(1)}px, ${shiftY.toFixed(1)}px) scale(${scale.toFixed(3)})`;
     el.style.opacity = fade.toFixed(2);
   });
 

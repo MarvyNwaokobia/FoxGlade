@@ -1235,6 +1235,12 @@ const styles: Record<string, React.CSSProperties> = {
   guardianGateOverlay: {
     position: "absolute",
     inset: 0,
+    // ABOVE the touch controls. MobileControls is a fixed overlay at zIndex 40
+    // whose two thumb zones tile the whole screen with pointerEvents:auto — the
+    // same class of bug fixed on muteBtn below, and this overlay never got it:
+    // every tap aimed at "tap to continue" was being swallowed by the look-zone
+    // underneath before it ever reached this div's own onPointerDown.
+    zIndex: 60,
     display: "flex",
     alignItems: "flex-end",
     justifyContent: "center",
