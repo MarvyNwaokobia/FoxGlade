@@ -137,6 +137,14 @@ export function PlayerController() {
       grabFaceUntil.current = performance.now() + 950;
     };
     const onKey = (e: KeyboardEvent) => {
+      // The guardian gate is a hard stop (Marvy's call): the briefing must be
+      // acknowledged before anything else happens, so E is the ONLY key that
+      // does anything while it's up — every other key (reload, market, rest)
+      // is swallowed, same treatment the day-over overlay gets.
+      if (runtime.guardianGate) {
+        if (e.code === "KeyE" && !e.repeat) runtime.guardianGate = false;
+        return;
+      }
       // `!e.repeat` matters: holding E fires the browser's key-repeat every ~30ms,
       // which re-ran faceAndGrab and restarted the pick-up clip over and over. The
       // gesture is a one-shot on the press, not a hold.
@@ -379,7 +387,10 @@ export function PlayerController() {
     // shelter, the thieves keep racing, resting is three real seconds sitting
     // down in a building someone watched you enter.
     const shopOpen = useGame.getState().shopOpen;
-    runtime.paused = shopOpen || runtime.mapOpen || useGame.getState().dayOver;
+    // The guardian gate (Marvy's call) pauses the world the same way the shop
+    // and the day-over overlay do — nobody keeps moving while you're being
+    // made to read something, that's the entire point of the gate.
+    runtime.paused = shopOpen || runtime.mapOpen || useGame.getState().dayOver || runtime.guardianGate;
     if (useGame.getState().roundState === "playing" && runtime.paused) {
       runtime.roundStartAt += dt * 1000;
     }
@@ -393,7 +404,8 @@ export function PlayerController() {
       useGame.getState().isDead ||
       useGame.getState().roundState !== "playing" ||
       shopOpen ||
-      useGame.getState().dayOver;
+      useGame.getState().dayOver ||
+      runtime.guardianGate;
 
     // Mobile look: apply the accumulated touch-drag to yaw/pitch (already in
     // radians), then consume it. No pointer lock on touch, so this replaces it.

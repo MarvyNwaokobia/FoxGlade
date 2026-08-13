@@ -39,9 +39,15 @@ import { bearingTo, setLead } from "@/engine/world/leads";
  * mid-map, as many as five times a day. Now it takes a fixed post outside your
  * door before the day starts and stands in it, which is also the only staging
  * that survives the day beginning indoors.
+ *
+ * Reading the briefing is now mandatory, not a race against a timer (Marvy's
+ * call): the moment it starts speaking, `runtime.guardianGate` goes up, which
+ * PlayerController folds into `paused` AND the movement freeze — so the whole
+ * world stops, not just you. The only way out is an explicit acknowledgment
+ * (E, or the Hud's tap prompt on touch), which is what clears the gate. There
+ * is deliberately no auto-dismiss: some people read faster than others.
  */
 const SPEAK_RANGE = 5.5;
-const HOLD_TIME = 9; // seconds the briefing stays up
 const WALK_SPEED = 2.6;
 const LEAVE_DIST = 26; // how far it walks off before vanishing
 
@@ -52,7 +58,6 @@ export function Guardian() {
   const group = useRef<THREE.Group>(null);
   const pos = useRef(VILLAGE.guardianPost.clone());
   const phase = useRef<Phase>("gone");
-  const holdClock = useRef(0);
   const facing = useRef(Math.PI);
   const briefCount = useRef(0);
   const [line, setLine] = useState<string | null>(null);
@@ -65,13 +70,18 @@ export function Guardian() {
     phase.current = "gone";
     briefCount.current = 0;
     runtime.guardianBriefed = false;
+    runtime.guardianGate = false;
     setLine(null);
     setVisible(false);
   }, [roundNonce]);
 
   useFrame((_, rawDt) => {
     const gs = useGame.getState();
-    if (gs.roundState !== "playing" || runtime.paused) return;
+    // `runtime.paused` is true WHILE the gate is up (it's what freezes the rest
+    // of the world), which would deadlock this component's own state machine —
+    // it would never see the gate clear. Keep evaluating through the pause it
+    // itself is causing; everything else still respects it as normal.
+    if (gs.roundState !== "playing" || (runtime.paused && phase.current !== "speaking")) return;
     const dt = Math.min(rawDt, 1 / 30);
 
     // Wait for the player to actually be at the controls. The opening chapter is
@@ -111,7 +121,7 @@ export function Guardian() {
         // one beat this scene exists for. It speaks when you are OUTSIDE.
         if (!runtime.sheltered && d <= SPEAK_RANGE) {
           phase.current = "speaking";
-          holdClock.current = HOLD_TIME;
+          runtime.guardianGate = true;
           const real = HINTS.find((h) => h.real);
           const first = briefCount.current === 0;
           briefCount.current++;
@@ -130,8 +140,9 @@ export function Guardian() {
         break;
 
       case "speaking":
-        holdClock.current -= dt;
-        if (holdClock.current <= 0) {
+        // Waits for PlayerController (E) or the Hud tap prompt to clear the
+        // gate — see the class doc. Nothing here counts down on its own.
+        if (!runtime.guardianGate) {
           phase.current = "leaving";
           setLine(null);
         }

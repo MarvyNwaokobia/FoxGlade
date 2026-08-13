@@ -117,6 +117,12 @@ export const runtime = {
   guardianBriefed: false,
   /** performance.now the guardian last delivered a briefing. */
   guardianSpokeAt: -1,
+  /** True while the guardian is mid-briefing and waiting on you to acknowledge
+   *  it (Marvy's call) — folds into `paused`/the movement freeze so a fast
+   *  walker can't just stroll past without reading, and only PlayerController
+   *  (E) or the Hud tap prompt clear it. No auto-dismiss timer: reading speed
+   *  isn't the game's to guess at. */
+  guardianGate: false,
   chapterName: "Dawn",
   chapterBrief: "Find the first treasure. Bank it at the vault.",
   /** performance.now a day BEGAN (dawn, whether from sleep, a new game, or a

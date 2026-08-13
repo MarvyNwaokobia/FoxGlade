@@ -108,6 +108,7 @@ export function Hud() {
   const chapterEl = useRef<HTMLDivElement>(null);
   const bannerEl = useRef<HTMLDivElement>(null);
   const dayStartEl = useRef<HTMLDivElement>(null);
+  const guardianGateEl = useRef<HTMLDivElement>(null);
   const runEl = useRef<HTMLDivElement>(null);
   const crouchEl = useRef<HTMLDivElement>(null);
   const shelterEl = useRef<HTMLDivElement>(null);
@@ -292,6 +293,17 @@ export function Hud() {
         } else {
           dayStartEl.current.style.opacity = "0";
         }
+      }
+
+      // Guardian gate (Marvy's call): while the briefing is up, PlayerController
+      // has paused and frozen the world, and the only way out is this prompt —
+      // no timer counts it down. pointerEvents only turns on while the gate is
+      // actually up, so this invisible-until-needed layer never eats a normal
+      // click/tap the rest of the run.
+      if (guardianGateEl.current) {
+        const gate = runtime.guardianGate;
+        guardianGateEl.current.style.opacity = gate ? "1" : "0";
+        guardianGateEl.current.style.pointerEvents = gate ? "auto" : "none";
       }
 
       // Fox blip: while it's scouting or attacking, the compass tracks the FOX.
@@ -671,6 +683,24 @@ export function Hud() {
           </div>
         </div>
       )}
+
+      {/* Guardian gate (Marvy's call): the briefing has to be READ, not raced
+          past. PlayerController pauses and freezes the world the instant it
+          goes up; this is the only way out. Deliberately translucent (not a
+          blackout like the death/day-over overlays) — the guardian and its
+          speech bubble stay visible, this only adds the "you must act" prompt
+          and catches the dismiss tap/click. */}
+      <div
+        ref={guardianGateEl}
+        style={styles.guardianGateOverlay}
+        onPointerDown={() => {
+          if (runtime.guardianGate) runtime.guardianGate = false;
+        }}
+      >
+        <div style={styles.guardianGateHint}>
+          {touchLayout ? "tap to continue" : <>press <b>E</b> to continue</>}
+        </div>
+      </div>
 
       {/* Round-over overlay (win / lose) */}
       {roundState !== "playing" && (
@@ -1199,6 +1229,29 @@ const styles: Record<string, React.CSSProperties> = {
   deathLoss: { fontSize: 15, color: "#ffb054", letterSpacing: 0.3 },
   deathSalvage: { fontSize: 15, color: "#f2c14e", letterSpacing: 0.3 },
   deathHint: { fontSize: 16, color: "rgba(232,238,242,0.85)" },
+  guardianGateOverlay: {
+    position: "absolute",
+    inset: 0,
+    display: "flex",
+    alignItems: "flex-end",
+    justifyContent: "center",
+    paddingBottom: 130,
+    opacity: 0,
+    transition: "opacity 0.2s ease",
+    pointerEvents: "none",
+    userSelect: "none",
+  },
+  guardianGateHint: {
+    padding: "8px 18px",
+    borderRadius: 999,
+    background: "rgba(28,24,16,0.9)",
+    border: "1px solid rgba(242,193,78,0.85)",
+    boxShadow: "0 0 18px rgba(242,193,78,0.25)",
+    color: "#ffe6b0",
+    fontSize: 14,
+    letterSpacing: 0.4,
+    whiteSpace: "nowrap",
+  },
   crosshairWrap: {
     position: "absolute",
     left: "50%",
