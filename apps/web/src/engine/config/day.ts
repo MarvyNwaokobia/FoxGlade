@@ -65,6 +65,20 @@ export function treasuresForDay(day: number): number {
   return Math.min(day, 6);
 }
 
+/**
+ * Blockers get harder across days too, not just within one. Chapter alone
+ * used to be the whole story — Night always fields the same five blockers
+ * whether it's day 1 or day 10, because chapter resets every day and nothing
+ * else touched blocker count. This layers a day-driven bonus on top of the
+ * existing chapter ramp (Blockers.tsx adds it to CHAPTERS[chapter].blockers,
+ * capped by the spawn roster), so returning players face more contested
+ * routes, not just a bigger quota. Day 1 keeps the tuned baseline (+0);
+ * capped at +3 so the roster doesn't have to keep growing forever.
+ */
+export function blockerBonusForDay(day: number): number {
+  return Math.min(Math.max(day - 1, 0), 3);
+}
+
 /** Which chapter a given day-progress falls in. */
 export function chapterAt(day: number): number {
   let idx = 0;
