@@ -71,19 +71,19 @@ export type NpcModelId = "npc_blocker" | "npc_distractor" | "npc_merchant" | "np
  * so casting the village is this table, and nothing else.
  *
  * `phantom` (dark full plate, sword and shield HELD in its hands, baked into
- * the mesh) was cast as the blocker for period-consistency, but that's exactly
- * what broke once the blocker started carrying a gun too: a knight visibly
- * holding a sword, a shield AND a rifle at once. Back to `npc_blocker` — a
- * bare-handed sci-fi trooper in tan/khaki armour, already in the repo, unused
- * since the medieval recast — which reads as an armed gunman and nothing else.
- * `berserker` (a bare-chested horned brawler) had the same problem the other
- * way for the villager: it reads as a fighter, not the unarmed local who's
- * about to casually tell you where the treasure is. `phantom` moves there
- * instead — still not perfect (a plate knight isn't quite "unarmed local"
- * either), but it's medieval, not a genre clash, and worlds better than a
- * bare-chested brawler chatting about treasure. The merchant, who shared
- * `berserker` with the villager before, gets its own key so the two can be
- * recast independently from here.
+ * the mesh) briefly stood in for the distractor — better than the alternatives
+ * at the time, but still a fighter, which is exactly wrong for an unarmed
+ * local about to casually tell you where the treasure is (2026-08-13, Marvy:
+ * "distractors holding sword and shield is out of place"). Checked every
+ * other model already in the repo first — `operator`/`sentinel` are modern
+ * tactical soldiers (wrong genre entirely), `berserker`/`npc_blocker`/
+ * `npc_thief` are already other roles and reusing any of them would make the
+ * distractor visually indistinguishable from an actual threat. None fit, so
+ * `villager` is a new model (Marvy's own Mixamo drop, `design/Mixamo/update
+ * distractor.fbx`, converted via Blender: `export_animations=False` — this
+ * pipeline loads clips separately per role — and textures downscaled
+ * 4096→1024, which alone took the GLB from 46MB to ~5MB, in line with every
+ * other NPC here). Genuinely unarmed, plainly not a combatant.
  *
  * The rule the casting follows is the oldest one there is: **you can see an
  * ally's face, and you cannot see a threat's.** The guardian is open-faced and
@@ -94,8 +94,9 @@ const MODEL_PATHS: Record<NpcModelId, string> = {
   // Bare-handed sci-fi trooper, tan/khaki armour — an armed gunman, nothing
   // held that isn't the gun itself.
   npc_blocker: "/characters/glb/npc_blocker.glb",
-  // Dark full plate. Not unarmed, but medieval and not a fighter-brawler either.
-  npc_distractor: "/characters/glb/phantom.glb",
+  // Unarmed elder villager — no weapon, no armour, reads as a local, not a
+  // combatant (see the casting note above for why this one changed).
+  npc_distractor: "/characters/glb/villager.glb",
   // The merchant's own key now — was sharing npc_distractor's berserker look.
   npc_merchant: "/characters/glb/berserker.glb",
   // Hooded wanderer. This one was already right.
