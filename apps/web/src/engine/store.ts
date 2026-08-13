@@ -4,7 +4,7 @@ import { LOOT, REST } from "@/engine/config/round";
 import { HINTS, reseedHints, clearHintHistory, type Rarity } from "@/engine/world/hints";
 import { bearingTo, clearLeads, setLead } from "@/engine/world/leads";
 import { rememberDanger } from "@/engine/fox/foxMemory";
-import { DAY, CHAPTERS, chapterAt, treasuresForDay } from "@/engine/config/day";
+import { DAY, CHAPTERS, chapterAt, treasuresForDay, chapterBriefFor } from "@/engine/config/day";
 import {
   SHOP_ITEMS,
   DEFAULT_WEAPON,
@@ -204,7 +204,7 @@ export const useGame = create<GameState>((set, get) => {
     runtime.sniffReadyAt = 0;
     runtime.chapterAt = -1;
     runtime.chapterName = CHAPTERS[0].name;
-    runtime.chapterBrief = CHAPTERS[0].brief;
+    runtime.chapterBrief = chapterBriefFor(s.day, 0);
     runtime.guardianBriefed = false;
     runtime.roundStartAt = performance.now();
     runtime.dayAnnounceAt = performance.now();
@@ -517,7 +517,7 @@ export const useGame = create<GameState>((set, get) => {
         runtime.hintCracked.fill(false);
         runtime.chapterAt = performance.now();
         runtime.chapterName = CHAPTERS[chapter].name;
-        runtime.chapterBrief = CHAPTERS[chapter].brief;
+        runtime.chapterBrief = chapterBriefFor(s.day, chapter);
       }
       // The day is spent either at nightfall, or the moment today's quota is
       // fully resolved (banked or lost to a thief) — whichever comes first.
@@ -586,7 +586,7 @@ export const useGame = create<GameState>((set, get) => {
     runtime.guardianBriefed = false; // the guardian is back at the post at dawn
     runtime.chapterAt = -1;
     runtime.chapterName = CHAPTERS[0].name;
-    runtime.chapterBrief = CHAPTERS[0].brief;
+    runtime.chapterBrief = chapterBriefFor(day, 0);
     runtime.treasureStolenAt = -1;
     runtime.treasureCrackedAt = -1;
     runtime.lootLostAt = -1;

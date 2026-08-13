@@ -66,6 +66,46 @@ export function treasuresForDay(day: number): number {
 }
 
 /**
+ * Splits the day's total quota across the three chapters that actually ask you
+ * to go find something — Morning, Afternoon, Dusk (CHAPTERS indices 1–3).
+ * Informational only (Marvy's call, DESIGN §14.10 addendum): it doesn't gate
+ * spawning or hold back the clock, same as the day-wide quota already
+ * doesn't — it exists purely so the chapter banner can tell a player how many
+ * treasures THIS stretch of the day is asking for, the way a good HUD narrates
+ * "3 to find this morning" instead of leaving them to infer it. Remainder goes
+ * to the earlier periods first, so a light day (1–2 treasures) doesn't spread
+ * a single treasure's "find 1" instruction across all three chapters.
+ */
+export function periodQuotas(day: number): [number, number, number] {
+  const total = treasuresForDay(day);
+  const base = Math.floor(total / 3);
+  const extra = total % 3;
+  return [base + (extra > 0 ? 1 : 0), base + (extra > 1 ? 1 : 0), base];
+}
+
+const PERIOD_DEADLINE: Record<number, string> = {
+  1: "by midday",
+  2: "by dusk",
+  3: "before nightfall",
+};
+
+/**
+ * The chapter banner's brief line, with the period's treasure count folded in
+ * for Morning/Afternoon/Dusk, and an explicit "bank up and head home" nudge
+ * for Night — the "it's nighttime now, go bank and rest" instruction Marvy
+ * asked for. Dawn keeps its own tutorial-specific brief untouched.
+ */
+export function chapterBriefFor(day: number, chapter: number): string {
+  const base = CHAPTERS[chapter].brief;
+  if (chapter >= 1 && chapter <= 3) {
+    const q = periodQuotas(day)[chapter - 1];
+    if (q > 0) return `${base} Find ${q} treasure${q === 1 ? "" : "s"} ${PERIOD_DEADLINE[chapter]}.`;
+  }
+  if (chapter === 4) return `${base} Bank what you're carrying, then head home to rest.`;
+  return base;
+}
+
+/**
  * Blockers get harder across days too, not just within one. Chapter alone
  * used to be the whole story — Night always fields the same five blockers
  * whether it's day 1 or day 10, because chapter resets every day and nothing
