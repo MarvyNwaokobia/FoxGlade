@@ -140,9 +140,11 @@ export function PlayerController() {
       // The guardian gate is a hard stop (Marvy's call): the briefing must be
       // acknowledged before anything else happens, so E is the ONLY key that
       // does anything while it's up — every other key (reload, market, rest)
-      // is swallowed, same treatment the day-over overlay gets.
+      // is swallowed, same treatment the day-over overlay gets. The briefing
+      // is paginated (see Guardian.tsx); E just requests "next," and Guardian
+      // itself decides whether that's another page or the actual dismiss.
       if (runtime.guardianGate) {
-        if (e.code === "KeyE" && !e.repeat) runtime.guardianGate = false;
+        if (e.code === "KeyE" && !e.repeat) runtime.guardianAdvance++;
         return;
       }
       // `!e.repeat` matters: holding E fires the browser's key-repeat every ~30ms,

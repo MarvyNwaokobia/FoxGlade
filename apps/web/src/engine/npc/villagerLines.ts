@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { HINTS } from "@/engine/world/hints";
+import { CHAPTERS, periodQuotas } from "@/engine/config/day";
 
 /**
  * What a villager tells you, and whether it's true.
@@ -62,22 +63,43 @@ const CONTRADICT_FORMS = [
 /**
  * The guardian's briefing, said once each morning and never written down.
  *
- * It carries the shape of the whole day, which is why the first one is longer:
- * where the treasure is, that dawn is the quiet hour, that the village wakes
- * against you by afternoon, and that the fox is the way back when your memory
- * gives out. It stops short of promising the fox is right, because a kit is
- * honestly and confidently wrong a good deal of the time
- * (fox/foxBrain.findScoutTarget), and overselling it on the one occasion the
- * player is guaranteed to be listening teaches exactly the wrong lesson.
+ * It carries the shape of the whole day — where the treasure is, then what
+ * changes as the day turns, chapter by chapter — which is why the first one
+ * is a short SEQUENCE of pages rather than one paragraph (Marvy's call,
+ * 2026-08-14: a wall of text "doesn't make sense," and a real morning
+ * briefing is said a line at a time, not read off in one breath). Every
+ * later morning gets the short one-page version: the day's shape is already
+ * known, only the treasure moved.
+ *
+ * It stops short of promising the fox is right, because a kit is honestly
+ * and confidently wrong a good deal of the time (fox/foxBrain.findScoutTarget),
+ * and overselling it on the one occasion the player is guaranteed to be
+ * listening teaches exactly the wrong lesson.
  */
-export function guardianBrief(at: THREE.Vector3, target: THREE.Vector3, first: boolean): string {
+export function guardianBriefPages(
+  at: THREE.Vector3,
+  target: THREE.Vector3,
+  first: boolean,
+  day: number
+): string[] {
   const d = bearingWord(at, target);
-  return first
-    ? `Listen once, for I will not repeat it. The treasure lies ${d} of here. ` +
-      `It is dawn and the village still sleeps, so take what you can before afternoon, ` +
-      `when the ones who guard it wake. Others will tell you different. They lie. ` +
-      `Send the kit if your memory fails.`
-    : `New light, new prize. This one lies ${d} of here. Go, before the village wakes.`;
+  if (!first) {
+    return [`New light, new prize. This one lies ${d} of here. Go, before the village wakes.`];
+  }
+
+  const [morningQ, afternoonQ, duskQ] = periodQuotas(day);
+  const plural = (n: number) => `${n} treasure${n === 1 ? "" : "s"}`;
+  return [
+    `Listen well, for I will not repeat it. The treasure lies ${d} of here.`,
+    `It is dawn, and the village still sleeps. ${CHAPTERS[1].brief} ` +
+      (morningQ > 0 ? `Find ${plural(morningQ)} by midday.` : `Move quickly, while the streets are quiet.`),
+    `Comes afternoon, and ${CHAPTERS[2].brief.charAt(0).toLowerCase()}${CHAPTERS[2].brief.slice(1)} ` +
+      `Trust what I have told you over any claim you hear after this. ` +
+      (afternoonQ > 0 ? `Find ${plural(afternoonQ)} more by dusk.` : ``),
+    `By dusk, ${CHAPTERS[3].brief.charAt(0).toLowerCase()}${CHAPTERS[3].brief.slice(1)} ` +
+      (duskQ > 0 ? `Find ${plural(duskQ)} more before nightfall. ` : ``) +
+      `Bank what you carry before the light fails, and send the kit if your memory does.`,
+  ];
 }
 
 /**

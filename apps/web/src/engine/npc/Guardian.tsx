@@ -11,7 +11,7 @@ import { VILLAGE } from "@/engine/world/village";
 import { HINTS } from "@/engine/world/hints";
 import { steerTowards } from "@/engine/fox/foxBrain";
 import { NpcRig, type NpcRigState } from "@/engine/character/NpcRig";
-import { guardianBrief } from "./villagerLines";
+import { guardianBriefPages } from "./villagerLines";
 import { bearingTo, setLead } from "@/engine/world/leads";
 
 /**
@@ -43,9 +43,17 @@ import { bearingTo, setLead } from "@/engine/world/leads";
  * Reading the briefing is now mandatory, not a race against a timer (Marvy's
  * call): the moment it starts speaking, `runtime.guardianGate` goes up, which
  * PlayerController folds into `paused` AND the movement freeze — so the whole
- * world stops, not just you. The only way out is an explicit acknowledgment
- * (E, or the Hud's tap prompt on touch), which is what clears the gate. There
- * is deliberately no auto-dismiss: some people read faster than others.
+ * world stops, not just you. There is deliberately no auto-dismiss: some
+ * people read faster than others.
+ *
+ * The first briefing of a run is PAGED rather than one paragraph (Marvy's
+ * call, 2026-08-14): it walks the shape of the whole day, one beat per tap —
+ * where the treasure is, then morning, then afternoon, then dusk — instead of
+ * a wall of text nobody actually reads end to end. E (or the Hud's tap
+ * prompt on touch) bumps `runtime.guardianAdvance`; this component is the
+ * only thing that knows how many pages there are, so it's the one deciding
+ * whether that bump means "next page" or "actually clear the gate." Later
+ * mornings get a single short page — the day's shape is already known.
  */
 const SPEAK_RANGE = 5.5;
 const WALK_SPEED = 2.6;
@@ -79,6 +87,12 @@ export function Guardian() {
   const [line, setLine] = useState<string | null>(null);
   const [visible, setVisible] = useState(false);
   const anim = useRef<NpcRigState>({ moving: false, running: false, fireAt: -1, speed: WALK_SPEED });
+  /** The current briefing's pages, and where we are in them. */
+  const pages = useRef<string[]>([]);
+  const pageIndex = useRef(0);
+  /** Last `runtime.guardianAdvance` value we've already acted on, so we only
+   *  react to a NEW tap/E-press rather than re-triggering on our own reads. */
+  const seenAdvance = useRef(0);
 
   // Reset when a run restarts.
   const roundNonce = useGame((s) => s.roundNonce);
@@ -86,8 +100,13 @@ export function Guardian() {
     phase.current = "gone";
     briefCount.current = 0;
     unshelteredAt.current = -1;
+    pages.current = [];
+    pageIndex.current = 0;
+    seenAdvance.current = runtime.guardianAdvance;
     runtime.guardianBriefed = false;
     runtime.guardianGate = false;
+    runtime.guardianPage = 0;
+    runtime.guardianPageCount = 1;
     setLine(null);
     setVisible(false);
   }, [roundNonce]);
@@ -151,7 +170,12 @@ export function Guardian() {
           const real = HINTS.find((h) => h.real);
           const first = briefCount.current === 0;
           briefCount.current++;
-          setLine(guardianBrief(pos.current, real?.pos ?? runtime.playerPos, first));
+          pages.current = guardianBriefPages(pos.current, real?.pos ?? runtime.playerPos, first, gs.day);
+          pageIndex.current = 0;
+          seenAdvance.current = runtime.guardianAdvance;
+          runtime.guardianPage = 0;
+          runtime.guardianPageCount = pages.current.length;
+          setLine(pages.current[0]);
           runtime.guardianBriefed = true;
           runtime.guardianSpokeAt = performance.now();
           if (real) {
@@ -166,8 +190,20 @@ export function Guardian() {
         break;
 
       case "speaking":
-        // Waits for PlayerController (E) or the Hud tap prompt to clear the
-        // gate — see the class doc. Nothing here counts down on its own.
+        // Waits for PlayerController (E) or the Hud tap prompt to bump
+        // `guardianAdvance` — see the class doc. Nothing here counts down on
+        // its own. Each bump either turns the page or, on the last page,
+        // clears the gate.
+        if (runtime.guardianAdvance !== seenAdvance.current) {
+          seenAdvance.current = runtime.guardianAdvance;
+          pageIndex.current++;
+          if (pageIndex.current >= pages.current.length) {
+            runtime.guardianGate = false;
+          } else {
+            runtime.guardianPage = pageIndex.current;
+            setLine(pages.current[pageIndex.current]);
+          }
+        }
         if (!runtime.guardianGate) {
           phase.current = "leaving";
           setLine(null);

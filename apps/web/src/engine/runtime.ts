@@ -123,6 +123,19 @@ export const runtime = {
    *  (E) or the Hud tap prompt clear it. No auto-dismiss timer: reading speed
    *  isn't the game's to guess at. */
   guardianGate: false,
+  /** Bumped by PlayerController (E) or the Hud tap prompt each time the player
+   *  acknowledges the CURRENT page of the briefing. Guardian.tsx watches this
+   *  counter rather than being told to dismiss directly, because the briefing
+   *  is now paginated: most bumps just advance to the next page (and it's the
+   *  one place that knows how many pages there are); only the last one clears
+   *  `guardianGate`. */
+  guardianAdvance: 0,
+  /** Current page (0-based) and total page count of the briefing on screen —
+   *  written by Guardian.tsx, read by the Hud to draw a "page 2 of 4" dot row
+   *  so a multi-part briefing doesn't read as a single dismiss with no sense
+   *  of how much is left. */
+  guardianPage: 0,
+  guardianPageCount: 1,
   chapterName: "Dawn",
   chapterBrief: "Find the first treasure. Bank it at the vault.",
   /** performance.now a day BEGAN (dawn, whether from sleep, a new game, or a

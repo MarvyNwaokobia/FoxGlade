@@ -109,6 +109,7 @@ export function Hud() {
   const bannerEl = useRef<HTMLDivElement>(null);
   const dayStartEl = useRef<HTMLDivElement>(null);
   const guardianGateEl = useRef<HTMLDivElement>(null);
+  const guardianGateDotsEl = useRef<HTMLDivElement>(null);
   const runEl = useRef<HTMLDivElement>(null);
   const crouchEl = useRef<HTMLDivElement>(null);
   const shelterEl = useRef<HTMLDivElement>(null);
@@ -304,6 +305,22 @@ export function Hud() {
         const gate = runtime.guardianGate;
         guardianGateEl.current.style.opacity = gate ? "1" : "0";
         guardianGateEl.current.style.pointerEvents = gate ? "auto" : "none";
+      }
+      // Page dots for a multi-part briefing — see the note by the ref decl for
+      // why this is a manual innerHTML rebuild rather than JSX bound to
+      // `runtime.guardianPage`. Cheap (a handful of small divs) and only runs
+      // while the gate is actually up, same budget as the banner/day-start
+      // toasts a few lines above.
+      if (guardianGateDotsEl.current) {
+        const count = runtime.guardianPageCount;
+        if (runtime.guardianGate && count > 1) {
+          guardianGateDotsEl.current.innerHTML = Array.from({ length: count }, (_, i) => {
+            const on = i === runtime.guardianPage;
+            return `<span style="display:inline-block;width:6px;height:6px;border-radius:999px;margin:0 3px;background:#ffe6b0;opacity:${on ? 1 : 0.35};transform:scale(${on ? 1.25 : 1})"></span>`;
+          }).join("");
+        } else {
+          guardianGateDotsEl.current.innerHTML = "";
+        }
       }
 
       // Fox blip: while it's scouting or attacking, the compass tracks the FOX.
@@ -694,11 +711,19 @@ export function Hud() {
         ref={guardianGateEl}
         style={styles.guardianGateOverlay}
         onPointerDown={() => {
-          if (runtime.guardianGate) runtime.guardianGate = false;
+          if (runtime.guardianGate) runtime.guardianAdvance++;
         }}
       >
         <div style={styles.guardianGateHint}>
           {touchLayout ? "tap to continue" : <>press <b>E</b> to continue</>}
+          {/* Page dots — a multi-part briefing with no sense of how much is
+              left reads as an unbounded chore. Built imperatively in the rAF
+              loop below (like the compass/banner elsewhere in this file),
+              not from JSX bound to `runtime.*` directly — `runtime` is a
+              plain mutable object the DOM HUD polls every frame precisely so
+              writing to it never triggers a React re-render, which means JSX
+              reading it inline would just render whatever it was on MOUNT. */}
+          <div ref={guardianGateDotsEl} style={styles.guardianGateDots} />
         </div>
       </div>
 
@@ -1260,6 +1285,11 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 14,
     letterSpacing: 0.4,
     whiteSpace: "nowrap",
+  },
+  guardianGateDots: {
+    display: "flex",
+    justifyContent: "center",
+    marginTop: 6,
   },
   crosshairWrap: {
     position: "absolute",
