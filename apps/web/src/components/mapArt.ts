@@ -188,6 +188,23 @@ export function drawParchmentMap(ctx: CanvasRenderingContext2D, size: number) {
   ctx.stroke();
   label(kx, kz, "Market", -14);
 
+  // Home — a little drawn roof + door, the only house marked on the map.
+  const hx = mx(VILLAGE.home.x);
+  const hz = mz(VILLAGE.home.z);
+  ctx.beginPath();
+  ctx.moveTo(hx - 8, hz + 2);
+  ctx.lineTo(hx, hz - 7);
+  ctx.lineTo(hx + 8, hz + 2);
+  ctx.closePath();
+  ctx.fillStyle = "rgba(120,160,110,0.75)";
+  ctx.fill();
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 1.8;
+  ctx.stroke();
+  ctx.fillStyle = INK;
+  ctx.fillRect(hx - 2, hz - 1, 4, 6);
+  label(hx, hz, "Home", -14);
+
   // Gate — an arch in the south wall.
   const gx = mx(VILLAGE.spawn.x);
   const gz = mz(VILLAGE.spawn.z);

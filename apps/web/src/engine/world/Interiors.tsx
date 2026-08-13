@@ -4,7 +4,7 @@ import { useMemo, useRef } from "react";
 import { useGLTF } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { ENTERABLES, HOME_INDEX, INTERIORS, VILLAGE, type Building } from "./village";
+import { ENTERABLES, INTERIORS, VILLAGE, type Building } from "./village";
 import { THEME } from "./theme";
 import { useVillageMaterials } from "./VillageMesh";
 import { runtime } from "@/engine/runtime";
@@ -19,7 +19,6 @@ const MODELS = {
   lantern: "/models/Lantern_01/Lantern_01_1k.gltf",
   shelf: "/models/Shelf_01/Shelf_01_1k.gltf",
   pot: "/models/ceramic_pot/ceramic_pot_1k.gltf",
-  bench: "/models/props/painted_wooden_bench/painted_wooden_bench_1k.gltf",
 } as const;
 Object.values(MODELS).forEach((u) => useGLTF.preload(u));
 
@@ -51,6 +50,65 @@ function Prop({
   return <primitive object={obj} position={position} rotation={[0, rotation, 0]} scale={scale} />;
 }
 
+/**
+ * The bed — built from primitives, not a downloaded model. There's no free bed
+ * asset in the project's CC0 set, and this is the one piece of furniture that
+ * has to read unmistakably as "bed" the instant you open your eyes each
+ * morning, so it gets a real frame + mattress + pillow + blanket rather than
+ * another borrowed prop standing in for it.
+ *
+ * Local space: head (pillow end) at -Z, foot at +Z, centred on X.
+ */
+function Bed({ position, rotation = 0 }: { position: [number, number, number]; rotation?: number }) {
+  const L = 2.0; // frame length (head to foot)
+  const W = 1.1; // frame width
+  const frameH = 0.32;
+  const mattressH = 0.16;
+  const headboardH = 0.78;
+
+  const frameMat = useMemo(
+    () => new THREE.MeshStandardMaterial({ color: THEME.wallTimber, roughness: 0.85 }),
+    []
+  );
+  const mattressMat = useMemo(
+    () => new THREE.MeshStandardMaterial({ color: "#e4d8bd", roughness: 0.95 }),
+    []
+  );
+  const pillowMat = useMemo(
+    () => new THREE.MeshStandardMaterial({ color: "#f3ecdc", roughness: 0.95 }),
+    []
+  );
+  const blanketMat = useMemo(
+    () => new THREE.MeshStandardMaterial({ color: "#7a3630", roughness: 0.9 }),
+    []
+  );
+
+  return (
+    <group position={position} rotation={[0, rotation, 0]}>
+      {/* Headboard */}
+      <mesh material={frameMat} position={[0, headboardH / 2, -L / 2 + 0.04]} receiveShadow>
+        <boxGeometry args={[W, headboardH, 0.08]} />
+      </mesh>
+      {/* Frame / base */}
+      <mesh material={frameMat} position={[0, frameH / 2, 0]} receiveShadow>
+        <boxGeometry args={[W, frameH, L]} />
+      </mesh>
+      {/* Mattress */}
+      <mesh material={mattressMat} position={[0, frameH + mattressH / 2, 0]} receiveShadow>
+        <boxGeometry args={[W - 0.1, mattressH, L - 0.1]} />
+      </mesh>
+      {/* Pillow, at the headboard end */}
+      <mesh material={pillowMat} position={[0, frameH + mattressH + 0.06, -L / 2 + 0.32]} receiveShadow>
+        <boxGeometry args={[W * 0.55, 0.12, 0.34]} />
+      </mesh>
+      {/* Blanket, folded over the foot half */}
+      <mesh material={blanketMat} position={[0, frameH + mattressH + 0.03, L * 0.16]} receiveShadow>
+        <boxGeometry args={[W - 0.06, 0.06, L * 0.58]} />
+      </mesh>
+    </group>
+  );
+}
+
 interface Rect {
   minX: number;
   maxX: number;
@@ -71,15 +129,15 @@ function isBank(r: Rect) {
 }
 
 /**
- * Furnish one enterable house. The bank interior becomes a vault (chest, shelf,
- * strongboxes); HOME gets a bed and your own chest; other houses get a lived-in
- * mix (table, chairs, barrels, pots). A warm point light + a timber floor make
- * the room read as a real interior rather than the inside of a stone box.
+ * Furnish one of the two enterable, walk-in-and-look-around interiors: HOME
+ * (bed, chest, table) or the bank (vault: chest, shelf, strongboxes). The
+ * market is the only other enterable space and furnishes itself (stalls in
+ * VillageMesh) — no room to dress here. A warm point light + a timber floor
+ * make the room read as a real interior rather than the inside of a stone box.
  *
- * Home is furnished differently on purpose. Every day now starts and ends in
- * this room, so it has to be recognisable the moment you open your eyes —
- * waking in a room laid out exactly like four other houses would read as being
- * dropped somewhere, which is the opposite of coming home.
+ * Home is the only furnished house on purpose. Every day now starts and ends
+ * in this room, so it has to be recognisable the moment you open your eyes —
+ * and a village of identical walk-in houses would dilute that, not sell it.
  */
 function Interior({ b, r, floorMat, index }: { b: Building; r: Rect; floorMat: THREE.Material; index: number }) {
   const cx = (r.minX + r.maxX) / 2;
@@ -87,11 +145,10 @@ function Interior({ b, r, floorMat, index }: { b: Building; r: Rect; floorMat: T
   const floorW = r.maxX - r.minX;
   const floorD = r.maxZ - r.minZ;
   const bank = isBank(r);
-  const home = index === HOME_INDEX;
 
   // Only render (and light) this interior while the player is inside it — outside,
-  // its furniture + fill light are pure waste (5 houses × furniture + a point
-  // light each). Invisible groups are culled and their lights skipped.
+  // its furniture + fill light are pure waste. Invisible groups are culled and
+  // their lights skipped.
   const grp = useRef<THREE.Group>(null);
   useFrame(() => {
     if (grp.current) grp.current.visible = runtime.shelterIndex === index;
@@ -117,7 +174,7 @@ function Interior({ b, r, floorMat, index }: { b: Building; r: Rect; floorMat: T
           <Prop model="pot" position={at(r, 0.85, 0.7)} scale={1.1} />
           <Prop model="lantern" position={at(r, -0.85, 0.8)} />
         </>
-      ) : home ? (
+      ) : (
         <>
           {/* Your room. The door is the +X wall, so the whole layout keeps the
               lane in front of it clear: nothing sits where nx > 0.4 and the z
@@ -127,24 +184,13 @@ function Interior({ b, r, floorMat, index }: { b: Building; r: Rect; floorMat: T
 
               The bed is against the far wall, furthest from the street, with
               the chest at the foot of it. */}
-          <Prop model="bench" position={at(r, -0.85, -0.45)} rotation={Math.PI / 2} scale={1.15} />
+          <Bed position={at(r, -0.85, -0.45)} rotation={Math.PI / 2} />
           <Prop model="chest" position={at(r, -0.85, 0.6)} rotation={Math.PI / 2} scale={0.85} />
           <Prop model="table" position={at(r, 0.15, -0.85)} />
           <Prop model="chair" position={at(r, 0.15, -0.4)} rotation={Math.PI} />
           <Prop model="shelf" position={at(r, -0.25, 0.95)} rotation={Math.PI} />
           <Prop model="lantern" position={at(r, -0.9, 0.95)} />
           <Prop model="basket" position={at(r, 0.6, 0.9)} />
-        </>
-      ) : (
-        <>
-          <Prop model="table" position={[cx, 0, cz]} rotation={floorW >= floorD ? 0 : Math.PI / 2} />
-          <Prop model="chair" position={at(r, -0.35, -0.5)} rotation={0.2} />
-          <Prop model="chair" position={at(r, 0.35, 0.5)} rotation={Math.PI + 0.2} />
-          <Prop model="barrel" position={at(r, 0.85, -0.85)} />
-          <Prop model="barrel" position={at(r, 0.7, -0.85)} scale={0.95} />
-          <Prop model="basket" position={at(r, -0.85, 0.85)} />
-          <Prop model="pot" position={at(r, -0.85, -0.85)} />
-          <Prop model="lantern" position={at(r, 0.85, 0.85)} />
         </>
       )}
     </group>

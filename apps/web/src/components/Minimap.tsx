@@ -175,6 +175,7 @@ export function Minimap() {
       // on the market's marker and the two were unreadable together.
       marker(ctx, mx(VILLAGE.bank.x), mz(VILLAGE.bank.z), "#ffd873", "🏦", "BANK", false, t, true);
       marker(ctx, mx(VILLAGE.market.x), mz(VILLAGE.market.z), "#4e93f2", "🛒", "MARKET", true, t, false);
+      marker(ctx, mx(VILLAGE.home.x), mz(VILLAGE.home.z), "#7cce6b", "🏠", "HOME", false, t, false);
 
       // Player heading arrow.
       const px = mx(runtime.playerPos.x);

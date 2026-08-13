@@ -78,7 +78,13 @@ export const VILLAGE = {
  * north from the gate, a market plaza sits west, a shallow treasure courtyard
  * hides east, and the deep-north cluster guards the rare treasure nook.
  * (Boxes stay axis-aligned so collision remains trivial; rotated buildings come
- * with the art pass.) Five houses are enterable.
+ * with the art pass.)
+ *
+ * Only three buildings are enterable, and only one is a furnished "house":
+ * HOME (your bedroom), the bank (the vault), and the market (an open-air
+ * enclosure, not a room). Every other building is a solid block — a village
+ * of identical walk-in houses read as a maze of empty rooms, not a home you
+ * come back to.
  */
 export const BUILDINGS: Building[] = [
   // South cluster around the gate — staggered, not mirrored
@@ -96,17 +102,17 @@ export const BUILDINGS: Building[] = [
   // Central weave — tight alleys and a bent main route
   { x: -3, z: 12, w: 8, d: 5, h: 6 },
   { x: 6, z: 6, w: 5, d: 8, h: 7 },
-  { x: -6, z: -1, w: 6, d: 7, h: 4, door: { side: "E" } },
+  { x: -6, z: -1, w: 6, d: 7, h: 4 },
   { x: 3, z: -7, w: 9, d: 5, h: 5 },
   { x: 14, z: 1, w: 6, d: 6, h: 5 },
 
   // East courtyard hiding the shallow (common) treasure pocket
-  { x: 23, z: -7, w: 8, d: 7, h: 6, door: { side: "W" } },
+  { x: 23, z: -7, w: 8, d: 7, h: 6 },
   { x: 28, z: -15, w: 6, d: 8, h: 5 },
   { x: 15, z: -16, w: 6, d: 6, h: 5 },
 
   // Deep-north cluster guarding the rare treasure nook, plus a backdrop wall
-  { x: -12, z: -18, w: 8, d: 8, h: 6, door: { side: "S" } },
+  { x: -12, z: -18, w: 8, d: 8, h: 6 },
   { x: -2, z: -25, w: 7, d: 6, h: 7 },
   { x: 8, z: -27, w: 8, d: 7, h: 5 },
   { x: -20, z: -28, w: 9, d: 6, h: 5 },
