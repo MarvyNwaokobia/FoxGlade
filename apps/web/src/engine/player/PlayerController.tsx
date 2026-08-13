@@ -140,11 +140,10 @@ export function PlayerController() {
       // which re-ran faceAndGrab and restarted the pick-up clip over and over. The
       // gesture is a one-shot on the press, not a hold.
       if (e.code === "KeyE" && !e.repeat) {
-        // Bed first. Once the light has gone and you are standing in your own
-        // room, E is for turning in — there is nothing else in here to press it
-        // at, and the alternative (a key of its own) would be a control that
-        // does nothing for the entire day until the one moment it doesn't.
-        if (runtime.shelterIndex === HOME_INDEX && useGame.getState().dayOver) {
+        // The day-over overlay is a hard stop (§14.10) — E sleeps you through
+        // to the next day from wherever you're standing, no walk home needed.
+        // Outranks everything else E does, same as the old bed-only version did.
+        if (useGame.getState().dayOver) {
           useGame.getState().sleep();
         } else if (runtime.nearHintIsReal && runtime.nearHintIndex >= 0 && !runtime.hintClaimed[runtime.nearHintIndex]) {
           useGame.getState().claimTreasure(runtime.nearHintIndex);
@@ -164,11 +163,11 @@ export function PlayerController() {
       if (e.code === "KeyB" && !e.repeat && runtime.nearMarket && !useGame.getState().shopOpen) {
         useGame.getState().openShop();
       }
-      // R is context-sensitive: respawn when you're down, reload when you're up.
-      // They can never both apply, and R is where every player's finger already
-      // goes for a reload.
+      // R is context-sensitive: retry the day from the day-over overlay, respawn
+      // when you're down, reload otherwise. The three never overlap.
       if (e.code === "KeyR" && !e.repeat) {
-        if (useGame.getState().isDead) useGame.getState().respawn();
+        if (useGame.getState().dayOver) useGame.getState().retryDay();
+        else if (useGame.getState().isDead) useGame.getState().respawn();
         else useGame.getState().startReload();
       }
       if (e.code === "Enter" && useGame.getState().roundState !== "playing") {
@@ -371,13 +370,15 @@ export function PlayerController() {
     const dt = Math.min(rawDt, 1 / 30); // clamp big frame gaps so physics stays sane
     const k = keys.current;
 
-    // The world pauses for MENUS only — the shop overlay and the map. Being
-    // indoors used to pause it too, which turned every doorway into a pause
-    // button (see store.damagePlayer for the full reasoning). The day now runs
-    // while you shelter, the thieves keep racing, and resting is three real
-    // seconds of sitting down in a building someone watched you enter.
+    // The world pauses for MENUS — the shop overlay and the map — and now also
+    // for a spent day (§14.10): dayOver is a hard stop, the day-over overlay
+    // takes the screen, and nothing should keep fighting/racing behind it while
+    // you decide whether to sleep on or retry. Being indoors on its own does
+    // NOT pause it (see store.damagePlayer for why): the day runs while you
+    // shelter, the thieves keep racing, resting is three real seconds sitting
+    // down in a building someone watched you enter.
     const shopOpen = useGame.getState().shopOpen;
-    runtime.paused = shopOpen || runtime.mapOpen;
+    runtime.paused = shopOpen || runtime.mapOpen || useGame.getState().dayOver;
     if (useGame.getState().roundState === "playing" && runtime.paused) {
       runtime.roundStartAt += dt * 1000;
     }
@@ -387,7 +388,11 @@ export function PlayerController() {
       useGame.getState().advanceDay(dt / DAY.driftSeconds);
     }
     runtime.dayProgress = useGame.getState().dayProgress;
-    const frozen = useGame.getState().isDead || useGame.getState().roundState !== "playing" || shopOpen;
+    const frozen =
+      useGame.getState().isDead ||
+      useGame.getState().roundState !== "playing" ||
+      shopOpen ||
+      useGame.getState().dayOver;
 
     // Mobile look: apply the accumulated touch-drag to yaw/pitch (already in
     // radians), then consume it. No pointer lock on touch, so this replaces it.

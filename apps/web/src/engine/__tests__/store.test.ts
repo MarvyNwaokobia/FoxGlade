@@ -215,24 +215,31 @@ describe("going down", () => {
   });
 });
 
-describe("day-start / day-end toasts (DESIGN §14.10)", () => {
-  it("fires the day-end toast exactly once, when the quota resolves", () => {
-    useGame.setState({ day: 2, treasuresRequired: 1, treasuresResolved: 0, dayOver: false });
-    runtime.dayEndAt = -1;
-    useGame.getState().advanceDay(0);
-    expect(useGame.getState().dayOver).toBe(false);
-    expect(runtime.dayEndAt).toBe(-1); // quota not met yet — no toast
+describe("day-over is a hard stop (DESIGN §14.10)", () => {
+  it("retryDay resets the day in place — same reset a no-charm death forces, chosen instead", () => {
+    useGame.setState({
+      day: 4, treasuresRequired: 4, treasuresResolved: 2, treasuresStolen: 1, treasuresBanked: 1,
+      dayProgress: 0.5, chapter: 2, dayOver: true, villeBanked: 500, villeEarned: 500,
+    });
+    useGame.getState().retryDay();
+    const s = useGame.getState();
+    expect(s.day).toBe(4); // same day
+    expect(s.dayOver).toBe(false);
+    expect(s.dayProgress).toBe(0);
+    expect(s.chapter).toBe(0);
+    expect(s.treasuresResolved).toBe(0);
+    expect(s.treasuresStolen).toBe(0);
+    expect(s.treasuresBanked).toBe(0);
+    expect(s.villeBanked).toBe(500); // untouched, same promise sleeping makes
+    expect(s.villeEarned).toBe(500);
+  });
 
-    useGame.setState({ treasuresResolved: 1 });
-    useGame.getState().advanceDay(0);
-    expect(useGame.getState().dayOver).toBe(true);
-    const firstFire = runtime.dayEndAt;
-    expect(firstFire).toBeGreaterThan(-1);
-
-    // Calling advanceDay again while already dayOver must not re-fire it — the
-    // toast is a one-shot for the MOMENT the day ended, not a running flag.
-    useGame.getState().advanceDay(0);
-    expect(runtime.dayEndAt).toBe(firstFire);
+  it("retryDay is a no-op before the day has actually ended", () => {
+    useGame.setState({ day: 3, dayOver: false, dayProgress: 0.4, chapter: 1 });
+    useGame.getState().retryDay();
+    const s = useGame.getState();
+    expect(s.dayProgress).toBe(0.4); // untouched
+    expect(s.chapter).toBe(1);
   });
 
   it("fires the day-start toast on sleep, restart, and a death day-restart", () => {

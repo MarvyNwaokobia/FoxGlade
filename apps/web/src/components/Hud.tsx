@@ -108,7 +108,6 @@ export function Hud() {
   const chapterEl = useRef<HTMLDivElement>(null);
   const bannerEl = useRef<HTMLDivElement>(null);
   const dayStartEl = useRef<HTMLDivElement>(null);
-  const dayEndEl = useRef<HTMLDivElement>(null);
   const runEl = useRef<HTMLDivElement>(null);
   const crouchEl = useRef<HTMLDivElement>(null);
   const shelterEl = useRef<HTMLDivElement>(null);
@@ -147,6 +146,8 @@ export function Hud() {
   const day = useGame((s) => s.day);
   const treasuresRequired = useGame((s) => s.treasuresRequired);
   const treasuresResolved = useGame((s) => s.treasuresResolved);
+  const treasuresStolen = useGame((s) => s.treasuresStolen);
+  const dayOver = useGame((s) => s.dayOver);
 
   // The control legend: up while you settle in, then out of the way. Bound to H
   // so it's never actually lost, and reshown when a new GAME starts. Not each
@@ -293,26 +294,6 @@ export function Hud() {
         }
       }
 
-      // Day-end summary: fires once `dayOver` flips true — quota resolved, or
-      // nightfall — and reports the split rather than a pass/fail, since a
-      // thief winning a race isn't a failure state (DESIGN §14.10).
-      if (dayEndEl.current) {
-        const age = now - runtime.dayEndAt;
-        if (runtime.dayEndAt > 0 && age < 5200) {
-          const st = useGame.getState();
-          const line =
-            st.treasuresStolen > 0
-              ? `${st.treasuresBanked} banked, ${st.treasuresStolen} lost to thieves.`
-              : `${st.treasuresBanked} of ${st.treasuresRequired} banked. Nothing lost.`;
-          dayEndEl.current.innerHTML =
-            `<div style="font-size:26px;font-weight:800;letter-spacing:1px">DAY ${st.day} DONE</div>` +
-            `<div style="font-size:15px;opacity:0.85;margin-top:4px">${line} Head home and rest.</div>`;
-          dayEndEl.current.style.opacity = String(age < 4200 ? 1 : (5200 - age) / 1000);
-        } else {
-          dayEndEl.current.style.opacity = "0";
-        }
-      }
-
       // Fox blip: while it's scouting or attacking, the compass tracks the FOX.
       // That's the point of the redesign — the animal is the navigation, so the
       // thing you're steering by is your companion, not a revealed answer.
@@ -423,13 +404,10 @@ export function Hud() {
       // moving, and anyone who watched you come in is on their way.
       if (shelterEl.current) {
         const canBank = runtime.nearBank && useGame.getState().villeCarrying > 0;
-        const canSleep = runtime.shelterIndex === HOME_INDEX && useGame.getState().dayOver;
-        if (canSleep) {
-          // Outranks everything else. Standing in your own room at the end of a
-          // spent day, turning in is the only thing you came here to do.
-          shelterEl.current.innerHTML = "the day is done. Press <b>E</b> to sleep.";
-          shelterEl.current.style.opacity = "1";
-        } else if (canBank) {
+        // Day's end is a hard stop now (the full-screen overlay below), not a
+        // "go find your own bed" prompt, so there's no canSleep branch here
+        // any more — E/R work anywhere once dayOver, not just at home.
+        if (canBank) {
           shelterEl.current.innerHTML = "at the vault. Press <b>E</b> to bank it and grow your fox.";
           shelterEl.current.style.opacity = "1";
         } else if (runtime.nearMarket && !useGame.getState().shopOpen) {
@@ -644,9 +622,8 @@ export function Hud() {
       {/* Chapter banner — text set from the game loop */}
       <div ref={bannerEl} style={styles.chapterBanner} />
 
-      {/* Day-start / day-end toasts — text set from the game loop */}
+      {/* Day-start toast — text set from the game loop */}
       <div ref={dayStartEl} style={styles.chapterBanner} />
-      <div ref={dayEndEl} style={styles.chapterBanner} />
 
       {/* Downed overlay (mid-round setback, not round end) */}
       {isDead && roundState === "playing" && (
@@ -669,6 +646,28 @@ export function Hud() {
             {extraLives > 0
               ? <>press <b>R</b> to come back {runtime.refugeIndex >= 0 ? "at your refuge" : "at the gate"}</>
               : <>press <b>R</b> to wake at dawn and start the day again</>}
+          </div>
+        </div>
+      )}
+
+      {/* Day-over overlay (DESIGN §14.10): a hard stop, not a "go find your own
+          bed" prompt — the instant dayOver flips true (quota resolved, or
+          nightfall), PlayerController pauses the world and this takes over,
+          same visual weight as the death screen it deliberately echoes. Two
+          ways out: sleep on to the next day, or retry this one. */}
+      {dayOver && roundState === "playing" && !isDead && (
+        <div style={styles.deathOverlay}>
+          <div style={styles.deathTitle}>Day {day} is over</div>
+          <div style={styles.deathLoss}>
+            {treasuresStolen > 0
+              ? `${treasuresBanked} banked, ${treasuresStolen} lost to thieves`
+              : `${treasuresBanked} of ${treasuresRequired} banked, nothing lost`}
+          </div>
+          <div style={styles.deathHint}>
+            press <b>E</b> to sleep and wake on Day {day + 1}
+          </div>
+          <div style={styles.deathHint}>
+            press <b>R</b> to try Day {day} again
           </div>
         </div>
       )}

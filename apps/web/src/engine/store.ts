@@ -114,6 +114,12 @@ interface GameState {
    * Warding Charm in shop.ts.
    */
   respawn: () => void;
+  /**
+   * Retry the day instead of continuing to the next one — chosen from the
+   * day-end overlay once `dayOver`, the same reset a no-charm death forces on
+   * you, but as an option rather than a punishment. No-op before the day ends.
+   */
+  retryDay: () => void;
 
   /** Which day you are on, 1-indexed. Survives sleeping (see engine/save.ts). */
   day: number;
@@ -174,7 +180,61 @@ interface GameState {
   restart: () => void;
 }
 
-export const useGame = create<GameState>((set, get) => ({
+export const useGame = create<GameState>((set, get) => {
+  /**
+   * Reset to the dawn of the CURRENT day — used by both a no-charm death and
+   * choosing to retry the day from the day-end overlay (DESIGN §14.10). Wallet,
+   * lifetime earnings and gear go through untouched, exactly like sleeping;
+   * everything about TODAY specifically (quota progress, the board, time of
+   * day) rolls back, and the day number does not change.
+   */
+  function resetToDawn(): void {
+    const s = get();
+    runtime.hintSilenced.fill(false);
+    runtime.hintStolen.fill(false);
+    runtime.hintClaimed.fill(false);
+    runtime.hintBanked.fill(false);
+    runtime.hintCracked.fill(false);
+    runtime.refugeIndex = -1;
+    runtime.lootLostAt = -1;
+    runtime.lootSalvaged = 0;
+    runtime.treasureStolenAt = -1;
+    runtime.treasureCrackedAt = -1;
+    runtime.revealRealUntil = -1;
+    runtime.sniffReadyAt = 0;
+    runtime.chapterAt = -1;
+    runtime.chapterName = CHAPTERS[0].name;
+    runtime.chapterBrief = CHAPTERS[0].brief;
+    runtime.guardianBriefed = false;
+    runtime.roundStartAt = performance.now();
+    runtime.dayAnnounceAt = performance.now();
+    clearHintHistory();
+    reseedHints(false);
+    clearLeads();
+    set({
+      dayOver: false,
+      dayProgress: 0,
+      chapter: 0,
+      treasuresBanked: 0,
+      treasuresResolved: 0,
+      treasuresStolen: 0,
+      bombsLeft: bombCapacity(s.owned),
+      restoresLeft: REST.charges,
+      lockboxes: 0,
+      playerHealth: MAX_PLAYER_HEALTH,
+      isDead: false,
+      ammoInMag: WEAPON_STATS[s.equippedWeapon].magSize,
+      reloadEndsAt: -1,
+      treasureClaimed: false,
+      claimedRarity: null,
+      treasureCracked: false,
+      villeCarrying: 0,
+      respawnNonce: s.respawnNonce + 1,
+      roundNonce: s.roundNonce + 1, // remounts/revives the NPCs, same as sleep
+    });
+  }
+
+  return {
   treasureClaimed: false,
   claimedRarity: null,
   treasureCracked: false,
@@ -417,52 +477,15 @@ export const useGame = create<GameState>((set, get) => ({
       set({ playerHealth: MAX_PLAYER_HEALTH, isDead: false, respawnNonce: s.respawnNonce + 1, extraLives: s.extraLives - 1 });
       return;
     }
-    // No charm left: the day restarts from dawn. Wallet, lifetime earnings and
-    // gear go through untouched — exactly like sleeping — but everything about
-    // TODAY specifically (quota progress, time of day, the board) rolls back,
-    // and you wake at home rather than at whatever refuge you were using.
-    runtime.hintSilenced.fill(false);
-    runtime.hintStolen.fill(false);
-    runtime.hintClaimed.fill(false);
-    runtime.hintBanked.fill(false);
-    runtime.hintCracked.fill(false);
-    runtime.refugeIndex = -1;
-    runtime.lootLostAt = -1;
-    runtime.lootSalvaged = 0;
-    runtime.treasureStolenAt = -1;
-    runtime.treasureCrackedAt = -1;
-    runtime.revealRealUntil = -1;
-    runtime.sniffReadyAt = 0;
-    runtime.chapterAt = -1;
-    runtime.chapterName = CHAPTERS[0].name;
-    runtime.chapterBrief = CHAPTERS[0].brief;
-    runtime.guardianBriefed = false;
-    runtime.roundStartAt = performance.now();
-    runtime.dayAnnounceAt = performance.now();
-    clearHintHistory();
-    reseedHints(false);
-    clearLeads();
-    set({
-      dayOver: false,
-      dayProgress: 0,
-      chapter: 0,
-      treasuresBanked: 0,
-      treasuresResolved: 0,
-      treasuresStolen: 0,
-      bombsLeft: bombCapacity(s.owned),
-      restoresLeft: REST.charges,
-      lockboxes: 0,
-      playerHealth: MAX_PLAYER_HEALTH,
-      isDead: false,
-      ammoInMag: WEAPON_STATS[s.equippedWeapon].magSize,
-      reloadEndsAt: -1,
-      treasureClaimed: false,
-      claimedRarity: null,
-      treasureCracked: false,
-      villeCarrying: 0,
-      respawnNonce: s.respawnNonce + 1,
-      roundNonce: s.roundNonce + 1, // remounts/revives the NPCs, same as sleep
-    });
+    // No charm left: the day restarts from dawn (see resetToDawn above).
+    resetToDawn();
+  },
+
+  retryDay: () => {
+    // Only reachable once the day has actually ended (the day-end overlay) —
+    // a stray keypress mid-afternoon must not wipe the day's progress.
+    if (!get().dayOver || get().roundState !== "playing") return;
+    resetToDawn();
   },
 
   day: SAVE.day,
@@ -497,12 +520,12 @@ export const useGame = create<GameState>((set, get) => ({
         runtime.chapterBrief = CHAPTERS[chapter].brief;
       }
       // The day is spent either at nightfall, or the moment today's quota is
-      // fully resolved (banked or lost to a thief) — whichever comes first. Both
-      // unlock going to bed; neither ends the game. See `dayOver` and `sleep`.
-      if (!s.dayOver && (day >= DAY.nightfall || s.treasuresResolved >= s.treasuresRequired)) {
-        next.dayOver = true;
-        runtime.dayEndAt = performance.now(); // one-shot: fires the day-end summary toast
-      }
+      // fully resolved (banked or lost to a thief) — whichever comes first.
+      // `dayOver` is a hard stop (Marvy's call): PlayerController pauses the
+      // world the instant it flips true and the HUD puts up the day-end
+      // overlay — sleep to Day N+1 or retry today, same choice a no-charm
+      // death offers. Neither ends the game.
+      if (day >= DAY.nightfall || s.treasuresResolved >= s.treasuresRequired) next.dayOver = true;
       return next as GameState;
     }),
 
@@ -672,7 +695,8 @@ export const useGame = create<GameState>((set, get) => ({
       respawnNonce: s.respawnNonce + 1,
     }));
   },
-}));
+  };
+});
 
 /**
  * Write the save whenever anything durable moves.

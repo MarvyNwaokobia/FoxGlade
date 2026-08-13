@@ -122,9 +122,6 @@ export const runtime = {
   /** performance.now a day BEGAN (dawn, whether from sleep, a new game, or a
    *  death-restart) — drives the "Day N: find X treasures" toast (§14.10). */
   dayAnnounceAt: -1,
-  /** performance.now a day ENDED (quota resolved, or nightfall) — drives the
-   *  day-end summary toast. One-shot, same pattern as `dayAnnounceAt`. */
-  dayEndAt: -1,
   /** Eased 0..1 hip→aim blend, published by PlayerController so the first-person
    *  weapon viewmodel can ride the same curve as the camera FOV instead of
    *  running a second, subtly-out-of-sync ease of its own. */
