@@ -12,6 +12,7 @@ import { runtime } from "@/engine/runtime";
 import { softShadowTexture } from "./softShadow";
 import { perfOff } from "@/engine/scene/perf";
 import { useGame } from "@/engine/store";
+import { tellProximity, moundOpacity, glintOpacity, clodLayout } from "./treasureTell";
 
 const HALF = VILLAGE.half;
 const WALL_H = 3;
@@ -417,70 +418,93 @@ function Signboard({
   );
 }
 
-const HINT_DEFAULT = "#8fd0e0"; // pale cyan — an unresolved "ping"
-const HINT_REAL = "#f2c14e"; // gold — revealed real
-const HINT_FAKE = "#7a4a4a"; // dim — revealed decoy
+const HINT_REAL = "#f2c14e"; // gold — the confirmed-find glint/gem
 
 /**
- * One hint beacon: a candidate spot, indistinguishable from every other.
+ * One treasure tell: a low mound of turned earth with a faint gold glint,
+ * identical for the real treasure and every decoy (DESIGN §14.10 slice 5).
  *
- * Two things changed here. The pings no longer recolour to reveal the real one —
- * that was the old "sniff", and the fox physically running to the treasure
- * replaced it (Phase 3). And the marker is now a WAIST-HIGH glow rather than a
- * 24-metre pillar through the skybox: with the board reseeding each chapter, a
- * beacon visible from anywhere in the village meant you could see every
- * candidate from the spawn gate and simply walk to one. There was nothing to
- * find. Now you have to get close enough to spot it, or follow the fox.
+ * This used to be a waist-high glowing cyan pad-and-pillar — legible, but a
+ * sci-fi UI marker sitting in a village the rest of the art pass has been
+ * pushing toward realistic. A patch of disturbed dirt with something faintly
+ * catching the light is the same information (there's a candidate spot here,
+ * go find out) delivered as a thing that could plausibly exist in the world,
+ * and it only resolves — brightens, settles, and only for the real one, a
+ * small gem visibly poking out of the earth — once you've actually closed the
+ * distance, rather than announcing itself from the far wall.
  */
-function HintBeacon({ index }: { index: number }) {
+function HintBeacon({ index, dirtMap }: { index: number; dirtMap: THREE.Texture }) {
   const hint = HINTS[index];
   const grp = useRef<THREE.Group>(null);
-  const pad = useRef<THREE.MeshStandardMaterial>(null);
-  const pillar = useRef<THREE.MeshStandardMaterial>(null);
+  const mound = useRef<THREE.MeshStandardMaterial>(null);
+  const glintA = useRef<THREE.Mesh>(null);
+  const glintB = useRef<THREE.Mesh>(null);
   const gem = useRef<THREE.Group>(null);
+  const clods = useMemo(() => clodLayout(index), [index]);
 
   useFrame((_, dt) => {
     // A decoy vanishes once its distractor is silenced; a real treasure vanishes
     // once a thief steals it OR the player has claimed (picked up) it.
+    let t = 0;
     if (grp.current) {
       grp.current.position.set(hint.pos.x, 0, hint.pos.z); // the board reseeds
-      grp.current.visible =
+      const live =
         !(!hint.real && runtime.hintSilenced[index]) &&
         !(hint.real && (runtime.hintStolen[index] || runtime.hintClaimed[index]));
+      grp.current.visible = live;
+      if (live) {
+        const dist = Math.hypot(hint.pos.x - runtime.playerPos.x, hint.pos.z - runtime.playerPos.z);
+        t = tellProximity(dist);
+      }
     }
-    // Every candidate looks the same, always — the fox is the only tell.
-    if (pad.current) {
-      pad.current.color.set(HINT_DEFAULT);
-      pad.current.emissive.set(HINT_DEFAULT);
+    if (mound.current) mound.current.opacity = moundOpacity(t);
+    const glintOp = glintOpacity(t);
+    const now = performance.now();
+    if (glintA.current) {
+      glintA.current.position.y = 0.18 + Math.sin(now / 480) * 0.05;
+      (glintA.current.material as THREE.MeshStandardMaterial).opacity = glintOp;
     }
-    if (pillar.current) {
-      pillar.current.color.set(HINT_DEFAULT);
-      pillar.current.emissive.set(HINT_DEFAULT);
+    if (glintB.current) {
+      glintB.current.position.y = 0.14 + Math.sin(now / 540 + 1.7) * 0.04;
+      (glintB.current.material as THREE.MeshStandardMaterial).opacity = glintOp;
     }
     if (gem.current) {
       const atThisReal = runtime.nearHintIsReal && runtime.nearHintIndex === index;
       gem.current.visible = hint.real && !runtime.hintClaimed[index] && atThisReal;
       gem.current.rotation.y += dt * 1.2;
-      gem.current.position.y = 1.6 + Math.sin(performance.now() / 600) * 0.15;
+      gem.current.position.y = 0.55 + Math.sin(now / 600) * 0.06;
     }
   });
 
   return (
     <group ref={grp}>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
-        <circleGeometry args={[3, 40]} />
-        <meshStandardMaterial ref={pad} color={HINT_DEFAULT} emissive={HINT_DEFAULT} emissiveIntensity={0.6} transparent opacity={0.5} />
+      {/* The turned-earth patch — the only always-present tell, and it never
+          says which kind of spot this is. */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]} receiveShadow>
+        <circleGeometry args={[0.75, 24]} />
+        <meshStandardMaterial ref={mound} map={dirtMap} roughness={1} transparent opacity={0.12} />
       </mesh>
-      {/* Waist-high, not a searchlight — it should read from down the street, not
-          from the far wall of the village. */}
-      <mesh position={[0, 1.1, 0]}>
-        <cylinderGeometry args={[0.16, 0.16, 2.2, 10]} />
-        <meshStandardMaterial ref={pillar} color={HINT_DEFAULT} emissive={HINT_DEFAULT} emissiveIntensity={0.9} transparent opacity={0.45} />
+      {clods.map((c, i) => (
+        <mesh key={i} position={[c.x, c.s * 0.4, c.z]} rotation={[0, c.ry, 0]} castShadow>
+          <boxGeometry args={[c.s, c.s * 0.7, c.s * 1.2]} />
+          <meshStandardMaterial map={dirtMap} roughness={1} />
+        </mesh>
+      ))}
+      {/* A faint gold glint — same for real and decoy, resolved only by walking
+          up and checking, not by watching from a few paces back. */}
+      <mesh ref={glintA} position={[0.1, 0.18, -0.05]}>
+        <sphereGeometry args={[0.04, 8, 8]} />
+        <meshStandardMaterial color={HINT_REAL} emissive={HINT_REAL} emissiveIntensity={1.4} transparent opacity={0} toneMapped={false} />
       </mesh>
+      <mesh ref={glintB} position={[-0.15, 0.14, 0.12]}>
+        <sphereGeometry args={[0.03, 8, 8]} />
+        <meshStandardMaterial color={HINT_REAL} emissive={HINT_REAL} emissiveIntensity={1.4} transparent opacity={0} toneMapped={false} />
+      </mesh>
+      {/* The confirmed find — only once you're standing at the real one. */}
       {hint.real && (
-        <group ref={gem} position={[0, 1.6, 0]}>
+        <group ref={gem} position={[0, 0.55, 0]}>
           <mesh castShadow>
-            <octahedronGeometry args={[0.7, 0]} />
+            <octahedronGeometry args={[0.4, 0]} />
             <meshStandardMaterial color="#ffd873" emissive="#f2b01e" emissiveIntensity={0.7} metalness={0.4} roughness={0.25} />
           </mesh>
         </group>
@@ -490,10 +514,16 @@ function HintBeacon({ index }: { index: number }) {
 }
 
 function Hints() {
+  const dirtMap = useTexture("/textures/dirt_floor_diff.jpg");
+  useMemo(() => {
+    dirtMap.wrapS = dirtMap.wrapT = THREE.RepeatWrapping;
+    dirtMap.repeat.set(1.4, 1.4);
+    dirtMap.colorSpace = THREE.SRGBColorSpace;
+  }, [dirtMap]);
   return (
     <>
       {HINTS.map((_, i) => (
-        <HintBeacon key={i} index={i} />
+        <HintBeacon key={i} index={i} dirtMap={dirtMap} />
       ))}
     </>
   );
