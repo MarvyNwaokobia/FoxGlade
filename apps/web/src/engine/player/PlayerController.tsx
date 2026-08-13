@@ -310,6 +310,10 @@ export function PlayerController() {
   // from the overlays that want clicking.
   const shopOpen = useGame((s) => s.shopOpen);
   const wasShopOpen = useRef(false);
+  // Edge-detects `runtime.guardianGate` frame-to-frame — it's a plain mutable
+  // field (not zustand state), so a useEffect can't key off it directly; see
+  // the exit/re-lock pair in the main useFrame below.
+  const wasGuardianGate = useRef(false);
   useEffect(() => {
     const closing = wasShopOpen.current && !shopOpen;
     wasShopOpen.current = shopOpen;
@@ -394,6 +398,30 @@ export function PlayerController() {
     if (useGame.getState().roundState === "playing" && runtime.paused) {
       runtime.roundStartAt += dt * 1000;
     }
+    // Under pointer lock, mousedown/click never hit-tests the Hud overlay at
+    // all — it's delivered straight to whatever element HAS the lock (the
+    // canvas), same as any other mouse event once locked. That's why the "tap
+    // to continue" prompt did nothing: the click was landing on the canvas as
+    // a fire input, not on the overlay underneath it. Release the lock the
+    // instant the gate goes up (same fix Shop.tsx already uses for its own
+    // overlay) so the cursor is real and can actually click the prompt, then
+    // re-acquire it automatically once the gate clears — mirrors the shop's
+    // re-lock effect above, just edge-detected per-frame since this flag
+    // isn't zustand state.
+    if (runtime.guardianGate && !wasGuardianGate.current && document.pointerLockElement === gl.domElement) {
+      document.exitPointerLock();
+    }
+    if (
+      !runtime.guardianGate &&
+      wasGuardianGate.current &&
+      !touch.enabled &&
+      useGame.getState().roundState === "playing" &&
+      !useGame.getState().isDead &&
+      !document.pointerLockElement
+    ) {
+      Promise.resolve(gl.domElement.requestPointerLock()).catch(() => {});
+    }
+    wasGuardianGate.current = runtime.guardianGate;
     // The sun creeps forward on its own so dawdling still costs light; banking is
     // what really moves it. advanceDay ends the run at nightfall.
     if (useGame.getState().roundState === "playing" && !runtime.paused) {

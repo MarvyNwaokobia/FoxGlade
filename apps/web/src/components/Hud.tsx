@@ -854,8 +854,11 @@ export function Hud() {
       )}
 
       {/* Click-to-play prompt when the mouse isn't captured (desktop only —
-          touch devices use on-screen controls, no pointer lock). */}
-      {!locked && !isTouchDevice() && (
+          touch devices use on-screen controls, no pointer lock). Suppressed
+          during the guardian gate: PlayerController releases the lock so the
+          "continue" prompt above is actually clickable, and this would just
+          be a second, contradictory prompt sitting on top of it. */}
+      {!locked && !isTouchDevice() && !runtime.guardianGate && (
         <div style={styles.lockPrompt}>
           <div style={styles.promptCard}>click to look around</div>
         </div>
