@@ -30,16 +30,20 @@ export interface Chapter {
 }
 
 /**
- * One new system per chapter. Chapter 1 has no combat at all — it exists purely
- * so a first-time player can learn the map, the fox, the bank and the market
- * without being shot at, which was impossible in the old all-at-once round.
+ * One new system per chapter. Dawn has no combat at all — it exists purely so
+ * a first-time player can find their footing, get the guardian's briefing, and
+ * take their first few steps without being shot at. That breather is
+ * deliberately BRIEF now (Marvy's call, 2026-08-13): a few seconds of real
+ * time or your first bank, not the better part of a chapter — blockers should
+ * feel like they're already out there the moment you're properly moving, not
+ * something that shows up long after you've started exploring.
  */
 export const CHAPTERS: Chapter[] = [
   { name: "Dawn",      brief: "Find the first treasure. Bank it at the vault.", dayAt: 0.00, blockers: 0, liars: false, thieves: false },
-  { name: "Morning",   brief: "Armed blockers are awake now.",                   dayAt: 0.18, blockers: 2, liars: false, thieves: false },
-  { name: "Afternoon", brief: "Not everyone in the village tells the truth.",    dayAt: 0.40, blockers: 4, liars: true,  thieves: false },
-  { name: "Dusk",      brief: "Thieves are racing you for what's left.",         dayAt: 0.62, blockers: 4, liars: true,  thieves: true },
-  { name: "Night",     brief: "Last of the light. Take what you can.",           dayAt: 0.82, blockers: 5, liars: true,  thieves: true },
+  { name: "Morning",   brief: "Armed blockers are awake now.",                   dayAt: 0.02, blockers: 5, liars: false, thieves: false },
+  { name: "Afternoon", brief: "Not everyone in the village tells the truth.",    dayAt: 0.40, blockers: 6, liars: true,  thieves: false },
+  { name: "Dusk",      brief: "Thieves are racing you for what's left.",         dayAt: 0.62, blockers: 7, liars: true,  thieves: true },
+  { name: "Night",     brief: "Last of the light. Take what you can.",           dayAt: 0.82, blockers: 8, liars: true,  thieves: true },
 ];
 
 export const DAY = {
@@ -59,10 +63,18 @@ export const DAY = {
 /**
  * How many treasures must be RESOLVED — banked by you, or lost to a thief —
  * before the day is spent (DESIGN §14.10). This is the difficulty curve now,
- * not just more blockers: day 1 asks for two, and it climbs from there.
+ * not just more blockers.
+ *
+ * Day 1 used to ask for a single treasure, which meant the day was over the
+ * instant you banked it — no room for a chapter to actually turn over, for
+ * blockers or thieves to contest anything, or even for the chapter-change
+ * instruction banner to be read before the day-over overlay buried it
+ * (Marvy's call, 2026-08-13: the day was ending before anything had a chance
+ * to happen). Starting at 3 and climbing to a cap of 8 gives every day enough
+ * runway to actually pass through Morning → Afternoon → Dusk.
  */
 export function treasuresForDay(day: number): number {
-  return Math.min(day, 6);
+  return Math.min(day + 2, 8);
 }
 
 /**

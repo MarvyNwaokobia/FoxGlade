@@ -94,6 +94,11 @@ describe("claiming", () => {
 
 describe("banking", () => {
   it("moves carried loot into the wallet AND the lifetime total", () => {
+    // Quota capped at 1 so this bank finishes the day's hunt outright — a
+    // quota still open would reseed this slot for the next find and clear
+    // `hintBanked` on it as part of that, which is a different behaviour
+    // (see the "day quota" describe block) than what's under test here.
+    useGame.setState({ treasuresRequired: 1 });
     useGame.getState().claimTreasure(0);
     useGame.getState().depositLoot();
     const s = useGame.getState();
@@ -190,6 +195,7 @@ describe("going down", () => {
   });
 
   it("cannot take back loot that was already banked", () => {
+    useGame.setState({ treasuresRequired: 1 }); // see note above — isolates from the quota reseed path
     useGame.getState().claimTreasure(0);
     useGame.getState().depositLoot();
     useGame.getState().damagePlayer(1000);

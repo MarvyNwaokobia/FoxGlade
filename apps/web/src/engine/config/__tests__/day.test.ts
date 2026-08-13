@@ -10,11 +10,12 @@ describe("periodQuotas", () => {
   });
 
   it("gives the remainder to earlier periods first", () => {
-    expect(periodQuotas(1)).toEqual([1, 0, 0]); // total 1
-    expect(periodQuotas(2)).toEqual([1, 1, 0]); // total 2
-    expect(periodQuotas(3)).toEqual([1, 1, 1]); // total 3
-    expect(periodQuotas(4)).toEqual([2, 1, 1]); // total 4
-    expect(periodQuotas(6)).toEqual([2, 2, 2]); // total 6
+    // treasuresForDay is day+2 capped at 8, so day 1 already totals 3.
+    expect(periodQuotas(1)).toEqual([1, 1, 1]); // total 3
+    expect(periodQuotas(2)).toEqual([2, 1, 1]); // total 4
+    expect(periodQuotas(3)).toEqual([2, 2, 1]); // total 5
+    expect(periodQuotas(4)).toEqual([2, 2, 2]); // total 6
+    expect(periodQuotas(6)).toEqual([3, 3, 2]); // total 8 (capped)
   });
 });
 
@@ -24,9 +25,9 @@ describe("chapterBriefFor", () => {
   });
 
   it("folds the period's treasure count into Morning/Afternoon/Dusk", () => {
-    expect(chapterBriefFor(6, 1)).toContain("Find 2 treasures by midday.");
-    expect(chapterBriefFor(6, 2)).toContain("Find 2 treasures by dusk.");
-    expect(chapterBriefFor(6, 3)).toContain("Find 2 treasures before nightfall.");
+    expect(chapterBriefFor(4, 1)).toContain("Find 2 treasures by midday.");
+    expect(chapterBriefFor(4, 2)).toContain("Find 2 treasures by dusk.");
+    expect(chapterBriefFor(4, 3)).toContain("Find 2 treasures before nightfall.");
   });
 
   it("uses singular phrasing for a quota of one", () => {
@@ -34,7 +35,10 @@ describe("chapterBriefFor", () => {
   });
 
   it("skips the sentence when that period has nothing left to allocate", () => {
-    const brief = chapterBriefFor(1, 3); // day 1 total is 1, all in Morning
+    // Not a reachable game day (treasuresForDay never returns 0 for day >= 1
+    // now that it starts at 3) — this is a defensive edge case in the pure
+    // math, exercised directly rather than through a real day number.
+    const brief = chapterBriefFor(-2, 3);
     expect(brief).toBe("Thieves are racing you for what's left.");
   });
 
