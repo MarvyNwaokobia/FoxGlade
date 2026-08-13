@@ -151,8 +151,10 @@ export function Tutorial() {
   // On touch, the bottom third of the screen is thumbs. A teaching line sitting
   // at 132px landed underneath the FIRE button and behind the verb clusters —
   // the one message the player most needs to read, printed on the controls.
+  // 260 (not 208) so it also clears Hud.tsx's shelter pill, which on a cramped
+  // portrait phone gets pushed up to 212 to clear the same buttons.
   return (
-    <div style={{ ...style, bottom: isTouchDevice() ? 208 : 132 }}>{text}</div>
+    <div style={{ ...style, bottom: isTouchDevice() ? 260 : 132 }}>{text}</div>
   );
 }
 

@@ -1,11 +1,12 @@
 "use client";
 
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import * as THREE from "three";
 import { useGame } from "@/engine/store";
 import { runtime } from "@/engine/runtime";
+import { isTouchDevice } from "@/engine/input/touch";
 
 /**
  * What an NPC is saying, anchored over its head.
@@ -87,6 +88,10 @@ export function SpeechBubble({
   const anchor = useRef<THREE.Group>(null);
   const box = useRef<HTMLDivElement>(null);
   const camera = useThree((s) => s.camera);
+  // On touch, the bottom edge of the screen is the FIRE/action/AIM thumb row
+  // (MobileControls.tsx) — clamping a bubble to within 8px of it, same as
+  // desktop, pulls dialogue down behind the buttons the player is holding.
+  const bottomMargin = useMemo(() => (isTouchDevice() ? 130 : 8), []);
 
   useFrame(() => {
     const el = box.current;
@@ -121,7 +126,7 @@ export function SpeechBubble({
       if (rect.left < margin) shiftX = margin - rect.left;
       else if (rect.right > window.innerWidth - margin) shiftX = window.innerWidth - margin - rect.right;
       if (rect.top < margin) shiftY = margin - rect.top;
-      else if (rect.bottom > window.innerHeight - margin) shiftY = window.innerHeight - margin - rect.bottom;
+      else if (rect.bottom > window.innerHeight - bottomMargin) shiftY = window.innerHeight - bottomMargin - rect.bottom;
     }
 
     el.style.transform = `translate(${shiftX.toFixed(1)}px, ${shiftY.toFixed(1)}px) scale(${scale.toFixed(3)})`;

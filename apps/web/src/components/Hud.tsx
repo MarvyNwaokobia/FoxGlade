@@ -129,6 +129,27 @@ export function Hud() {
   // smaller one: the right-hand third of a landscape phone belongs to the
   // thumb cluster, so nothing informational may live there.
   const touchLayout = useMemo(() => isTouchDevice(), []);
+  // Portrait phones only — the bottom-center info stack (health/ammo/shelter
+  // pills) is wide enough that on anything narrower than this its right edge
+  // lands inside the bottom-right thumb cluster (FIRE/action/AIM/BOMB/CROUCH
+  // in MobileControls.tsx). Same measure-on-mount-and-resize pattern as
+  // Minimap.tsx's `narrow`. Landscape/tablet/desktop don't need it — the
+  // thumb cluster is a much smaller fraction of a wide screen there.
+  const [cramped, setCramped] = useState(false);
+  useEffect(() => {
+    const measure = () => setCramped(window.innerWidth < 640);
+    measure();
+    window.addEventListener("resize", measure);
+    window.addEventListener("orientationchange", measure);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("orientationchange", measure);
+    };
+  }, []);
+  // Shift the bottom-center info stack up by a flat amount, clear of the
+  // tallest touch button (CROUCH's top edge sits ~232px above the bottom) —
+  // see the note by `cramped` above.
+  const raiseHud = touchLayout && cramped;
   const health = useGame((s) => s.playerHealth);
   const maxHealth = useGame((s) => s.maxPlayerHealth);
   const isDead = useGame((s) => s.isDead);
@@ -379,7 +400,9 @@ export function Hud() {
         const idx = runtime.nearHintIndex;
         const nearRealUnclaimed = runtime.nearHintIsReal && idx >= 0 && !runtime.hintClaimed[idx];
         if (nearRealUnclaimed) {
-          promptEl.current.innerHTML = "Treasure. Press <b>E</b> to grab, then bank it.";
+          promptEl.current.innerHTML = touchInput
+            ? "Treasure. Tap <b>GRAB</b> to claim, then bank it."
+            : "Treasure. Press <b>E</b> to grab, then bank it.";
           promptEl.current.style.color = "#ffdf8f";
           promptEl.current.style.borderColor = "rgba(242,193,78,0.6)";
           promptEl.current.style.opacity = "1";
@@ -437,10 +460,12 @@ export function Hud() {
         // "go find your own bed" prompt, so there's no canSleep branch here
         // any more — E/R work anywhere once dayOver, not just at home.
         if (canBank) {
-          shelterEl.current.innerHTML = "at the vault. Press <b>E</b> to bank it and grow your fox.";
+          shelterEl.current.innerHTML = touchInput
+            ? "at the vault. Tap <b>BANK</b> to bank it and grow your fox."
+            : "at the vault. Press <b>E</b> to bank it and grow your fox.";
           shelterEl.current.style.opacity = "1";
         } else if (runtime.nearMarket && !useGame.getState().shopOpen) {
-          shelterEl.current.innerHTML = "at the market. Press <b>E</b> to shop.";
+          shelterEl.current.innerHTML = touchInput ? "at the market. Tap <b>SHOP</b> to browse." : "at the market. Press <b>E</b> to shop.";
           shelterEl.current.style.opacity = "1";
         } else if (runtime.resting) {
           shelterEl.current.innerHTML = "patching up, <b>stay still</b>";
@@ -462,7 +487,9 @@ export function Hud() {
           shelterEl.current.innerHTML = atCap
             ? "out of sight, they'll come looking"
             : left > 0
-              ? `out of sight. <b>X</b> to patch up, ${left} left`
+              ? touchInput
+                ? `out of sight. Tap <b>REST</b> to patch up, ${left} left`
+                : `out of sight. <b>X</b> to patch up, ${left} left`
               : "out of sight, <b>no restores left</b>. Buy more at the market";
           shelterEl.current.style.opacity = "1";
         } else {
@@ -566,7 +593,7 @@ export function Hud() {
       <div ref={dmgEl} style={styles.damageFlash} />
 
       {/* Player health bar, bottom-center */}
-      <div style={styles.healthWrap}>
+      <div style={{ ...styles.healthWrap, bottom: raiseHud ? 152 : 52 }}>
         <div
           style={{
             ...styles.healthFill,
@@ -582,7 +609,7 @@ export function Hud() {
           pixel offsets, which put them straight under the touch buttons on a
           phone. One centred row reads as a single resource strip and stays clear
           of the thumb zones on every screen size. */}
-      <div style={styles.resourceRow}>
+      <div style={{ ...styles.resourceRow, bottom: raiseHud ? 174 : 74 }}>
         <div ref={ammoEl} style={styles.ammoPill} />
         <div style={{ ...styles.restorePill, opacity: restoresLeft > 0 ? 1 : 0.35 }}>✚ ×{restoresLeft}</div>
         <div style={{ ...styles.bombPill, opacity: bombsLeft > 0 ? 1 : 0.35 }}>💣 ×{bombsLeft}</div>
@@ -672,9 +699,13 @@ export function Hud() {
             <div style={styles.deathLoss}>no Warding Charm — today starts over from dawn</div>
           )}
           <div style={styles.deathHint}>
-            {extraLives > 0
-              ? <>press <b>R</b> to come back {runtime.refugeIndex >= 0 ? "at your refuge" : "at the gate"}</>
-              : <>press <b>R</b> to wake at dawn and start the day again</>}
+            {touchLayout
+              ? extraLives > 0
+                ? <>tap <b>RESPAWN</b> to come back {runtime.refugeIndex >= 0 ? "at your refuge" : "at the gate"}</>
+                : <>tap <b>RESPAWN</b> to wake at dawn and start the day again</>
+              : extraLives > 0
+                ? <>press <b>R</b> to come back {runtime.refugeIndex >= 0 ? "at your refuge" : "at the gate"}</>
+                : <>press <b>R</b> to wake at dawn and start the day again</>}
           </div>
         </div>
       )}
@@ -693,10 +724,10 @@ export function Hud() {
               : `${treasuresBanked} of ${treasuresRequired} banked, nothing lost`}
           </div>
           <div style={styles.deathHint}>
-            press <b>E</b> to sleep and wake on Day {day + 1}
+            {touchLayout ? <>tap <b>SLEEP</b> to wake on Day {day + 1}</> : <>press <b>E</b> to sleep and wake on Day {day + 1}</>}
           </div>
           <div style={styles.deathHint}>
-            press <b>R</b> to try Day {day} again
+            {touchLayout ? <>tap <b>RETRY DAY</b> to try Day {day} again</> : <>press <b>R</b> to try Day {day} again</>}
           </div>
         </div>
       )}
@@ -744,7 +775,7 @@ export function Hud() {
             </div>
           )}
           <div style={styles.roundHint}>
-            press <b>Enter</b> to play again
+            {touchLayout ? <>tap <b>PLAY AGAIN</b></> : <>press <b>Enter</b> to play again</>}
           </div>
         </div>
       )}
@@ -803,17 +834,17 @@ export function Hud() {
       )}
 
       {/* Run indicator */}
-      <div ref={runEl} style={styles.runPill}>
+      <div ref={runEl} style={{ ...styles.runPill, bottom: raiseHud ? 126 : 26 }}>
         running
       </div>
 
       {/* Crouch indicator (mutually exclusive with running) */}
-      <div ref={crouchEl} style={styles.crouchPill}>
+      <div ref={crouchEl} style={{ ...styles.crouchPill, bottom: raiseHud ? 126 : 26 }}>
         crouched
       </div>
 
       {/* Shelter / rest prompt (inside a house) — text set from the game loop */}
-      <div ref={shelterEl} style={styles.shelterPill} />
+      <div ref={shelterEl} style={{ ...styles.shelterPill, bottom: raiseHud ? 212 : 112 }} />
 
       {/* Event toast (treasure stolen / cracked) — text set from the game loop */}
       <div ref={eventEl} style={styles.eventToast} />

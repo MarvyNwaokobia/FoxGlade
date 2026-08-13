@@ -68,6 +68,7 @@ const LEFT_BTN_BOTTOM = 158;
 export function MobileControls() {
   const isDead = useGame((s) => s.isDead);
   const roundState = useGame((s) => s.roundState);
+  const dayOver = useGame((s) => s.dayOver);
 
   const eBtn = useRef<HTMLButtonElement>(null); // context label: GRAB / BANK / CLAIM
   const knob = useRef<HTMLDivElement>(null);
@@ -370,6 +371,22 @@ export function MobileControls() {
           PLAY AGAIN
         </button>
       )}
+      {/* Day-over (Hud.tsx's dedicated overlay, not the round-over one above):
+          the desktop path is two keys, E (sleep) or R (retry), and neither has
+          a touch equivalent anywhere else on the pad. Without these two, a
+          touch player whose day ends somewhere other than the vault/market
+          tile has no way to proceed at all — a real soft-lock, not just a
+          missing hint. */}
+      {!isDead && roundState === "playing" && dayOver && (
+        <>
+          <button style={{ ...styles.center, ...styles.centerLeft, background: "#2e7d46" }} {...tap("KeyE")}>
+            SLEEP
+          </button>
+          <button style={{ ...styles.center, ...styles.centerRight, background: "#8a6a2f" }} {...tap("KeyR")}>
+            RETRY DAY
+          </button>
+        </>
+      )}
     </div>
   );
 }
@@ -484,4 +501,9 @@ const styles: Record<string, React.CSSProperties> = {
     height: 64,
     fontSize: 18,
   },
+  // A day-over choice is two buttons, not one — override `center`'s single
+  // horizontal anchor so they sit side by side instead of stacked on top of
+  // each other at the same 50% point.
+  centerLeft: { left: "calc(50% - 100px)", width: 150, fontSize: 15 },
+  centerRight: { left: "calc(50% + 100px)", width: 150, fontSize: 15 },
 };

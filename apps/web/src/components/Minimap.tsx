@@ -28,8 +28,21 @@ export function Minimap() {
   const canvas = useRef<HTMLCanvasElement>(null);
   const shopOpen = useGame((s) => s.shopOpen);
   const [narrow, setNarrow] = useState(false);
+  // Separately from the width-based shrink below: on short HEIGHT (a
+  // landscape phone), the map needs to shrink MORE — at a common landscape
+  // height (~375px) even the 0.72 scale only opens a ~15px gap to CROUCH's
+  // top edge, not enough room for WalletButton to sit between them either.
+  const [short, setShort] = useState(false);
   useEffect(() => {
-    const measure = () => setNarrow(window.innerWidth < 520);
+    // Also shrink on short HEIGHT, not just narrow width — a landscape phone
+    // (wide, short) never tripped the width check, so at full size the map's
+    // lower-right corner overlapped the CROUCH button (MobileControls.tsx's
+    // right-edge stack reaches ~232px up from the bottom, more than half of a
+    // ~375-430px-tall landscape screen).
+    const measure = () => {
+      setNarrow(window.innerWidth < 520 || window.innerHeight < 440);
+      setShort(window.innerHeight < 440);
+    };
     measure();
     window.addEventListener("resize", measure);
     window.addEventListener("orientationchange", measure);
@@ -216,8 +229,10 @@ export function Minimap() {
         opacity: shopOpen ? 0 : 1,
         // 158px is 40% of a portrait phone's width, and it was reaching far
         // enough left to clip the fox pill in half. Scaled down rather than
-        // re-laid-out, so the canvas keeps its full drawing resolution.
-        transform: narrow ? "scale(0.72)" : undefined,
+        // re-laid-out, so the canvas keeps its full drawing resolution. Short
+        // (landscape) needs a bigger reduction than narrow (portrait) to
+        // actually open a usable gap above CROUCH — see the `short` note above.
+        transform: short ? "scale(0.6)" : narrow ? "scale(0.72)" : undefined,
         transformOrigin: "top right",
       }}
     >
