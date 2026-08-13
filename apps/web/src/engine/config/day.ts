@@ -20,8 +20,6 @@ export interface Chapter {
   brief: string;
   /** Where the sun sits when this chapter begins (0 = dawn, 1 = full night). */
   dayAt: number;
-  /** How many blockers are awake. */
-  blockers: number;
   /** Are any villagers lying yet? Early chapters are honest on purpose: you learn
    *  to trust people, and only then does the game start betraying that. */
   liars: boolean;
@@ -39,11 +37,11 @@ export interface Chapter {
  * something that shows up long after you've started exploring.
  */
 export const CHAPTERS: Chapter[] = [
-  { name: "Dawn",      brief: "Find the first treasure. Bank it at the vault.", dayAt: 0.00, blockers: 0, liars: false, thieves: false },
-  { name: "Morning",   brief: "Armed blockers are awake now.",                   dayAt: 0.02, blockers: 5, liars: false, thieves: false },
-  { name: "Afternoon", brief: "Not everyone in the village tells the truth.",    dayAt: 0.40, blockers: 6, liars: true,  thieves: false },
-  { name: "Dusk",      brief: "Thieves are racing you for what's left.",         dayAt: 0.62, blockers: 7, liars: true,  thieves: true },
-  { name: "Night",     brief: "Last of the light. Take what you can.",           dayAt: 0.82, blockers: 8, liars: true,  thieves: true },
+  { name: "Dawn",      brief: "Find the first treasure. Bank it at the vault.", dayAt: 0.00, liars: false, thieves: false },
+  { name: "Morning",   brief: "Armed blockers are awake now.",                   dayAt: 0.02, liars: false, thieves: false },
+  { name: "Afternoon", brief: "Not everyone in the village tells the truth.",    dayAt: 0.40, liars: true,  thieves: false },
+  { name: "Dusk",      brief: "Thieves are racing you for what's left.",         dayAt: 0.62, liars: true,  thieves: true },
+  { name: "Night",     brief: "Last of the light. Take what you can.",           dayAt: 0.82, liars: true,  thieves: true },
 ];
 
 export const DAY = {
@@ -115,20 +113,6 @@ export function chapterBriefFor(day: number, chapter: number): string {
   }
   if (chapter === 4) return `${base} Bank what you're carrying, then head home to rest.`;
   return base;
-}
-
-/**
- * Blockers get harder across days too, not just within one. Chapter alone
- * used to be the whole story — Night always fields the same five blockers
- * whether it's day 1 or day 10, because chapter resets every day and nothing
- * else touched blocker count. This layers a day-driven bonus on top of the
- * existing chapter ramp (Blockers.tsx adds it to CHAPTERS[chapter].blockers,
- * capped by the spawn roster), so returning players face more contested
- * routes, not just a bigger quota. Day 1 keeps the tuned baseline (+0);
- * capped at +3 so the roster doesn't have to keep growing forever.
- */
-export function blockerBonusForDay(day: number): number {
-  return Math.min(Math.max(day - 1, 0), 3);
 }
 
 /** Which chapter a given day-progress falls in. */
