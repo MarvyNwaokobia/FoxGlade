@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { bombCapacity, useGame } from "@/engine/store";
 import { weaponThumb } from "./weaponThumb";
-import { ItemIcon } from "./shopIcons";
+import { itemThumb } from "./itemThumb";
 import {
   SHOP_ITEMS,
   CATEGORY_ORDER,
@@ -182,9 +182,10 @@ export function Shop() {
                 const own = isOwned(i);
                 const equipped = isEquipped(i);
                 const stats = i.gunId ? WEAPON_STATS[i.gunId] : null;
-                // Weapons show the actual weapon. Everything else gets a real
-                // illustrated icon (shopIcons.tsx) — no more raw emoji glyphs.
-                const thumb = i.gunId ? weaponThumb(i.gunId) : null;
+                // Every item is a real rendered 3D model (weapons: GunMesh.ts,
+                // everything else: itemModels.ts) — same PBR studio pipeline,
+                // no more flat icons or emoji.
+                const thumb = i.gunId ? weaponThumb(i.gunId) : itemThumb(i.id);
                 // Can't afford it? Say so on the card, rather than making the player
                 // tap through to a dead Sign button to find out.
                 const short = !own && i.price > villeBanked ? i.price - villeBanked : 0;
@@ -229,7 +230,7 @@ export function Shop() {
                       {thumb ? (
                         <img src={thumb} alt="" style={styles.cardThumb} />
                       ) : (
-                        <ItemIcon itemId={i.id} size={54} color={rc} />
+                        <span style={styles.cardIconFallback}>{i.icon}</span>
                       )}
                     </div>
                     <span style={styles.cardName}>{i.name}</span>
@@ -249,11 +250,14 @@ export function Shop() {
               {sel ? (
                 <>
                   <div style={styles.footInfo}>
-                    {sel.gunId && weaponThumb(sel.gunId) ? (
-                      <img src={weaponThumb(sel.gunId)!} alt="" style={styles.footThumb} />
-                    ) : (
-                      <ItemIcon itemId={sel.id} size={34} color={RARITY_COLOR[sel.rarity]} />
-                    )}
+                    {(() => {
+                      const t = sel.gunId ? weaponThumb(sel.gunId) : itemThumb(sel.id);
+                      return t ? (
+                        <img src={t} alt="" style={styles.footThumb} />
+                      ) : (
+                        <span style={styles.cardIconFallback}>{sel.icon}</span>
+                      );
+                    })()}
                     <div>
                       <div style={styles.footName}>{sel.name}</div>
                       <div style={styles.footDesc}>{sel.desc}</div>
@@ -331,7 +335,7 @@ function PurchaseConfirm({
   onConfirm: () => void;
 }) {
   const rc = RARITY_COLOR[item.rarity];
-  const thumb = item.gunId ? weaponThumb(item.gunId) : null;
+  const thumb = item.gunId ? weaponThumb(item.gunId) : itemThumb(item.id);
   const stats = item.gunId ? WEAPON_STATS[item.gunId] : null;
   const verb = item.category === "weapon" ? "Sign & Equip" : item.id === "s_chart" ? "Read It" : "Sign & Buy";
 
@@ -357,7 +361,7 @@ function PurchaseConfirm({
               {thumb ? (
                 <img src={thumb} alt="" style={pcStyles.artThumb} />
               ) : (
-                <ItemIcon itemId={item.id} size={56} color={rc} />
+                <span style={{ fontSize: 40, lineHeight: 1 }}>{item.icon}</span>
               )}
             </div>
             <div style={{ minWidth: 0 }}>
@@ -547,6 +551,8 @@ const styles: Record<string, React.CSSProperties> = {
     objectFit: "contain",
     display: "block",
   },
+  /** Last-resort fallback when WebGL isn't available to render the real model. */
+  cardIconFallback: { position: "relative", fontSize: 34, lineHeight: 1 },
   /** Priced out of reach: readable, clearly not available yet, not hidden. */
   cardUnaffordable: { opacity: 0.48 },
   badgeShort: { color: "rgba(232,238,242,0.45)" },
