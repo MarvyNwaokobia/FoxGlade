@@ -12,6 +12,7 @@ export interface Shot {
   from: THREE.Vector3; // muzzle (cosmetic — offset from the eye, not the camera)
   to: THREE.Vector3; // impact point (enemy / wall / max range)
   hit: boolean; // hit an enemy (vs wall / air) — tints the impact spark
+  wallNormal: THREE.Vector3 | null; // set only for a wall hit — decal orientation
   at: number; // performance.now the shot fired (very negative = unused)
 }
 
@@ -21,17 +22,19 @@ export const shotPool: Shot[] = Array.from({ length: MAX_SHOTS }, () => ({
   from: new THREE.Vector3(),
   to: new THREE.Vector3(),
   hit: false,
+  wallNormal: null,
   at: -1e9,
 }));
 
 let cursor = 0;
 
 /** Record a fired shot for the ShotFX layer to draw this frame onward. */
-export function spawnShot(from: THREE.Vector3, to: THREE.Vector3, hit: boolean) {
+export function spawnShot(from: THREE.Vector3, to: THREE.Vector3, hit: boolean, wallNormal: THREE.Vector3 | null = null) {
   const s = shotPool[cursor];
   cursor = (cursor + 1) % MAX_SHOTS;
   s.from.copy(from);
   s.to.copy(to);
   s.hit = hit;
+  s.wallNormal = wallNormal;
   s.at = performance.now();
 }

@@ -80,11 +80,14 @@ function assistedDirection(origin: THREE.Vector3, dir: THREE.Vector3): THREE.Vec
   return best ?? dir;
 }
 
+/** Scratch — the wall-hit normal, filled in by raycastBoxes, read once per shot. */
+const _wallNormal = new THREE.Vector3();
+
 export function fireHitscan(
   camera: THREE.Camera,
   damageMult = 1,
   aimAssist = false,
-): { hit: boolean; point: THREE.Vector3; headshot: boolean } {
+): { hit: boolean; point: THREE.Vector3; headshot: boolean; wallNormal: THREE.Vector3 | null } {
   const origin = camera.position.clone();
   let dir = camera.getWorldDirection(new THREE.Vector3());
   if (aimAssist) dir = assistedDirection(origin, dir);
@@ -115,20 +118,23 @@ export function fireHitscan(
   // Distance to the first wall along the ray (the tracer stops at cover, and an
   // enemy behind a wall doesn't count).
   const far = origin.clone().addScaledVector(dir, GUN.range);
-  const tWall = raycastBoxes(origin, far, BOXES3D);
-  const wallDist = tWall < 1 ? tWall * GUN.range : GUN.range;
+  const tWall = raycastBoxes(origin, far, BOXES3D, _wallNormal);
+  const hitWall = tWall < 1;
+  const wallDist = hitWall ? tWall * GUN.range : GUN.range;
 
   let hit = false;
   let headshot = false;
   let endDist = wallDist;
+  let stoppedAtWall = hitWall;
   if (best && bestT < wallDist) {
     hit = true;
     headshot = bestHead;
     endDist = bestT;
+    stoppedAtWall = false;
     const dmg = GUN.damage * damageMult * (bestHead ? GUN.headshotMult : 1) * rangeFalloff(bestT);
     best.takeHit(dmg);
   }
 
   const point = origin.clone().addScaledVector(dir, endDist);
-  return { hit, point, headshot };
+  return { hit, point, headshot, wallNormal: stoppedAtWall ? _wallNormal.clone() : null };
 }

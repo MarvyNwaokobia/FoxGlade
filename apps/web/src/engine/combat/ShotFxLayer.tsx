@@ -1,15 +1,20 @@
 "use client";
 
 import { useRef } from "react";
-import { useFrame } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { MAX_SHOTS, shotPool } from "./shotfx";
 
 // Lifetimes (seconds). Tracers are brief streaks; the impact spark lingers a
-// touch so a hit reads. All bloom (PostFX) makes the emissive bits glow.
+// touch so a hit reads. Debris outlives the spark (it's still traveling when
+// the spark's gone) and the smoke puff outlives debris (it drifts, not pops).
+// All bloom (PostFX) makes the emissive bits glow.
 const TRACER_S = 0.085;
 const MUZZLE_S = 0.065;
 const IMPACT_S = 0.16;
+const DEBRIS_S = 0.32;
+const SMOKE_S = 0.55;
+const DEBRIS_PER_SHOT = 4;
 
 // Scratch (module-level so the frame loop never allocates).
 const _dir = new THREE.Vector3();
@@ -21,6 +26,13 @@ const _flareQ = new THREE.Quaternion();
 // the tracer also works for the cone (found the hard way: without it the
 // flare pointed straight up regardless of fire direction).
 const _coneAxisFix = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, 0, 0));
+const _axis = new THREE.Vector3();
+const _t1 = new THREE.Vector3();
+const _t2 = new THREE.Vector3();
+const _debrisDir = new THREE.Vector3();
+const _debrisPos = new THREE.Vector3();
+const _up = new THREE.Vector3(0, 1, 0);
+const _arbitrary = new THREE.Vector3(0.37, 0.91, 0.16); // never parallel to a shot direction
 
 /** Deterministic 0..1 "random" off the pool slot, so each of the 16 shot slots
  *  gets a fixed but different burst shape instead of every impact looking
@@ -29,6 +41,28 @@ const jitter = (i: number, salt: number) => {
   const x = Math.sin(i * 12.9898 + salt * 78.233) * 43758.5453;
   return x - Math.floor(x);
 };
+
+/**
+ * A soft, warm-grey smoke puff — same lazy-CanvasTexture trick as the bullet
+ * hole and the player's contact shadow (softShadow.ts): no image asset.
+ */
+let _smokeTex: THREE.CanvasTexture | null = null;
+function smokePuffTexture(): THREE.CanvasTexture {
+  if (_smokeTex) return _smokeTex;
+  const s = 64;
+  const c = document.createElement("canvas");
+  c.width = c.height = s;
+  const ctx = c.getContext("2d")!;
+  const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+  g.addColorStop(0, "rgba(150,138,120,0.55)");
+  g.addColorStop(0.5, "rgba(120,108,92,0.28)");
+  g.addColorStop(1, "rgba(120,108,92,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, s, s);
+  _smokeTex = new THREE.CanvasTexture(c);
+  _smokeTex.colorSpace = THREE.SRGBColorSpace;
+  return _smokeTex;
+}
 
 /**
  * Draws the pooled player shots: tracer + muzzle flash + impact spark. Reads the
@@ -42,6 +76,9 @@ export function ShotFX() {
   const muzzleFlares = useRef<(THREE.Mesh | null)[]>([]);
   const impacts = useRef<(THREE.Mesh | null)[]>([]);
   const impactHalos = useRef<(THREE.Mesh | null)[]>([]);
+  const debris = useRef<(THREE.Mesh | null)[]>([]);
+  const smoke = useRef<(THREE.Mesh | null)[]>([]);
+  const { camera } = useThree();
 
   useFrame(() => {
     const now = performance.now();
@@ -160,6 +197,66 @@ export function ShotFX() {
         } else {
           if (im.visible) im.visible = false;
           if (imHalo?.visible) imHalo.visible = false;
+        }
+      }
+
+      // Debris chips: a handful of small chips flying back off the impact in a
+      // loose cone, tumbling and dropping under gravity as they go — the spark
+      // is a flash, this is what makes the hit feel like it disturbed something
+      // solid. Direction is a deterministic function of (slot, chip) so it's
+      // stable frame to frame without storing any per-particle state.
+      if (age >= 0 && age < DEBRIS_S) {
+        _dir.copy(s.to).sub(s.from);
+        if (_dir.lengthSq() > 1e-6) {
+          _dir.normalize();
+          _axis.copy(_dir).multiplyScalar(-1); // debris flies back off the surface
+          _t1.crossVectors(_axis, _arbitrary).normalize();
+          _t2.crossVectors(_axis, _t1).normalize();
+          const t = age / DEBRIS_S;
+          const k = 1 - t;
+          for (let c = 0; c < DEBRIS_PER_SHOT; c++) {
+            const ch = debris.current[i * DEBRIS_PER_SHOT + c];
+            if (!ch) continue;
+            const theta = jitter(i * 4 + c, 5) * 0.9 + 0.15; // cone half-angle, radians
+            const phi = jitter(i * 4 + c, 6) * Math.PI * 2;
+            _debrisDir
+              .copy(_axis)
+              .multiplyScalar(Math.cos(theta))
+              .addScaledVector(_t1, Math.cos(phi) * Math.sin(theta))
+              .addScaledVector(_t2, Math.sin(phi) * Math.sin(theta));
+            const speed = 2.2 + jitter(i * 4 + c, 7) * 2.4;
+            _debrisPos.copy(s.to).addScaledVector(_debrisDir, speed * t);
+            _debrisPos.addScaledVector(_up, -4.2 * t * t); // gravity arc
+            ch.position.copy(_debrisPos);
+            const sc = 0.02 + jitter(i * 4 + c, 8) * 0.025;
+            ch.scale.setScalar(sc);
+            const cmat = ch.material as THREE.MeshBasicMaterial;
+            cmat.opacity = k * 0.9;
+            cmat.color.set(s.hit ? "#7a2e28" : "#6b5f4e");
+            ch.visible = true;
+          }
+        }
+      } else {
+        for (let c = 0; c < DEBRIS_PER_SHOT; c++) {
+          const ch = debris.current[i * DEBRIS_PER_SHOT + c];
+          if (ch?.visible) ch.visible = false;
+        }
+      }
+
+      // A soft dust/smoke puff that blooms outward from the impact and fades —
+      // slower and longer-lived than the spark, so a hit still reads a beat
+      // after the flash is gone.
+      const sm = smoke.current[i];
+      if (sm) {
+        if (age >= 0 && age < SMOKE_S) {
+          const t = age / SMOKE_S;
+          sm.position.copy(s.to);
+          sm.quaternion.copy(camera.quaternion); // billboard — always face the viewer
+          sm.scale.setScalar(0.12 + t * 0.5);
+          (sm.material as THREE.MeshBasicMaterial).opacity = (1 - t) * 0.5;
+          sm.visible = true;
+        } else if (sm.visible) {
+          sm.visible = false;
         }
       }
     }
@@ -283,6 +380,36 @@ export function ShotFX() {
               opacity={0}
               depthWrite={false}
               blending={THREE.AdditiveBlending}
+              toneMapped={false}
+            />
+          </mesh>
+          {/* Debris chips — solid matter, not light, so plain (non-additive)
+              blending: additive would make stone/wood chips glow like sparks. */}
+          {Array.from({ length: DEBRIS_PER_SHOT }).map((_, c) => (
+            <mesh
+              key={c}
+              ref={(el) => {
+                debris.current[i * DEBRIS_PER_SHOT + c] = el;
+              }}
+              visible={false}
+            >
+              <boxGeometry args={[1, 1, 1]} />
+              <meshBasicMaterial color="#6b5f4e" transparent opacity={0} depthWrite={false} toneMapped={false} />
+            </mesh>
+          ))}
+          {/* Dust puff — a soft billboard, not a glow either. */}
+          <mesh
+            ref={(el) => {
+              smoke.current[i] = el;
+            }}
+            visible={false}
+          >
+            <planeGeometry args={[1, 1]} />
+            <meshBasicMaterial
+              map={smokePuffTexture()}
+              transparent
+              opacity={0}
+              depthWrite={false}
               toneMapped={false}
             />
           </mesh>

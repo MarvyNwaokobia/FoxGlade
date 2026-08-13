@@ -22,6 +22,7 @@ import { resolveColliders, raycastBoxes } from "@/engine/world/collision";
 import { useGame } from "@/engine/store";
 import { fireHitscan, enemies } from "@/engine/combat/enemies";
 import { spawnShot } from "@/engine/combat/shotfx";
+import { spawnDecal } from "@/engine/combat/decals";
 import { spawnBomb, predictLanding } from "@/engine/combat/bombs";
 import { audio } from "@/engine/audio/audio";
 import { HINTS, HINT_RADIUS } from "@/engine/world/hints";
@@ -1039,7 +1040,8 @@ export function PlayerController() {
       // frame now that the weapon is aimed rather than posed. The old version used
       // fixed offsets from the eye, so the streak started somewhere near the
       // shoulder regardless of where the gun actually was.
-      spawnShot(runtime.muzzlePos, shot.point, shot.hit);
+      spawnShot(runtime.muzzlePos, shot.point, shot.hit, shot.wallNormal);
+      if (shot.wallNormal) spawnDecal(shot.point, shot.wallNormal);
     }
   });
 

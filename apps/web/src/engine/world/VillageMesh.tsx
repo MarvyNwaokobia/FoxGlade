@@ -10,6 +10,7 @@ import { THEME } from "./theme";
 import { Buildings3D, BuildingModel, chooseModel, tintColor, dayTintIndex, TINTS } from "./Buildings3D";
 import { runtime } from "@/engine/runtime";
 import { softShadowTexture } from "./softShadow";
+import { makeTriplanarMaterial } from "./triplanar";
 import { perfOff } from "@/engine/scene/perf";
 import { useGame } from "@/engine/store";
 import { tellProximity, moundOpacity, glintOpacity, clodLayout } from "./treasureTell";
@@ -47,10 +48,8 @@ export function useVillageMaterials(): VillageMaterials {
     groundNor: "/textures/cobblestone_05_nor_gl.jpg",
     groundRough: "/textures/cobblestone_05_rough.jpg",
     wallMap: "/textures/medieval_wall_01_diff.jpg",
-    wallNor: "/textures/medieval_wall_01_nor_gl.jpg",
     wallRough: "/textures/medieval_wall_01_rough.jpg",
     roofMap: "/textures/thatch_roof_angled_diff.jpg",
-    roofNor: "/textures/thatch_roof_angled_nor_gl.jpg",
     roofRough: "/textures/thatch_roof_angled_rough.jpg",
     timberMap: "/textures/brown_planks_05_diff.jpg",
     timberNor: "/textures/brown_planks_05_nor_gl.jpg",
@@ -68,6 +67,11 @@ export function useVillageMaterials(): VillageMaterials {
       if (srgb) t.colorSpace = THREE.SRGBColorSpace;
       return t;
     };
+    // World-space tiling for the triplanar surfaces below — wrapS/wrapT still
+    // matters (raw world-position UVs run far outside 0..1), repeat doesn't
+    // (triplanar ignores the mesh's own UVs entirely, see triplanar.ts).
+    const tri = (t: THREE.Texture, srgb = false) => cfg(t, 1, 1, srgb);
+
     // Cobblestone now floors only the walled town (~80 m), so fewer repeats keep
     // the tile size the same as before.
     const ground = new THREE.MeshStandardMaterial({
@@ -82,34 +86,32 @@ export function useVillageMaterials(): VillageMaterials {
       roughnessMap: cfg(tex.grassRough, 42, 42),
       roughness: 1,
     });
-    const wall = new THREE.MeshStandardMaterial({
-      map: cfg(tex.wallMap, 3, 2, true),
-      normalMap: cfg(tex.wallNor, 3, 2),
-      roughnessMap: cfg(tex.wallRough, 3, 2),
-      roughness: 1,
+    // Walls, ramparts and roofs are one shared material reused across boxes
+    // from 6 m houses to a 72 m rampart — UV-repeat tiling stretches the same
+    // texture to wildly different apparent sizes depending which building it
+    // lands on. Triplanar samples from world position instead, so tile size
+    // is a world scale that looks right regardless of the mesh's dimensions
+    // (see triplanar.ts). The rampart no longer needs its own hand-tuned
+    // repeat clone — it's the exact same material as the house walls now.
+    const wall = makeTriplanarMaterial({
+      map: tri(tex.wallMap, true),
+      roughnessMap: tri(tex.wallRough),
+      scale: 2.4,
     });
-    const roof = new THREE.MeshStandardMaterial({
-      map: cfg(tex.roofMap, 4, 4, true),
-      normalMap: cfg(tex.roofNor, 4, 4),
-      roughnessMap: cfg(tex.roofRough, 4, 4),
-      roughness: 1,
+    const rampart = makeTriplanarMaterial({
+      map: tex.wallMap,
+      roughnessMap: tex.wallRough,
+      scale: 2.4,
+    });
+    const roof = makeTriplanarMaterial({
+      map: tri(tex.roofMap, true),
+      roughnessMap: tri(tex.roofRough),
+      scale: 1.8,
     });
     const timber = new THREE.MeshStandardMaterial({
       map: cfg(tex.timberMap, 1, 2, true),
       normalMap: cfg(tex.timberNor, 1, 2),
       roughnessMap: cfg(tex.timberRough, 1, 2),
-      roughness: 1,
-    });
-    // Perimeter ramparts: same medieval stone, but the texture is cloned and tiled
-    // for the long 72 m walls (the building-wall repeat stretched it flat/smooth).
-    const rampMap = cfg(tex.wallMap.clone(), 24, 2, true);
-    const rampNor = cfg(tex.wallNor.clone(), 24, 2);
-    const rampRough = cfg(tex.wallRough.clone(), 24, 2);
-    rampMap.needsUpdate = rampNor.needsUpdate = rampRough.needsUpdate = true;
-    const rampart = new THREE.MeshStandardMaterial({
-      map: rampMap,
-      normalMap: rampNor,
-      roughnessMap: rampRough,
       roughness: 1,
     });
 

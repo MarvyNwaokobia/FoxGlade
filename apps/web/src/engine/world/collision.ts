@@ -42,11 +42,24 @@ export function resolveColliders(p: THREE.Vector3, r: number, colliders: Rect[])
  * (0..1) of the earliest entry, or 1 if the segment is clear. Slab method.
  * Used for camera collision: if something is between the player and the camera,
  * the camera is pulled in to that fraction so it never sits inside a wall.
+ *
+ * `outNormal`, if given, is set to the outward face normal of whichever box
+ * produced the nearest entry (a bullet-impact decal needs this to sit flush
+ * against the wall it hit) — untouched when nothing is hit. Optional and
+ * unused by the existing camera-collision callers, so this stays a pure
+ * addition to the one function rather than a second near-duplicate.
  */
-export function raycastBoxes(origin: THREE.Vector3, target: THREE.Vector3, boxes: Box3[]): number {
+export function raycastBoxes(
+  origin: THREE.Vector3,
+  target: THREE.Vector3,
+  boxes: Box3[],
+  outNormal?: THREE.Vector3
+): number {
   const d = [target.x - origin.x, target.y - origin.y, target.z - origin.z];
   const o = [origin.x, origin.y, origin.z];
   let nearest = 1;
+  let nearestAxis = -1;
+  let nearestSign = 0;
 
   for (const b of boxes) {
     const lo = [b.minX, b.minY, b.minZ];
@@ -54,6 +67,8 @@ export function raycastBoxes(origin: THREE.Vector3, target: THREE.Vector3, boxes
     let tmin = 0;
     let tmax = 1;
     let hit = true;
+    let entryAxis = -1;
+    let entrySign = 0;
 
     for (let a = 0; a < 3; a++) {
       if (Math.abs(d[a]) < 1e-8) {
@@ -64,12 +79,19 @@ export function raycastBoxes(origin: THREE.Vector3, target: THREE.Vector3, boxes
       } else {
         let t1 = (lo[a] - o[a]) / d[a];
         let t2 = (hi[a] - o[a]) / d[a];
+        // Entering through the lo face means d[a] > 0 (t1 kept its lo-face
+        // formula); entering through hi means d[a] < 0 (t1/t2 got swapped) —
+        // either way the outward normal opposes the travel direction on axis a.
         if (t1 > t2) {
           const tmp = t1;
           t1 = t2;
           t2 = tmp;
         }
-        tmin = Math.max(tmin, t1);
+        if (t1 > tmin) {
+          tmin = t1;
+          entryAxis = a;
+          entrySign = d[a] > 0 ? -1 : 1;
+        }
         tmax = Math.min(tmax, t2);
         if (tmin > tmax) {
           hit = false;
@@ -78,7 +100,18 @@ export function raycastBoxes(origin: THREE.Vector3, target: THREE.Vector3, boxes
       }
     }
 
-    if (hit && tmin >= 0 && tmin < nearest) nearest = tmin;
+    if (hit && tmin >= 0 && tmin < nearest) {
+      nearest = tmin;
+      nearestAxis = entryAxis;
+      nearestSign = entrySign;
+    }
+  }
+
+  if (outNormal && nearestAxis >= 0) {
+    outNormal.set(0, 0, 0);
+    if (nearestAxis === 0) outNormal.x = nearestSign;
+    else if (nearestAxis === 1) outNormal.y = nearestSign;
+    else outNormal.z = nearestSign;
   }
 
   return nearest;

@@ -10,6 +10,7 @@ import { VillageAmbience } from "@/engine/audio/VillageAmbience";
 import { Environment } from "@react-three/drei";
 import { Projectiles } from "@/engine/combat/ProjectileLayer";
 import { ShotFX } from "@/engine/combat/ShotFxLayer";
+import { DecalFX } from "@/engine/combat/DecalFxLayer";
 import { Bombs } from "@/engine/combat/BombLayer";
 import { Interiors } from "@/engine/world/Interiors";
 import { Props } from "@/engine/world/Props";
@@ -76,6 +77,7 @@ export function VillageScene({
       <VillageAmbience />
       <Projectiles />
       <ShotFX />
+      <DecalFX />
       <Bombs />
       {/* Post-processing (bloom + vignette) is a heavy full-screen pass — gated
           by the quality setting (off on Low/Med, on for High). */}
