@@ -23,6 +23,19 @@ const CODE_MAP: Record<string, keyof Keys> = {
   Space: "jump",
 };
 
+/** True while a keydown's target is somewhere a player is typing text — an
+ *  input, a textarea, or anything contentEditable. Without this check, WASD
+ *  (and Space/Shift) never reached a focused field at all: `preventDefault()`
+ *  below suppresses the browser's own "insert this character" behavior
+ *  regardless of what has focus, so typing "s" or "a" into the wallet email
+ *  field — or this game's own Help Center search — silently dropped the
+ *  letter. Movement is separately gated on `frozen` elsewhere, but that
+ *  happens after the character would already have been eaten. */
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
+}
+
 /** Tracks held movement keys in a ref (no re-renders). */
 export function useKeyboard() {
   const keys = useRef<Keys>({
@@ -40,6 +53,7 @@ export function useKeyboard() {
       if (action) keys.current[action] = value;
     };
     const down = (e: KeyboardEvent) => {
+      if (isTypingTarget(e.target)) return;
       if (CODE_MAP[e.code]) e.preventDefault();
       set(e.code, true);
     };
