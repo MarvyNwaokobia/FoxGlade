@@ -108,6 +108,12 @@ interface GameState {
   bankOpen: boolean;
   openBank: () => void;
   closeBank: () => void;
+  /** The village map — MapScreen.tsx. Lives here (not local component state)
+   *  so the hamburger menu can open it too, same as Tab already does; the
+   *  fold-open/fold-closed ANIMATION stays MapScreen's own local state. */
+  mapScreenOpen: boolean;
+  openMapScreen: () => void;
+  closeMapScreen: () => void;
   buyItem: (id: string) => void;
   equipWeapon: (gunId: WeaponId) => void;
 
@@ -439,6 +445,12 @@ export const useGame = create<GameState>((set, get) => {
   bankOpen: false,
   openBank: () => set((s) => (s.roundState === "playing" && !s.isDead ? { bankOpen: true } : s)),
   closeBank: () => set({ bankOpen: false }),
+  // Starts true — the very first thing a new game shows, same as MapScreen's
+  // old local `useState(true)` did. No roundState/isDead guard (unlike the
+  // other overlays above): Tab has always worked regardless of either.
+  mapScreenOpen: true,
+  openMapScreen: () => set({ mapScreenOpen: true }),
+  closeMapScreen: () => set({ mapScreenOpen: false }),
   buyItem: (id) =>
     set((s) => {
       const item = SHOP_ITEMS.find((i) => i.id === id);

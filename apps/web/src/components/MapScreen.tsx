@@ -29,7 +29,11 @@ const SIZE = 470;
 
 export function MapScreen() {
   const canvas = useRef<HTMLCanvasElement>(null);
-  const [open, setOpen] = useState(true);
+  // Lives in the store (not local state) so the hamburger menu's "Map" entry
+  // can open it too, same as Tab already does — see store.ts mapScreenOpen.
+  const open = useGame((s) => s.mapScreenOpen);
+  const openMapScreen = useGame((s) => s.openMapScreen);
+  const closeMapScreen = useGame((s) => s.closeMapScreen);
   const [closing, setClosing] = useState(false);
   /** Short-and-wide viewport (a phone on its side) — the layout goes two-column. */
   const [landscape, setLandscape] = useState(false);
@@ -56,20 +60,27 @@ export function MapScreen() {
   const newGameNonce = useGame((s) => s.newGameNonce);
   useEffect(() => {
     setClosing(false);
-    setOpen(true);
+    openMapScreen();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newGameNonce]);
 
+  // Keyboard closes are instant — no fold animation, `closing` stays false.
+  // Only a pointer dismissal (click the backdrop / "Enter the village") plays
+  // the fold-out via `dismiss()` below; that distinction is original to this
+  // component and stays true after moving `open` into the store.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code === "Tab") {
         e.preventDefault();
-        setOpen((v) => !v);
+        if (useGame.getState().mapScreenOpen) closeMapScreen();
+        else openMapScreen();
       } else if (e.code === "Escape" || e.code === "Enter" || e.code === "Space") {
-        setOpen(false);
+        closeMapScreen();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Hold the village while the map is up — otherwise villagers walk over and
@@ -80,6 +91,15 @@ export function MapScreen() {
     return () => {
       runtime.mapOpen = false;
     };
+  }, [open]);
+
+  // A pointer dismissal leaves `closing` true after the fold plays out and the
+  // sheet unmounts (see `dismiss` below). If the map is opened again later —
+  // Tab, the hamburger menu, a new day — that stale flag would apply the
+  // FOLD-CLOSE animation to the freshly mounted sheet instead of the unfold,
+  // rendering it invisible on arrival. Clear it the instant the map opens.
+  useEffect(() => {
+    if (open) setClosing(false);
   }, [open]);
 
   useEffect(() => {
@@ -97,7 +117,7 @@ export function MapScreen() {
   const dismiss = () => {
     // Let it fold away before it goes, rather than blinking out.
     setClosing(true);
-    window.setTimeout(() => setOpen(false), 340);
+    window.setTimeout(() => closeMapScreen(), 340);
   };
 
   if (!open) return null;
