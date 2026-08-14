@@ -22,6 +22,9 @@ import { Minimap } from "@/components/Minimap";
 import { MobileControls } from "@/components/MobileControls";
 import { MapScreen } from "@/components/MapScreen";
 import { Tutorial } from "@/components/Tutorial";
+import { TutorialBrief } from "@/components/TutorialBrief";
+import { Onboarding } from "@/components/Onboarding";
+import { loadOnboarding } from "@/engine/onboarding";
 import { WalletButton } from "@/components/WalletButton";
 import { isTouchDevice } from "@/engine/input/touch";
 import { PerfProbe } from "@/engine/scene/PerfProbe";
@@ -68,6 +71,14 @@ export default function Game() {
   const q = HIGH;
   // Which game this canvas is running (set by the route before mount).
   const mode = gameMode();
+
+  // Hero/egg pick, once ever, Foxglade only (Nighthaul's lore doesn't fit it).
+  // Safe to read localStorage in the initializer: this component is mounted
+  // with ssr:false (see app/page.tsx), so it never renders on the server.
+  const [onboarded, setOnboarded] = useState(() => mode.id !== "foxglade" || loadOnboarding().hasOnboarded);
+  if (mode.id === "foxglade" && !onboarded) {
+    return <Onboarding onComplete={() => setOnboarded(true)} />;
+  }
 
   return (
     <>
@@ -122,6 +133,7 @@ export default function Game() {
       <Bank />
       <HelpCenter />
       <Terms />
+      <TutorialBrief />
       <HamburgerMenu />
       {mobile && <MobileControls />}
       {/* Opening map + first-run teaching. Last in the tree so it sits above the

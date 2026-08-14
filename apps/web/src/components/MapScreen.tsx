@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { isTouchDevice } from "@/engine/input/touch";
 import { useGame } from "@/engine/store";
+import { gameMode } from "@/engine/config/mode";
+import { loadTutorial, writeTutorial } from "@/engine/tutorial";
 import { drawParchmentMap } from "./mapArt";
 
 /**
@@ -112,7 +114,16 @@ export function MapScreen() {
   const dismiss = () => {
     // Let it fold away before it goes, rather than blinking out.
     setClosing(true);
-    window.setTimeout(() => closeMapScreen(), 340);
+    window.setTimeout(() => {
+      closeMapScreen();
+      // First-run guide: fires once, ever, right after the very first time this
+      // map is dismissed — the natural "just entered the village" beat. Gated
+      // to Foxglade (Nighthaul shares this map but not its onboarding lore).
+      if (gameMode().id === "foxglade" && !loadTutorial().seenBrief) {
+        writeTutorial({ seenBrief: true });
+        useGame.getState().openTutorial();
+      }
+    }, 340);
   };
 
   if (!open) return null;

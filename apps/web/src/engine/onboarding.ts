@@ -2,11 +2,11 @@ import type { CharacterModelId } from "@/engine/character/PlayerRig";
 
 /**
  * The onboarding pick — which hero, which egg. Deliberately its OWN save file
- * (`foxglade.onboarding`, not `foxglade.save`): this is being BUILT ahead of
- * being wired into the actual game start (Marvy's call — build the screen now,
- * wire it in later on request), so it must not touch or risk anything the real
- * save schema depends on. When it's wired, whatever reads `hasOnboarded` here
- * is what gates showing the screen at all.
+ * (`foxglade.onboarding`, not `foxglade.save`): it was built ahead of being
+ * wired into the actual game start (Marvy's call — build the screen now, wire
+ * it in later on request), so it must not touch or risk anything the real
+ * save schema depends on. Now wired: Game.tsx reads `hasOnboarded` here to
+ * decide whether to show the screen at all.
  */
 export type EggVariant = "ember" | "moss" | "frost";
 

@@ -122,6 +122,12 @@ interface GameState {
   termsOpen: boolean;
   openTerms: () => void;
   closeTerms: () => void;
+  /** The first-run guide (TutorialBrief.tsx) — a few pages covering what the
+   *  guardian/map don't (the menu exists, what a day is). Auto-opens once,
+   *  ever, right after the map's first dismissal (see MapScreen.tsx). */
+  tutorialOpen: boolean;
+  openTutorial: () => void;
+  closeTutorial: () => void;
   buyItem: (id: string) => void;
   equipWeapon: (gunId: WeaponId) => void;
 
@@ -245,7 +251,9 @@ interface GameState {
  * own list of booleans every time a new screen is added here.
  */
 export function anyOverlayOpen(s: GameState): boolean {
-  return s.shopOpen || s.menuOpen || s.profileOpen || s.bankOpen || s.mapScreenOpen || s.helpOpen || s.termsOpen;
+  return (
+    s.shopOpen || s.menuOpen || s.profileOpen || s.bankOpen || s.mapScreenOpen || s.helpOpen || s.termsOpen || s.tutorialOpen
+  );
 }
 
 export const useGame = create<GameState>((set, get) => {
@@ -476,6 +484,9 @@ export const useGame = create<GameState>((set, get) => {
   termsOpen: false,
   openTerms: () => set((s) => (s.roundState === "playing" && !s.isDead ? { termsOpen: true } : s)),
   closeTerms: () => set({ termsOpen: false }),
+  tutorialOpen: false,
+  openTutorial: () => set((s) => (s.roundState === "playing" && !s.isDead ? { tutorialOpen: true } : s)),
+  closeTutorial: () => set({ tutorialOpen: false }),
   buyItem: (id) =>
     set((s) => {
       const item = SHOP_ITEMS.find((i) => i.id === id);

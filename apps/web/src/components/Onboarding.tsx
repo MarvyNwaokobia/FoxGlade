@@ -9,12 +9,11 @@ import { loadOnboarding, writeOnboarding, type EggVariant } from "@/engine/onboa
  * The onboarding wizard: pick your hero (one, for now — see
  * foxglade-onboarding-roster), pick your egg, begin.
  *
- * Built standalone and NOT mounted anywhere in the real game yet (Marvy's
- * call, 2026-08-13: build the screen now, wire it in on request later). It
- * writes its own pick to engine/onboarding.ts's dedicated save file and calls
- * `onComplete` if given one — both are the wiring points for whenever this
- * gets gated in front of Game.tsx. Until then it only exists at
- * /onboarding-preview.
+ * Built standalone first (Marvy's call, 2026-08-13: build the screen now,
+ * wire it in on request later), and now gated in front of Game.tsx — see
+ * `onboarded` there. It writes its own pick to engine/onboarding.ts's
+ * dedicated save file and calls `onComplete` if given one; /onboarding-preview
+ * mounts it with neither, to iterate on the screen in isolation.
  */
 type Step = "welcome" | "hero" | "egg" | "ready";
 
