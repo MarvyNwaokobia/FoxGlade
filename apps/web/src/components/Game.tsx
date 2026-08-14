@@ -25,7 +25,10 @@ import { MapScreen } from "@/components/MapScreen";
 import { Tutorial } from "@/components/Tutorial";
 import { TutorialBrief } from "@/components/TutorialBrief";
 import { Onboarding } from "@/components/Onboarding";
-import { loadOnboarding } from "@/engine/onboarding";
+import { loadOnboarding, writeOnboarding } from "@/engine/onboarding";
+import { useWallet } from "@/engine/chain/wallet";
+import { magicConfigured } from "@/engine/chain/magic";
+import { pullOnboarding } from "@/engine/chain/onboardingSync";
 import { WalletButton } from "@/components/WalletButton";
 import { isTouchDevice } from "@/engine/input/touch";
 import { PerfProbe } from "@/engine/scene/PerfProbe";
@@ -77,6 +80,34 @@ export default function Game() {
   // Safe to read localStorage in the initializer: this component is mounted
   // with ssr:false (see app/page.tsx), so it never renders on the server.
   const [onboarded, setOnboarded] = useState(() => mode.id !== "foxglade" || loadOnboarding().hasOnboarded);
+
+  // Background reconciliation, NOT a gate: an earlier version blocked the
+  // wizard behind a silent wallet-session restore first, so a player who
+  // *could* skip it (already onboarded elsewhere, same Magic wallet) would —
+  // but Magic's iframe handshake measured 3-5s in practice, and EVERY
+  // first-time player (no session to restore at all, the overwhelming
+  // majority) sat through that same wait for nothing. Showing the wizard
+  // immediately costs nothing for everyone else, and this still catches the
+  // recoverable case within a few seconds for anyone slower than an instant
+  // click through "BEGIN" — `onboarded` in the closure is the same guard
+  // that blocks Onboarding's own onComplete from mattering twice.
+  useEffect(() => {
+    if (mode.id !== "foxglade" || onboarded || !magicConfigured()) return;
+    let cancelled = false;
+    (async () => {
+      await useWallet.getState().restore();
+      const address = useWallet.getState().address;
+      const server = address ? await pullOnboarding(address) : null;
+      if (cancelled || !server?.hasOnboarded) return;
+      writeOnboarding({ hasOnboarded: true, heroId: "man", eggVariant: server.eggVariant, completedAt: server.completedAt });
+      setOnboarded(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode.id, onboarded]);
+
   if (mode.id === "foxglade" && !onboarded) {
     return <Onboarding onComplete={() => setOnboarded(true)} />;
   }

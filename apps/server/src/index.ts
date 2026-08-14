@@ -3,12 +3,15 @@ import express from "express";
 import { isAddress, isHex, parseUnits, type Address, type Hex } from "viem";
 import { gameServerAddress, walletClient, withNonce } from "./chain.js";
 import { ADDRESSES, ARMORY_ITEMS_ABI, TREASURE_NFT_ABI, VILLE_TOKEN_ABI } from "./contracts.js";
+import { pool, dbConfigured, ensureSchema } from "./db.js";
 
 const app = express();
 app.use(express.json());
 
 const PORT = process.env.PORT || 8080;
 const RELAY_SECRET = process.env.RELAY_SECRET;
+
+ensureSchema().catch((err) => console.error("onboarding schema migration failed", err));
 
 /**
  * Ceiling on a single claim, matching the game's own max carry cap
@@ -41,6 +44,85 @@ app.use((req, res, next) => {
     return;
   }
   next();
+});
+
+/**
+ * Onboarding sync — the hero/egg pick, mirrored server-side so a player who
+ * reconnects the same Magic wallet on a NEW device doesn't see the wizard
+ * again. Not required for gameplay (see db.ts's header): a player with no
+ * wallet, or hitting this while the DB is unset, just keeps using
+ * localStorage exactly as before — these two routes degrade to a 503 rather
+ * than ever blocking the client's own local write.
+ */
+app.get("/onboarding/:address", async (req, res) => {
+  if (!dbConfigured()) {
+    res.status(503).json({ error: "onboarding persistence not configured" });
+    return;
+  }
+  const { address } = req.params;
+  if (!isAddress(address)) {
+    res.status(400).json({ error: "invalid wallet address" });
+    return;
+  }
+  try {
+    const { rows } = await pool!.query(
+      `SELECT hero_id, egg_variant, has_onboarded, completed_at FROM onboarding WHERE wallet_address = $1`,
+      [address.toLowerCase()]
+    );
+    if (rows.length === 0) {
+      res.json({ hasOnboarded: false, heroId: null, eggVariant: null, completedAt: null });
+      return;
+    }
+    const row = rows[0];
+    res.json({
+      hasOnboarded: row.has_onboarded,
+      heroId: row.hero_id,
+      eggVariant: row.egg_variant,
+      completedAt: row.completed_at ? new Date(row.completed_at).getTime() : null,
+    });
+  } catch (err) {
+    console.error("onboarding fetch failed", err);
+    res.status(500).json({ error: "onboarding fetch failed" });
+  }
+});
+
+app.post("/onboarding", async (req, res) => {
+  if (!dbConfigured()) {
+    res.status(503).json({ error: "onboarding persistence not configured" });
+    return;
+  }
+  const { address, heroId, eggVariant, hasOnboarded, completedAt } = req.body ?? {};
+  if (typeof address !== "string" || !isAddress(address)) {
+    res.status(400).json({ error: "invalid wallet address" });
+    return;
+  }
+  if (typeof heroId !== "string" || (eggVariant !== null && typeof eggVariant !== "string")) {
+    res.status(400).json({ error: "invalid heroId/eggVariant" });
+    return;
+  }
+  try {
+    await pool!.query(
+      `INSERT INTO onboarding (wallet_address, hero_id, egg_variant, has_onboarded, completed_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, now())
+       ON CONFLICT (wallet_address) DO UPDATE SET
+         hero_id = EXCLUDED.hero_id,
+         egg_variant = EXCLUDED.egg_variant,
+         has_onboarded = EXCLUDED.has_onboarded,
+         completed_at = EXCLUDED.completed_at,
+         updated_at = now()`,
+      [
+        address.toLowerCase(),
+        heroId,
+        eggVariant ?? null,
+        hasOnboarded === true,
+        typeof completedAt === "number" ? new Date(completedAt) : null,
+      ]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("onboarding save failed", err);
+    res.status(500).json({ error: "onboarding save failed" });
+  }
 });
 
 app.post("/treasure/claim", async (req, res) => {

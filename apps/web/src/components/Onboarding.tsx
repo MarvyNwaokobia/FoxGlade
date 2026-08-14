@@ -4,6 +4,8 @@ import { useState } from "react";
 import { HeroShowcase } from "./onboarding/HeroShowcase";
 import { EggArt, EGG_INFO } from "./onboarding/EggArt";
 import { loadOnboarding, writeOnboarding, type EggVariant } from "@/engine/onboarding";
+import { useWallet } from "@/engine/chain/wallet";
+import { pushOnboarding } from "@/engine/chain/onboardingSync";
 
 /**
  * The onboarding wizard: pick your hero (one, for now — see
@@ -36,7 +38,13 @@ export function Onboarding({ onComplete }: OnboardingProps) {
 
   const confirm = () => {
     if (!egg) return;
-    writeOnboarding({ hasOnboarded: true, heroId: "man", eggVariant: egg, completedAt: Date.now() });
+    const completedAt = Date.now();
+    writeOnboarding({ hasOnboarded: true, heroId: "man", eggVariant: egg, completedAt });
+    // Best-effort — a wallet already restored by the time this screen shows
+    // (see Game.tsx) means this device's pick is now recoverable on another
+    // one too. No wallet yet is a silent no-op, same as every other chain call.
+    const address = useWallet.getState().address;
+    if (address) pushOnboarding(address, { heroId: "man", eggVariant: egg, hasOnboarded: true, completedAt });
     setSaved(true);
     onComplete?.({ heroId: "man", eggVariant: egg });
   };
