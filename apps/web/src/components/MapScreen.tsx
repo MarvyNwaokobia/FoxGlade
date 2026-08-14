@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { isTouchDevice } from "@/engine/input/touch";
-import { runtime } from "@/engine/runtime";
 import { useGame } from "@/engine/store";
 import { drawParchmentMap } from "./mapArt";
 
@@ -83,15 +82,11 @@ export function MapScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Hold the village while the map is up — otherwise villagers walk over and
-  // deliver lines behind the paper, and you dismiss it into a world that has
-  // already moved on without you.
-  useEffect(() => {
-    runtime.mapOpen = open;
-    return () => {
-      runtime.mapOpen = false;
-    };
-  }, [open]);
+  // Holding the village paused while the map is up — otherwise villagers walk
+  // over and deliver lines behind the paper, and you dismiss it into a world
+  // that has already moved on without you — now happens because `mapScreenOpen`
+  // itself lives in the store; PlayerController/SpeechBubble read it via
+  // `anyOverlayOpen` (store.ts), no separate runtime mirror needed.
 
   // A pointer dismissal leaves `closing` true after the fold plays out and the
   // sheet unmounts (see `dismiss` below). If the map is opened again later —

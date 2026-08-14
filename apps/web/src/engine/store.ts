@@ -114,6 +114,14 @@ interface GameState {
   mapScreenOpen: boolean;
   openMapScreen: () => void;
   closeMapScreen: () => void;
+  /** The Help Center / FAQ, reached from the hamburger menu. Static content. */
+  helpOpen: boolean;
+  openHelp: () => void;
+  closeHelp: () => void;
+  /** Terms & Conditions, reached from the hamburger menu. Static content. */
+  termsOpen: boolean;
+  openTerms: () => void;
+  closeTerms: () => void;
   buyItem: (id: string) => void;
   equipWeapon: (gunId: WeaponId) => void;
 
@@ -227,6 +235,17 @@ interface GameState {
   newGameNonce: number;
   endRound: (reason: Exclude<RoundReason, null>) => void;
   restart: () => void;
+}
+
+/**
+ * Is ANY full-screen overlay up right now — the hamburger menu itself or one
+ * of its destinations, or the village map. One place to ask, so the world-pause,
+ * pointer-lock, and "don't talk over a modal" checks scattered across
+ * PlayerController/Minimap/Tutorial/SpeechBubble don't each have to grow their
+ * own list of booleans every time a new screen is added here.
+ */
+export function anyOverlayOpen(s: GameState): boolean {
+  return s.shopOpen || s.menuOpen || s.profileOpen || s.bankOpen || s.mapScreenOpen || s.helpOpen || s.termsOpen;
 }
 
 export const useGame = create<GameState>((set, get) => {
@@ -451,6 +470,12 @@ export const useGame = create<GameState>((set, get) => {
   mapScreenOpen: true,
   openMapScreen: () => set({ mapScreenOpen: true }),
   closeMapScreen: () => set({ mapScreenOpen: false }),
+  helpOpen: false,
+  openHelp: () => set((s) => (s.roundState === "playing" && !s.isDead ? { helpOpen: true } : s)),
+  closeHelp: () => set({ helpOpen: false }),
+  termsOpen: false,
+  openTerms: () => set((s) => (s.roundState === "playing" && !s.isDead ? { termsOpen: true } : s)),
+  closeTerms: () => set({ termsOpen: false }),
   buyItem: (id) =>
     set((s) => {
       const item = SHOP_ITEMS.find((i) => i.id === id);

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { runtime } from "@/engine/runtime";
 import { VILLAGE, BUILDINGS, doorOpening } from "@/engine/world/village";
-import { useGame } from "@/engine/store";
+import { useGame, anyOverlayOpen } from "@/engine/store";
 
 /**
  * A small north-up town map (top-right). Draws the walled bounds + building
@@ -26,10 +26,7 @@ function mz(z: number) {
 
 export function Minimap() {
   const canvas = useRef<HTMLCanvasElement>(null);
-  const shopOpen = useGame((s) => s.shopOpen);
-  const menuOpen = useGame((s) => s.menuOpen);
-  const profileOpen = useGame((s) => s.profileOpen);
-  const bankOpen = useGame((s) => s.bankOpen);
+  const overlayOpen = useGame(anyOverlayOpen);
   const [narrow, setNarrow] = useState(false);
   // Separately from the width-based shrink below: on short HEIGHT (a
   // landscape phone), the map needs to shrink MORE — at a common landscape
@@ -229,7 +226,7 @@ export function Minimap() {
     <div
       style={{
         ...styles.wrap,
-        opacity: shopOpen || menuOpen || profileOpen || bankOpen ? 0 : 1,
+        opacity: overlayOpen ? 0 : 1,
         // 158px is 40% of a portrait phone's width, and it was reaching far
         // enough left to clip the fox pill in half. Scaled down rather than
         // re-laid-out, so the canvas keeps its full drawing resolution. Short

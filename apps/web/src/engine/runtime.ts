@@ -109,11 +109,6 @@ export const runtime = {
    *  begins the instant the scene mounts, which is still mid-load, so a briefing
    *  fired then is delivered to an empty chair. */
   playerReady: false,
-  /** True while the opening map / map overlay is up. Folds into `paused` so the
-   *  village doesn't carry on without you: villagers were walking over and
-   *  delivering lines behind the modal, which you then dismissed into a world
-   *  that had already moved on. */
-  mapOpen: false,
   guardianBriefed: false,
   /** performance.now the guardian last delivered a briefing. */
   guardianSpokeAt: -1,

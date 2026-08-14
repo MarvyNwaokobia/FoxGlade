@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { runtime } from "@/engine/runtime";
-import { useGame } from "@/engine/store";
+import { useGame, anyOverlayOpen } from "@/engine/store";
 import { isTouchDevice } from "@/engine/input/touch";
 import { HOME_INDEX } from "@/engine/world/village";
 
@@ -120,7 +120,7 @@ export function Tutorial() {
       if (now - shownAt.current < SHOW_MS) return;
       if (text) setText(null);
       const gs = useGame.getState();
-      if (gs.roundState !== "playing" || gs.isDead || gs.shopOpen || gs.menuOpen || gs.profileOpen || gs.bankOpen || !runtime.playerReady) return;
+      if (gs.roundState !== "playing" || gs.isDead || anyOverlayOpen(gs) || !runtime.playerReady) return;
 
       for (const b of BEATS) {
         if (seen.current.has(b.id)) continue;

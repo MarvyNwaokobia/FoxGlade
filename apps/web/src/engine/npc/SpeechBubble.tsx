@@ -4,8 +4,7 @@ import { useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import * as THREE from "three";
-import { useGame } from "@/engine/store";
-import { runtime } from "@/engine/runtime";
+import { useGame, anyOverlayOpen } from "@/engine/store";
 import { isTouchDevice } from "@/engine/input/touch";
 
 /**
@@ -99,13 +98,7 @@ export function SpeechBubble({
     // Nobody talks over a full-screen overlay. drei's Html portals into the
     // canvas's container and sits above the R3F layer, so a villager mid-line
     // when you opened the market printed his bubble across the shop panel.
-    if (
-      useGame.getState().shopOpen ||
-      useGame.getState().menuOpen ||
-      useGame.getState().profileOpen ||
-      useGame.getState().bankOpen ||
-      runtime.mapOpen
-    ) {
+    if (anyOverlayOpen(useGame.getState())) {
       el.style.opacity = "0";
       return;
     }
