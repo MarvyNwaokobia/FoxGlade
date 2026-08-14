@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TELL_NEAR, TELL_FAR, tellProximity, moundOpacity, glintOpacity, clodLayout } from "../treasureTell";
+import { TELL_NEAR, TELL_FAR, tellProximity, moundOpacity, glintOpacity, clodLayout, coinLayout } from "../treasureTell";
 
 /**
  * The proximity curve that makes a tell readable as "walk up and check", not
@@ -60,6 +60,25 @@ describe("clodLayout", () => {
   it("keeps every clod inside a small radius of the tell centre", () => {
     for (const c of clodLayout(3)) {
       expect(Math.hypot(c.x, c.z)).toBeLessThan(1);
+      expect(c.s).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("coinLayout", () => {
+  it("is deterministic — the same slot always scatters the same way", () => {
+    expect(coinLayout(2)).toEqual(coinLayout(2));
+  });
+
+  it("gives every hint slot its own scatter", () => {
+    const a = coinLayout(0);
+    const b = coinLayout(1);
+    expect(a).not.toEqual(b);
+  });
+
+  it("sits tighter to the tell centre than the dirt clods do", () => {
+    for (const c of coinLayout(3)) {
+      expect(Math.hypot(c.x, c.z)).toBeLessThan(0.3);
       expect(c.s).toBeGreaterThan(0);
     }
   });

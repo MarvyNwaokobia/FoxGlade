@@ -724,13 +724,14 @@ export const useGame = create<GameState>((set, get) => {
     });
 
     // The board is new in the morning, and so is everything the village told you
-    // about the old one.
+    // about the old one. NOT clearing hint history here on purpose: reseedHints's
+    // recent-spot memory carrying over the day boundary is what keeps today's
+    // treasure from landing right back where you found yesterday's.
     runtime.hintSilenced.fill(false);
     runtime.hintStolen.fill(false);
     runtime.hintClaimed.fill(false);
     runtime.hintBanked.fill(false);
     runtime.hintCracked.fill(false);
-    clearHintHistory();
     reseedHints(false);
     clearLeads();
     runtime.guardianBriefed = false; // the guardian is back at the post at dawn

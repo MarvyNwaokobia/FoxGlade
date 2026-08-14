@@ -56,3 +56,36 @@ export function clodLayout(seed: number): Clod[] {
     };
   });
 }
+
+export interface Coin {
+  x: number;
+  z: number;
+  s: number;
+  ry: number;
+}
+
+/** How many treasure "flavors" a dig site can show — see FLAVOR_NAMES in
+ *  VillageMesh.tsx. Kept here too so tests can validate the modulus. */
+export const FLAVOR_COUNT = 3;
+
+/**
+ * Deterministic scatter for the coin/bar/goblet cluster poking out of a tell —
+ * same seed-per-SLOT convention as clodLayout, so the piece layout doesn't
+ * reshuffle mid-day. Tighter radius than the clods: it sits ON the mound, not
+ * spread past its edge. A DECOY gets the exact same cluster shape a real find
+ * does (only `flavor`, not this layout, differs by which nook it's on) — the
+ * whole point is a false dig should look just as much like treasure as a real
+ * one until you actually check it.
+ */
+export function coinLayout(seed: number): Coin[] {
+  return Array.from({ length: 4 }, (_, i) => {
+    const a = ((seed * 59 + i * 113) % 360) * (Math.PI / 180);
+    const r = 0.1 + ((seed * 7 + i * 11) % 4) * 0.045;
+    return {
+      x: Math.cos(a) * r,
+      z: Math.sin(a) * r,
+      s: 0.045 + ((seed + i * 3) % 3) * 0.014,
+      ry: ((seed * 41 + i * 67) % 360) * (Math.PI / 180),
+    };
+  });
+}

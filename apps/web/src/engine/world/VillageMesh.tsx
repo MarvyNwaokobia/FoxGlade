@@ -13,7 +13,7 @@ import { softShadowTexture } from "./softShadow";
 import { makeTriplanarMaterial } from "./triplanar";
 import { perfOff } from "@/engine/scene/perf";
 import { useGame } from "@/engine/store";
-import { tellProximity, moundOpacity, glintOpacity, clodLayout } from "./treasureTell";
+import { tellProximity, moundOpacity, glintOpacity, clodLayout, coinLayout } from "./treasureTell";
 
 const HALF = VILLAGE.half;
 const WALL_H = 3;
@@ -426,7 +426,20 @@ function Signboard({
   );
 }
 
-const HINT_REAL = "#f2c14e"; // gold — the confirmed-find glint/gem
+/**
+ * The three treasure "looks" a dig site can show (Marvy's call, 2026-08-14:
+ * "coins, gold, silver, different things placed in different areas" — every
+ * tell used to be a plain dirt mound with two tiny glint dots, real or decoy
+ * alike, which read as "disturbed earth" but not as treasure). `hint.flavor`
+ * picks the index; which nook gets which flavor is decided in hints.ts, tied
+ * to the SPOT so it stays consistent per area — never to real/decoy, so a
+ * false dig still promises exactly as much as a real one.
+ */
+const FLAVORS = [
+  { name: "coins", color: "#f2c14e", metalness: 0.9, roughness: 0.28 }, // stacked gold coins
+  { name: "bars", color: "#e0b23c", metalness: 0.95, roughness: 0.18 }, // gold ingots
+  { name: "silver", color: "#c7cdd4", metalness: 0.85, roughness: 0.24 }, // silver goblets/scatter
+] as const;
 
 /**
  * One treasure tell: a raised mound of turned earth, with irregular clods of
@@ -461,10 +474,14 @@ function HintBeacon({
   const hint = HINTS[index];
   const grp = useRef<THREE.Group>(null);
   const moundMats = useRef<THREE.MeshStandardMaterial[]>([]);
-  const glintA = useRef<THREE.Mesh>(null);
-  const glintB = useRef<THREE.Mesh>(null);
+  const coinGroups = useRef<(THREE.Group | null)[]>([]);
+  const coinMats = useRef<THREE.MeshStandardMaterial[][]>([]);
   const chest = useRef<THREE.Group>(null);
   const clods = useMemo(() => clodLayout(index), [index]);
+  // Same layout for every flavor — only the geometry/material drawn from it
+  // changes (see FLAVORS) — so swapping which one is showing on a reseed
+  // doesn't also reshuffle where the pieces sit.
+  const coins = useMemo(() => coinLayout(index), [index]);
 
   // Normalize the chest's bounding box once and sink it a third of the way
   // into the dirt, same footprint-fitting approach as CoverStack's crates.
@@ -508,13 +525,13 @@ function HintBeacon({
     for (const m of moundMats.current) if (m) m.opacity = op;
     const glintOp = glintOpacity(t);
     const now = performance.now();
-    if (glintA.current) {
-      glintA.current.position.y = 0.22 + Math.sin(now / 480) * 0.05;
-      (glintA.current.material as THREE.MeshStandardMaterial).opacity = glintOp;
-    }
-    if (glintB.current) {
-      glintB.current.position.y = 0.16 + Math.sin(now / 540 + 1.7) * 0.04;
-      (glintB.current.material as THREE.MeshStandardMaterial).opacity = glintOp;
+    const bob = 0.16 + Math.sin(now / 460 + index) * 0.03;
+    for (let f = 0; f < FLAVORS.length; f++) {
+      const g = coinGroups.current[f];
+      if (!g) continue;
+      g.visible = hint.flavor === f;
+      g.position.y = bob;
+      for (const m of coinMats.current[f] ?? []) if (m) m.opacity = glintOp;
     }
     if (chest.current) {
       const atThisReal = runtime.nearHintIsReal && runtime.nearHintIndex === index;
@@ -559,16 +576,43 @@ function HintBeacon({
           />
         </mesh>
       ))}
-      {/* A faint gold glint — same for real and decoy, resolved only by walking
-          up and checking, not by watching from a few paces back. */}
-      <mesh ref={glintA} position={[0.12, 0.22, -0.08]}>
-        <sphereGeometry args={[0.04, 8, 8]} />
-        <meshStandardMaterial color={HINT_REAL} emissive={HINT_REAL} emissiveIntensity={1.4} transparent opacity={0} toneMapped={false} />
-      </mesh>
-      <mesh ref={glintB} position={[-0.16, 0.16, 0.14]}>
-        <sphereGeometry args={[0.03, 8, 8]} />
-        <meshStandardMaterial color={HINT_REAL} emissive={HINT_REAL} emissiveIntensity={1.4} transparent opacity={0} toneMapped={false} />
-      </mesh>
+      {/* The treasure poking out of the dirt — coins, ingots, or silver
+          depending on `hint.flavor` (see FLAVORS above). Same for real and
+          decoy: only one of the three groups is visible at a time, chosen by
+          the SPOT, not by whether this dig pays off. Resolved only by
+          walking up and checking, not by watching from a few paces back. */}
+      {FLAVORS.map((fl, f) => (
+        <group
+          key={fl.name}
+          ref={(g) => {
+            coinGroups.current[f] = g;
+          }}
+          visible={false}
+        >
+          {coins.map((c, i) => (
+            <mesh key={i} position={[c.x, 0, c.z]} rotation={[0, c.ry, 0]} castShadow>
+              {f === 0 && <cylinderGeometry args={[c.s, c.s, c.s * 0.55, 10]} />}
+              {f === 1 && <boxGeometry args={[c.s * 2.2, c.s * 0.85, c.s * 1.05]} />}
+              {f === 2 && <sphereGeometry args={[c.s * 0.85, 8, 6]} />}
+              <meshStandardMaterial
+                ref={(m) => {
+                  if (!m) return;
+                  if (!coinMats.current[f]) coinMats.current[f] = [];
+                  coinMats.current[f][i] = m;
+                }}
+                color={fl.color}
+                emissive={fl.color}
+                emissiveIntensity={0.55}
+                metalness={fl.metalness}
+                roughness={fl.roughness}
+                transparent
+                opacity={0}
+                toneMapped={false}
+              />
+            </mesh>
+          ))}
+        </group>
+      ))}
       {/* The confirmed find — only once you're standing at the real one. A
           half-buried chest reads as treasure at a glance; the old floating
           gold octahedron never did. */}
