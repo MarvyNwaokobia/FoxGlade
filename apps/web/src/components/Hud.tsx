@@ -39,7 +39,7 @@ const LEAD_COLOR: Record<LeadSource, string> = {
 };
 
 /** Plain-language read on how much the fox's nose can be trusted. */
-function noseLabel(misread: number): string {
+export function noseLabel(misread: number): string {
   if (misread <= 0) return "never wrong";
   if (misread < 0.2) return "good nose";
   if (misread < 0.35) return "learning";

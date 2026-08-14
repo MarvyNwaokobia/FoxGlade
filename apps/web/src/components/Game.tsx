@@ -13,6 +13,7 @@ import { AudioDriver } from "@/engine/audio/AudioDriver";
 import { audio } from "@/engine/audio/audio";
 import { Hud } from "@/components/Hud";
 import { Shop } from "@/components/Shop";
+import { Profile } from "@/components/Profile";
 import { HamburgerMenu } from "@/components/HamburgerMenu";
 import { Minimap } from "@/components/Minimap";
 import { MobileControls } from "@/components/MobileControls";
@@ -114,6 +115,7 @@ export default function Game() {
       <Tutorial />
       <Minimap />
       <Shop />
+      <Profile />
       <HamburgerMenu />
       {mobile && <MobileControls />}
       {/* Opening map + first-run teaching. Last in the tree so it sits above the

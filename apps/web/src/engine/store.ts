@@ -97,6 +97,11 @@ interface GameState {
   menuOpen: boolean;
   openMenu: () => void;
   closeMenu: () => void;
+  /** The profile screen, reached from the hamburger menu — stats, loadout, and
+   *  the fox's rust condition. Read-only; pauses the world the same way. */
+  profileOpen: boolean;
+  openProfile: () => void;
+  closeProfile: () => void;
   buyItem: (id: string) => void;
   equipWeapon: (gunId: WeaponId) => void;
 
@@ -422,6 +427,9 @@ export const useGame = create<GameState>((set, get) => {
   menuOpen: false,
   openMenu: () => set((s) => (s.roundState === "playing" && !s.isDead ? { menuOpen: true } : s)),
   closeMenu: () => set({ menuOpen: false }),
+  profileOpen: false,
+  openProfile: () => set((s) => (s.roundState === "playing" && !s.isDead ? { profileOpen: true } : s)),
+  closeProfile: () => set({ profileOpen: false }),
   buyItem: (id) =>
     set((s) => {
       const item = SHOP_ITEMS.find((i) => i.id === id);

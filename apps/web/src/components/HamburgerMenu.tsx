@@ -6,10 +6,9 @@ import { useGame } from "@/engine/store";
 /**
  * The hamburger menu — a plain destination list, not a persistent nav bar
  * (Marvy's call, 2026-08-14: a corner button players tap, not chrome always
- * on screen). Marketplace reuses Shop.tsx's own overlay/state outright; the
- * other destinations (Map, Profile, Help, Bank) get their own screens and an
- * entry here as each is built — this is the first slice, proving the
- * mechanism with the one destination that already exists.
+ * on screen). Profile and Marketplace each own their own overlay/state
+ * (Profile.tsx, Shop.tsx); Map and Help/Bank get their own screens and an
+ * entry here as each is built.
  */
 export function HamburgerMenu() {
   const roundState = useGame((s) => s.roundState);
@@ -17,6 +16,7 @@ export function HamburgerMenu() {
   const openMenu = useGame((s) => s.openMenu);
   const closeMenu = useGame((s) => s.closeMenu);
   const openShop = useGame((s) => s.openShop);
+  const openProfile = useGame((s) => s.openProfile);
 
   // Release the mouse from pointer-lock so it can click the overlay — same
   // fix Shop.tsx uses for itself; PlayerController re-acquires the lock once
@@ -54,6 +54,15 @@ export function HamburgerMenu() {
               </button>
             </div>
             <div style={styles.list}>
+              <button
+                style={styles.item}
+                onClick={() => {
+                  closeMenu();
+                  openProfile();
+                }}
+              >
+                Profile
+              </button>
               <button
                 style={styles.item}
                 onClick={() => {
