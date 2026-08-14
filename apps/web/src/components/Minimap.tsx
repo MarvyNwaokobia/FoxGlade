@@ -27,6 +27,7 @@ function mz(z: number) {
 export function Minimap() {
   const canvas = useRef<HTMLCanvasElement>(null);
   const shopOpen = useGame((s) => s.shopOpen);
+  const menuOpen = useGame((s) => s.menuOpen);
   const [narrow, setNarrow] = useState(false);
   // Separately from the width-based shrink below: on short HEIGHT (a
   // landscape phone), the map needs to shrink MORE — at a common landscape
@@ -226,7 +227,7 @@ export function Minimap() {
     <div
       style={{
         ...styles.wrap,
-        opacity: shopOpen ? 0 : 1,
+        opacity: shopOpen || menuOpen ? 0 : 1,
         // 158px is 40% of a portrait phone's width, and it was reaching far
         // enough left to clip the fox pill in half. Scaled down rather than
         // re-laid-out, so the canvas keeps its full drawing resolution. Short

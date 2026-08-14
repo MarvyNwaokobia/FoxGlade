@@ -91,6 +91,12 @@ interface GameState {
   shopOpen: boolean;
   openShop: () => void;
   closeShop: () => void;
+  /** The hamburger menu's destination list — separate from any one destination's
+   *  own screen (e.g. `shopOpen`). Picking an entry closes this and opens that
+   *  screen; the two are never up at once. */
+  menuOpen: boolean;
+  openMenu: () => void;
+  closeMenu: () => void;
   buyItem: (id: string) => void;
   equipWeapon: (gunId: WeaponId) => void;
 
@@ -413,6 +419,9 @@ export const useGame = create<GameState>((set, get) => {
   shopOpen: false,
   openShop: () => set((s) => (s.roundState === "playing" && !s.isDead ? { shopOpen: true } : s)),
   closeShop: () => set({ shopOpen: false }),
+  menuOpen: false,
+  openMenu: () => set((s) => (s.roundState === "playing" && !s.isDead ? { menuOpen: true } : s)),
+  closeMenu: () => set({ menuOpen: false }),
   buyItem: (id) =>
     set((s) => {
       const item = SHOP_ITEMS.find((i) => i.id === id);
