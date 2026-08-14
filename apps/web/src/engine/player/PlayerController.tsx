@@ -314,7 +314,8 @@ export function PlayerController() {
   const shopOpen = useGame((s) => s.shopOpen);
   const menuOpen = useGame((s) => s.menuOpen);
   const profileOpen = useGame((s) => s.profileOpen);
-  // Shop, the hamburger menu's destination list, and Profile are all
+  const bankOpen = useGame((s) => s.bankOpen);
+  // Shop, the hamburger menu's destination list, Profile, and Bank are all
   // full-screen overlays that release pointer lock the same way — tracked as
   // one "was an overlay open" edge so re-lock fires on closing any of them.
   const wasShopOpen = useRef(false);
@@ -323,7 +324,7 @@ export function PlayerController() {
   // the exit/re-lock pair in the main useFrame below.
   const wasGuardianGate = useRef(false);
   useEffect(() => {
-    const overlayOpen = shopOpen || menuOpen || profileOpen;
+    const overlayOpen = shopOpen || menuOpen || profileOpen || bankOpen;
     const closing = wasShopOpen.current && !overlayOpen;
     wasShopOpen.current = overlayOpen;
     if (!closing || touch.enabled) return;
@@ -332,7 +333,7 @@ export function PlayerController() {
     // Chrome can refuse a lock requested too soon after one was released; the
     // click path in the effect below is still there, so a refusal costs nothing.
     Promise.resolve(gl.domElement.requestPointerLock()).catch(() => {});
-  }, [shopOpen, menuOpen, profileOpen, gl]);
+  }, [shopOpen, menuOpen, profileOpen, bankOpen, gl]);
 
   // Mouse look via pointer lock; left-click fires once the mouse is captured.
   useEffect(() => {
@@ -404,13 +405,20 @@ export function PlayerController() {
     // shop does — it's just as much a full-screen overlay standing between
     // the player and the village.
     const menuOpen = useGame.getState().menuOpen;
-    // Profile is read-only but still a full-screen overlay — same pause.
+    // Profile and Bank are read-only but still full-screen overlays — same pause.
     const profileOpen = useGame.getState().profileOpen;
+    const bankOpen = useGame.getState().bankOpen;
     // The guardian gate (Marvy's call) pauses the world the same way the shop
     // and the day-over overlay do — nobody keeps moving while you're being
     // made to read something, that's the entire point of the gate.
     runtime.paused =
-      shopOpen || menuOpen || profileOpen || runtime.mapOpen || useGame.getState().dayOver || runtime.guardianGate;
+      shopOpen ||
+      menuOpen ||
+      profileOpen ||
+      bankOpen ||
+      runtime.mapOpen ||
+      useGame.getState().dayOver ||
+      runtime.guardianGate;
     if (useGame.getState().roundState === "playing" && runtime.paused) {
       runtime.roundStartAt += dt * 1000;
     }
@@ -450,6 +458,7 @@ export function PlayerController() {
       shopOpen ||
       menuOpen ||
       profileOpen ||
+      bankOpen ||
       useGame.getState().dayOver ||
       runtime.guardianGate;
 

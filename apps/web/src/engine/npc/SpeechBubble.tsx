@@ -99,7 +99,13 @@ export function SpeechBubble({
     // Nobody talks over a full-screen overlay. drei's Html portals into the
     // canvas's container and sits above the R3F layer, so a villager mid-line
     // when you opened the market printed his bubble across the shop panel.
-    if (useGame.getState().shopOpen || useGame.getState().menuOpen || useGame.getState().profileOpen || runtime.mapOpen) {
+    if (
+      useGame.getState().shopOpen ||
+      useGame.getState().menuOpen ||
+      useGame.getState().profileOpen ||
+      useGame.getState().bankOpen ||
+      runtime.mapOpen
+    ) {
       el.style.opacity = "0";
       return;
     }

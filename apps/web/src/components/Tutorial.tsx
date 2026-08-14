@@ -120,7 +120,7 @@ export function Tutorial() {
       if (now - shownAt.current < SHOW_MS) return;
       if (text) setText(null);
       const gs = useGame.getState();
-      if (gs.roundState !== "playing" || gs.isDead || gs.shopOpen || gs.menuOpen || gs.profileOpen || !runtime.playerReady) return;
+      if (gs.roundState !== "playing" || gs.isDead || gs.shopOpen || gs.menuOpen || gs.profileOpen || gs.bankOpen || !runtime.playerReady) return;
 
       for (const b of BEATS) {
         if (seen.current.has(b.id)) continue;

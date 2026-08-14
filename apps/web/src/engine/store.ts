@@ -102,6 +102,12 @@ interface GameState {
   profileOpen: boolean;
   openProfile: () => void;
   closeProfile: () => void;
+  /** The bank screen, reached from the hamburger menu — a balance/earnings
+   *  summary. Read-only; the vault itself (walk up, press E) is still the only
+   *  way to actually deposit — this doesn't replace that. */
+  bankOpen: boolean;
+  openBank: () => void;
+  closeBank: () => void;
   buyItem: (id: string) => void;
   equipWeapon: (gunId: WeaponId) => void;
 
@@ -430,6 +436,9 @@ export const useGame = create<GameState>((set, get) => {
   profileOpen: false,
   openProfile: () => set((s) => (s.roundState === "playing" && !s.isDead ? { profileOpen: true } : s)),
   closeProfile: () => set({ profileOpen: false }),
+  bankOpen: false,
+  openBank: () => set((s) => (s.roundState === "playing" && !s.isDead ? { bankOpen: true } : s)),
+  closeBank: () => set({ bankOpen: false }),
   buyItem: (id) =>
     set((s) => {
       const item = SHOP_ITEMS.find((i) => i.id === id);

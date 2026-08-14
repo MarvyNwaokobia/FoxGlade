@@ -14,6 +14,7 @@ import { audio } from "@/engine/audio/audio";
 import { Hud } from "@/components/Hud";
 import { Shop } from "@/components/Shop";
 import { Profile } from "@/components/Profile";
+import { Bank } from "@/components/Bank";
 import { HamburgerMenu } from "@/components/HamburgerMenu";
 import { Minimap } from "@/components/Minimap";
 import { MobileControls } from "@/components/MobileControls";
@@ -116,6 +117,7 @@ export default function Game() {
       <Minimap />
       <Shop />
       <Profile />
+      <Bank />
       <HamburgerMenu />
       {mobile && <MobileControls />}
       {/* Opening map + first-run teaching. Last in the tree so it sits above the
