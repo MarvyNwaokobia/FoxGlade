@@ -128,6 +128,12 @@ interface GameState {
   tutorialOpen: boolean;
   openTutorial: () => void;
   closeTutorial: () => void;
+  /** Pause — reachable from anywhere in the world, not just sheltered. Same
+   *  freeze every other overlay already gets (see `anyOverlayOpen`): NPCs,
+   *  projectiles, and the day clock all stop while this is up. */
+  pauseOpen: boolean;
+  openPause: () => void;
+  closePause: () => void;
   buyItem: (id: string) => void;
   equipWeapon: (gunId: WeaponId) => void;
 
@@ -252,7 +258,15 @@ interface GameState {
  */
 export function anyOverlayOpen(s: GameState): boolean {
   return (
-    s.shopOpen || s.menuOpen || s.profileOpen || s.bankOpen || s.mapScreenOpen || s.helpOpen || s.termsOpen || s.tutorialOpen
+    s.shopOpen ||
+    s.menuOpen ||
+    s.profileOpen ||
+    s.bankOpen ||
+    s.mapScreenOpen ||
+    s.helpOpen ||
+    s.termsOpen ||
+    s.tutorialOpen ||
+    s.pauseOpen
   );
 }
 
@@ -487,6 +501,9 @@ export const useGame = create<GameState>((set, get) => {
   tutorialOpen: false,
   openTutorial: () => set((s) => (s.roundState === "playing" && !s.isDead ? { tutorialOpen: true } : s)),
   closeTutorial: () => set({ tutorialOpen: false }),
+  pauseOpen: false,
+  openPause: () => set((s) => (s.roundState === "playing" && !s.isDead ? { pauseOpen: true } : s)),
+  closePause: () => set({ pauseOpen: false }),
   buyItem: (id) =>
     set((s) => {
       const item = SHOP_ITEMS.find((i) => i.id === id);

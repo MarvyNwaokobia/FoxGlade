@@ -18,6 +18,7 @@ import { Bank } from "@/components/Bank";
 import { HelpCenter } from "@/components/HelpCenter";
 import { Terms } from "@/components/Terms";
 import { HamburgerMenu } from "@/components/HamburgerMenu";
+import { Pause } from "@/components/Pause";
 import { Minimap } from "@/components/Minimap";
 import { MobileControls } from "@/components/MobileControls";
 import { MapScreen } from "@/components/MapScreen";
@@ -135,6 +136,7 @@ export default function Game() {
       <Terms />
       <TutorialBrief />
       <HamburgerMenu />
+      <Pause />
       {mobile && <MobileControls />}
       {/* Opening map + first-run teaching. Last in the tree so it sits above the
           HUD and the touch controls. */}
