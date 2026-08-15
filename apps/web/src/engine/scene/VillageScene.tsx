@@ -7,7 +7,6 @@ import { Thieves } from "@/engine/npc/ThiefWave";
 import { Merchant } from "@/engine/npc/Merchant";
 import { Guardian } from "@/engine/npc/Guardian";
 import { VillageAmbience } from "@/engine/audio/VillageAmbience";
-import { Environment } from "@react-three/drei";
 import { Projectiles } from "@/engine/combat/ProjectileLayer";
 import { ShotFX } from "@/engine/combat/ShotFxLayer";
 import { DecalFX } from "@/engine/combat/DecalFxLayer";
@@ -45,11 +44,11 @@ export function VillageScene({
   const roundNonce = useGame((s) => s.roundNonce);
   return (
     <>
-      {/* Image-based lighting only — the day HDRI gives surfaces a little sky
-          fill (kept low so they DON'T turn shiny). The visible sky is no longer
-          `background`: it's <SkyDome>, which cross-fades a real day, dusk and
-          night sky so nightfall actually reads overhead. */}
-      <Environment files="/env/day_clouds_2k.hdr" environmentIntensity={0.3} />
+      {/* The visible sky AND the scene's image-based lighting both come from
+          here — <SkyDome> cross-fades a real day, dusk and night sky (so
+          nightfall actually reads overhead) and builds scene.environment
+          itself off the same loaded day HDRI, rather than a second
+          <Environment> re-fetching and re-decoding the same file. */}
       <SkyDome />
       {/* Sun, sky, fog and ambient — all driven by the day clock (Daylight). */}
       <Daylight shadows={shadows && !degraded} shadowSize={shadowSize} />

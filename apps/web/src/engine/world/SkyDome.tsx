@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useFrame, useLoader, useThree } from "@react-three/fiber";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
 import * as THREE from "three";
@@ -22,9 +22,18 @@ import { runtime } from "@/engine/runtime";
  * sky is a handful of pixels' worth of overdraw at the back of the frame, so the
  * cost is nothing and the control is total.
  *
- * `scene.environment` still comes from the day HDRI via <Environment> for image-
- * based lighting; it contributes at 0.3 and falls off with the light, so it isn't
- * worth a second PMREM pass to swap it.
+ * `scene.environment` still comes from the day HDRI for image-based lighting —
+ * it contributes at 0.3 and falls off with the light, so it isn't worth a
+ * second PMREM pass to swap it. Built here with our OWN `PMREMGenerator` off
+ * the SAME loaded `day` texture, rather than a second `<Environment files=...>`
+ * pointed at the same URL: `files` does its own independent RGBELoader
+ * fetch+decode+PMREM, which used to mean this one 5MB HDR paid that full cost
+ * TWICE every load for no reason (Marvy's call, 2026-08-14 perf pass — see
+ * foxglade's load-time audit). `drei`'s `<Environment map={tex}>` was the
+ * obvious-looking shortcut here but turned out to skip PMREM entirely when
+ * given a raw texture instead of `files` — sets `scene.environment` straight
+ * to the unfiltered equirect, which is wrong for PBR lighting. Doing the
+ * PMREM pass by hand is what keeps the lighting identical to before.
  */
 
 const DAY = "/env/day_clouds_2k.hdr";
@@ -78,8 +87,27 @@ const frag = /* glsl */ `
 
 export function SkyDome() {
   const [day, dusk, night] = useLoader(RGBELoader, [DAY, DUSK, NIGHT]);
-  const { camera } = useThree();
+  const { camera, gl, scene } = useThree();
   const grp = useRef<THREE.Group>(null);
+
+  // A clone, taken BEFORE the shader-sampling tweaks below touch `day` (wrap/
+  // filter/mipmap settings tuned for this component's own equirect lookup,
+  // not for what PMREMGenerator expects of its source) — cheap (shares the
+  // same underlying image data, only the texture object's own properties are
+  // duplicated), and keeps the two uses from fighting over one texture's config.
+  const dayEnv = useMemo(() => day.clone(), [day]);
+
+  useEffect(() => {
+    const pmrem = new THREE.PMREMGenerator(gl);
+    const envRT = pmrem.fromEquirectangular(dayEnv);
+    scene.environment = envRT.texture;
+    scene.environmentIntensity = 0.3;
+    return () => {
+      scene.environment = null;
+      envRT.dispose();
+      pmrem.dispose();
+    };
+  }, [gl, scene, dayEnv]);
 
   const material = useMemo(() => {
     // Equirect maps sampled by hand in the shader: clamp vertically so the poles
@@ -121,11 +149,13 @@ export function SkyDome() {
   });
 
   return (
-    <group ref={grp}>
-      {/* renderOrder -1000 + depthTest off: drawn first, behind everything. */}
-      <mesh material={material} renderOrder={-1000} frustumCulled={false}>
-        <sphereGeometry args={[RADIUS, 32, 20]} />
-      </mesh>
-    </group>
+    <>
+      <group ref={grp}>
+        {/* renderOrder -1000 + depthTest off: drawn first, behind everything. */}
+        <mesh material={material} renderOrder={-1000} frustumCulled={false}>
+          <sphereGeometry args={[RADIUS, 32, 20]} />
+        </mesh>
+      </group>
+    </>
   );
 }

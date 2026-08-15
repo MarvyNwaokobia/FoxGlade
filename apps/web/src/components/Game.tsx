@@ -1,5 +1,9 @@
 "use client";
 
+// Side-effect import, first on purpose — see gltfLoader.ts. Every other
+// import below can (and several do) call useGLTF.preload() at module scope,
+// so the decoder path has to be set before any of those run.
+import "@/engine/scene/gltfLoader";
 import { Suspense, useEffect, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { Loader, Stats, PerformanceMonitor, AdaptiveDpr } from "@react-three/drei";
