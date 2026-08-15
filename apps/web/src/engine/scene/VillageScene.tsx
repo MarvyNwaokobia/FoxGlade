@@ -33,11 +33,17 @@ export function VillageScene({
   bloom = true,
   shadowSize = 2048,
   shadows = true,
+  dressing = true,
   degraded = false,
 }: {
   bloom?: boolean;
   shadowSize?: number;
   shadows?: boolean;
+  /** Horizon/HouseDressing/Props — purely decorative, gated as one group by
+   *  the device quality tier (see qualityPresets.ts). Separate from
+   *  `degraded`, which additionally cuts Props reactively on ANY tier if a
+   *  machine is struggling in the moment. */
+  dressing?: boolean;
   degraded?: boolean;
 }) {
   // Remount all NPCs on restart (revives blockers, distractors, thief).
@@ -55,13 +61,14 @@ export function VillageScene({
       <Village />
       {/* Chimneys, dormers, lean-tos and painted trim, so twenty copies of one
           house mesh stop reading as twenty copies of one house mesh. Instanced. */}
-      {!perfOff("noProps") && <HouseDressing />}
+      {dressing && !perfOff("noProps") && <HouseDressing />}
       {/* Hills, treeline and a ruined tower past the walls — so the world doesn't
           stop at a flat band of grass. Instanced; four draw calls all in. */}
-      {!perfOff("noProps") && <Horizon />}
+      {dressing && !perfOff("noProps") && <Horizon />}
       <Interiors />
-      {/* Set-dressing props are cut on struggling machines (Valor's approach). */}
-      {!degraded && !perfOff("noProps") && <Props />}
+      {/* Set-dressing props are cut on struggling machines (Valor's approach),
+          or outright on a low quality tier. */}
+      {dressing && !degraded && !perfOff("noProps") && <Props />}
       <Atmosphere />
       {!perfOff("noNpc") && (
         <group key={roundNonce}>

@@ -38,12 +38,8 @@ import { isTouchDevice } from "@/engine/input/touch";
 import { PerfProbe } from "@/engine/scene/PerfProbe";
 import { ShaderWarmup } from "@/engine/scene/ShaderWarmup";
 import { perfOff } from "@/engine/scene/perf";
-
-// Locked to HIGH — graphics quality is core to the game (Marvy's call). The
-// render-resolution ceiling stays capped (dpr 2 on fullscreen retina is ~27M px
-// and tanks any GPU); AdaptiveDpr + PerformanceMonitor still auto-protect a weak
-// device invisibly, and degraded mode is the last-resort safety net.
-const HIGH = { dpr: 1.35, bloom: true, shadow: 1024 };
+import { detectDeviceTier, qualityOverride } from "@/engine/scene/deviceTier";
+import { QUALITY } from "@/engine/scene/qualityPresets";
 
 /**
  * Top-level game mount: the R3F canvas plus the DOM HUD overlay. Client-only
@@ -53,10 +49,17 @@ export default function Game() {
   // Detect touch after mount (avoids SSR mismatch). Drives on-screen controls.
   const [mobile, setMobile] = useState(false);
   // Last-resort safety: if a machine can't hold framerate even after AdaptiveDpr
-  // drops resolution, latch "degraded" (shadows + bloom off). Capable machines
-  // never trip it and keep the full HIGH look.
+  // drops resolution, latch "degraded" (shadows + bloom off) ON TOP OF whatever
+  // tier was already picked below — this catches whatever the proactive
+  // detection got wrong, it doesn't replace it.
   const [degraded, setDegraded] = useState(false);
   const [debugStats, setDebugStats] = useState(false);
+  // Safe to read in the initializer (no SSR mismatch risk): ssr:false, same
+  // reasoning as `onboarded` below. Computed once — a device doesn't change
+  // GPU/memory/core-count mid-session, and re-detecting on every render would
+  // be pure waste.
+  const [tier] = useState(() => qualityOverride() ?? detectDeviceTier());
+  const q = QUALITY[tier];
   useEffect(() => {
     setMobile(isTouchDevice());
     setDebugStats(new URLSearchParams(window.location.search).has("stats"));
@@ -76,7 +79,6 @@ export default function Game() {
     };
   }, []);
 
-  const q = HIGH;
   // Which game this canvas is running (set by the route before mount).
   const mode = gameMode();
 
@@ -120,8 +122,8 @@ export default function Game() {
     <>
       <Canvas
         shadows
-        dpr={[0.6, q.dpr]}
-        gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 0.82 }}
+        dpr={q.dpr}
+        gl={{ antialias: q.antialias, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 0.82 }}
         camera={{ fov: 60, near: 0.1, far: 400, position: [0, 4, 8] }}
         onCreated={({ gl }) => {
           gl.setClearColor("#c8895a"); // dusk fallback until the HDRI sky loads
@@ -133,8 +135,9 @@ export default function Game() {
         <Suspense fallback={null}>
           <VillageScene
             bloom={q.bloom && !degraded && !perfOff("noBloom")}
-            shadows={!degraded && !perfOff("noShadows")}
-            shadowSize={q.shadow}
+            shadows={q.shadows && !degraded && !perfOff("noShadows")}
+            shadowSize={q.shadowSize}
+            dressing={q.dressing}
             degraded={degraded}
           />
           <PlayerController />
