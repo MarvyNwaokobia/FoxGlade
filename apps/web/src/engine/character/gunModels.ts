@@ -88,6 +88,21 @@ export function buildGunModel(src: THREE.Object3D, gunId: WeaponId): THREE.Group
   group.add(inner);
   group.updateMatrixWorld(true);
 
+  // Object3D.clone() shares MATERIAL instances with the cached source scene —
+  // it deep-clones the node graph but not materials/geometries. Every caller
+  // of this function (PlayerRig's third-person rig, ViewModel's first-person
+  // viewmodel, every armed NPC) was therefore mutating the SAME material
+  // objects: PlayerRig's camera-proximity fade (which also drives the
+  // first-person body's opacity to 0, since Nighthaul draws no third-person
+  // body) was zeroing the opacity on materials the first-person weapon was
+  // still rendering with, making it invisible. Cloning here gives each built
+  // gun its own materials, same as the geometry already gets.
+  inner.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    mesh.material = Array.isArray(mesh.material) ? mesh.material.map((m) => m.clone()) : mesh.material.clone();
+  });
+
   // Longest axis of the raw model = the barrel. Rotate it onto +Z.
   const size = new THREE.Box3().setFromObject(inner).getSize(new THREE.Vector3());
   if (size.x >= size.y && size.x >= size.z) inner.rotation.y = -Math.PI / 2;
