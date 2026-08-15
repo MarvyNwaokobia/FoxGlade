@@ -2,7 +2,15 @@ import "dotenv/config";
 import express from "express";
 import { isAddress, isHex, parseUnits, type Address, type Hex } from "viem";
 import { gameServerAddress, walletClient, withNonce } from "./chain.js";
-import { ADDRESSES, ARMORY_ITEMS_ABI, TREASURE_NFT_ABI, VILLE_TOKEN_ABI } from "./contracts.js";
+import {
+  ADDRESSES,
+  ARMORY_ITEMS_ABI,
+  GAME_EVENTS_ABI,
+  HERO_NFT_ABI,
+  PET_NFT_ABI,
+  TREASURE_NFT_ABI,
+  VILLE_TOKEN_ABI,
+} from "./contracts.js";
 import { pool, dbConfigured, ensureSchema } from "./db.js";
 
 const app = express();
@@ -246,6 +254,135 @@ app.post("/marketplace/buy", async (req, res) => {
     // The contract's own revert reasons (NotForSale, InvalidSignature, ExpiredSignature)
     // surface here as a generic viem error; not worth parsing out for v1 — the
     // player-facing message is the same either way: "purchase failed, try again."
+    res.status(500).json({ error: "on-chain call failed" });
+  }
+});
+
+// Onboarding mints — hero and pet egg. Both are gasless (this relay pays,
+// player just needs a wallet connected), mirroring the treasure claim above.
+// Each only fires once in the normal flow (onboarding confirm), but the same
+// light per-wallet cooldown as everywhere else guards against a client
+// resubmitting and draining the relay wallet's gas.
+const MIN_ONBOARD_INTERVAL_MS = 5_000;
+const lastHeroClaimAt = new Map<string, number>();
+const lastPetClaimAt = new Map<string, number>();
+
+app.post("/hero/claim", async (req, res) => {
+  const { player, heroId } = req.body ?? {};
+
+  if (typeof player !== "string" || !isAddress(player)) {
+    res.status(400).json({ error: "invalid player address" });
+    return;
+  }
+  if (!Number.isInteger(heroId) || heroId < 0 || heroId > 255) {
+    res.status(400).json({ error: "heroId must be an integer in [0, 255]" });
+    return;
+  }
+
+  const key = player.toLowerCase();
+  const last = lastHeroClaimAt.get(key) ?? 0;
+  if (Date.now() - last < MIN_ONBOARD_INTERVAL_MS) {
+    res.status(429).json({ error: "too many claims, slow down" });
+    return;
+  }
+  lastHeroClaimAt.set(key, Date.now());
+
+  try {
+    const playerAddr = player as Address;
+    const txHash = await withNonce((nonce) =>
+      walletClient.writeContract({
+        address: ADDRESSES.heroNFT,
+        abi: HERO_NFT_ABI,
+        functionName: "mintHero",
+        args: [playerAddr, heroId],
+        nonce,
+      })
+    );
+    res.json({ txHash });
+  } catch (err) {
+    console.error("hero claim failed", err);
+    res.status(500).json({ error: "on-chain call failed" });
+  }
+});
+
+app.post("/pet/claim", async (req, res) => {
+  const { player } = req.body ?? {};
+
+  if (typeof player !== "string" || !isAddress(player)) {
+    res.status(400).json({ error: "invalid player address" });
+    return;
+  }
+
+  const key = player.toLowerCase();
+  const last = lastPetClaimAt.get(key) ?? 0;
+  if (Date.now() - last < MIN_ONBOARD_INTERVAL_MS) {
+    res.status(429).json({ error: "too many claims, slow down" });
+    return;
+  }
+  lastPetClaimAt.set(key, Date.now());
+
+  try {
+    const playerAddr = player as Address;
+    const txHash = await withNonce((nonce) =>
+      walletClient.writeContract({
+        address: ADDRESSES.petNFT,
+        abi: PET_NFT_ABI,
+        functionName: "mintEgg",
+        args: [playerAddr],
+        nonce,
+      })
+    );
+    res.json({ txHash });
+  } catch (err) {
+    console.error("pet claim failed", err);
+    res.status(500).json({ error: "on-chain call failed" });
+  }
+});
+
+// Gasless "just a stamp" events — death, a day's quota finished, turning in
+// for the night. No reward, no game-logic validation beyond shape: this is a
+// receipt of something that already happened locally, not a thing this relay
+// grants. Rate-limited per wallet since death (the most frequent of the
+// three) could otherwise be triggered rapidly and drain the relay wallet's
+// gas for no player benefit.
+const EVENT_TYPES = { death: 0, dayComplete: 1, dayAdvanced: 2 } as const;
+const MIN_STAMP_INTERVAL_MS = 2_000;
+const lastStampAt = new Map<string, number>();
+
+app.post("/event/stamp", async (req, res) => {
+  const { player, eventType } = req.body ?? {};
+
+  if (typeof player !== "string" || !isAddress(player)) {
+    res.status(400).json({ error: "invalid player address" });
+    return;
+  }
+  if (typeof eventType !== "string" || !(eventType in EVENT_TYPES)) {
+    res.status(400).json({ error: `eventType must be one of ${Object.keys(EVENT_TYPES).join(", ")}` });
+    return;
+  }
+
+  const key = player.toLowerCase();
+  const last = lastStampAt.get(key) ?? 0;
+  if (Date.now() - last < MIN_STAMP_INTERVAL_MS) {
+    res.status(429).json({ error: "too many events, slow down" });
+    return;
+  }
+  lastStampAt.set(key, Date.now());
+
+  try {
+    const playerAddr = player as Address;
+    const txHash = await withNonce((nonce) =>
+      walletClient.writeContract({
+        address: ADDRESSES.gameEvents,
+        abi: GAME_EVENTS_ABI,
+        functionName: "stamp",
+        args: [playerAddr, EVENT_TYPES[eventType as keyof typeof EVENT_TYPES]],
+        nonce,
+      })
+    );
+    res.json({ txHash });
+  } catch (err) {
+    console.error("event stamp failed", err);
     res.status(500).json({ error: "on-chain call failed" });
   }
 });

@@ -15,7 +15,7 @@ import {
   type WeaponId,
 } from "@/engine/config/shop";
 import { clearSave, loadSave, writeSave, NEW_SAVE } from "@/engine/save";
-import { claimOnChain } from "@/engine/chain/relay";
+import { claimOnChain, stampEvent } from "@/engine/chain/relay";
 import { FOX_RUST, foxRustFor } from "@/engine/config/fox";
 
 /** Read once at module load — the state below is seeded from it. */
@@ -363,6 +363,9 @@ export const useGame = create<GameState>((set, get) => {
       treasuresResolved: s.treasuresResolved + 1,
       ...(dayOver ? { dayOver: true } : {}),
     });
+    // Real on-chain stamp — the day's quota just got cleared (the "level" in
+    // player terms, see foxglade-day-quota-progression).
+    if (dayOver) stampEvent("dayComplete");
     if (!dayOver) {
       // Still more to hunt today — put a fresh treasure on the board. Old
       // directions are worse than none once it's moved, so the leads/hints
@@ -586,7 +589,8 @@ export const useGame = create<GameState>((set, get) => {
   },
   isDead: false,
   respawnNonce: 0,
-  damagePlayer: (amount) =>
+  damagePlayer: (amount) => {
+    let justDied = false;
     set((s) => {
       if (s.isDead || s.roundState !== "playing") return s;
       // Indoors used to be a total SAFE ROOM: through the doorway and nothing
@@ -631,6 +635,7 @@ export const useGame = create<GameState>((set, get) => {
       for (let i = 0; i < runtime.hintClaimed.length; i++) {
         if (runtime.hintClaimed[i] && !runtime.hintBanked[i]) runtime.hintClaimed[i] = false;
       }
+      justDied = true;
       return {
         playerHealth: 0,
         isDead: true,
@@ -638,7 +643,11 @@ export const useGame = create<GameState>((set, get) => {
         lockboxes: insured ? s.lockboxes - 1 : s.lockboxes,
         ...(s.treasureClaimed ? { treasureClaimed: false, claimedRarity: null } : {}),
       };
-    }),
+    });
+    // Real on-chain stamp, only when this call actually killed the player
+    // (not every point of damage) and only if a wallet is connected.
+    if (justDied) stampEvent("death");
+  },
   healPlayer: (amount) =>
     set((s) => {
       if (s.isDead || s.roundState !== "playing") return s;
@@ -674,7 +683,8 @@ export const useGame = create<GameState>((set, get) => {
   treasuresStolen: 0,
   // Purely the sun now — atmosphere plus a backstop nightfall. Chapter changes
   // and the day actually ending both happen through `resolveTreasure` instead.
-  advanceDay: (amount) =>
+  advanceDay: (amount) => {
+    let justFinished = false;
     set((s) => {
       if (s.roundState !== "playing") return s;
       const day = Math.min(DAY.nightfall, s.dayProgress + amount);
@@ -684,9 +694,16 @@ export const useGame = create<GameState>((set, get) => {
       // overlay — sleep to Day N+1 or retry today, same choice a no-charm
       // death offers. Neither ends the game. Nightfall is a backstop for a
       // player who never resolves the day's quota, not the normal way out.
-      if (day >= DAY.nightfall) next.dayOver = true;
+      if (day >= DAY.nightfall && !s.dayOver) {
+        next.dayOver = true;
+        justFinished = true;
+      }
       return next as GameState;
-    }),
+    });
+    // Real on-chain stamp — nightfall closed out the day, same as clearing
+    // the quota does in resolveTreasure.
+    if (justFinished) stampEvent("dayComplete");
+  },
 
   loseTreasureToThief: () => {
     // Losing the treasure used to END THE RUN. That check ("every real treasure
@@ -780,6 +797,8 @@ export const useGame = create<GameState>((set, get) => {
       respawnNonce: st.respawnNonce + 1,
       roundNonce: st.roundNonce + 1,
     }));
+    // Real on-chain stamp — the world rolled over to a new day.
+    stampEvent("dayAdvanced");
   },
 
   roundState: "playing",

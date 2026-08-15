@@ -6,6 +6,7 @@ import { EggArt, EGG_INFO } from "./onboarding/EggArt";
 import { loadOnboarding, writeOnboarding, type EggVariant } from "@/engine/onboarding";
 import { useWallet } from "@/engine/chain/wallet";
 import { pushOnboarding } from "@/engine/chain/onboardingSync";
+import { claimHeroOnChain, claimPetOnChain } from "@/engine/chain/relay";
 
 /**
  * The onboarding wizard: pick your hero (one, for now — see
@@ -44,7 +45,14 @@ export function Onboarding({ onComplete }: OnboardingProps) {
     // (see Game.tsx) means this device's pick is now recoverable on another
     // one too. No wallet yet is a silent no-op, same as every other chain call.
     const address = useWallet.getState().address;
-    if (address) pushOnboarding(address, { heroId: "man", eggVariant: egg, hasOnboarded: true, completedAt });
+    if (address) {
+      pushOnboarding(address, { heroId: "man", eggVariant: egg, hasOnboarded: true, completedAt });
+      // Real, permanent claims — heroId 0 is "The Outlier", the only roster
+      // slot right now (see foxglade-onboarding-roster). Gasless, additive,
+      // silent no-op above if there's no wallet.
+      claimHeroOnChain(0);
+      claimPetOnChain();
+    }
     setSaved(true);
     onComplete?.({ heroId: "man", eggVariant: egg });
   };
