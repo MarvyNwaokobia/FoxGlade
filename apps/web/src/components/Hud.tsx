@@ -1118,10 +1118,24 @@ const styles: Record<string, React.CSSProperties> = {
     userSelect: "none",
   },
   healthFill: { position: "absolute", left: 0, top: 0, bottom: 0, transition: "width 0.15s ease, background 0.2s ease" },
+  // top:16/left:20 used to sit directly under the hamburger + pause triggers
+  // (HamburgerMenu.tsx/Pause.tsx: top:14, left:14/62, 40×40 each) — the DAY/
+  // VILLE readout rendered right behind them, unreadable on every screen size,
+  // not just touch.
+  //
+  // Pushing it straight DOWN instead (the first fix tried) just traded one
+  // collision for another: on touch this stack is up to ~152px tall (day/
+  // VILLE/fox-growth/fox-status/the touch clock all stack here), and the gap
+  // between the button row (ends 54) and the FOX button (MobileControls.tsx,
+  // starts 176) is only 122px — not enough room at any top offset. Cleared
+  // the buttons HORIZONTALLY instead (pause's own right edge is 102, +8px
+  // gap): the row of icons and the first line of the wallet now share the
+  // same top strip side by side, and the full stack still has the whole
+  // 54–176 gap available underneath it, uncontested.
   wallet: {
     position: "absolute",
     top: 16,
-    left: 20,
+    left: 110,
     pointerEvents: "none",
     userSelect: "none",
   },
