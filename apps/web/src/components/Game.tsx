@@ -35,6 +35,8 @@ import { loadOnboarding, writeOnboarding } from "@/engine/onboarding";
 import { useWallet } from "@/engine/chain/wallet";
 import { magicConfigured } from "@/engine/chain/magic";
 import { pullOnboarding } from "@/engine/chain/onboardingSync";
+import { pullPlayerStats } from "@/engine/chain/playerStatsSync";
+import { useGame } from "@/engine/store";
 import { WalletButton } from "@/components/WalletButton";
 import { isTouchDevice } from "@/engine/input/touch";
 import { PerfProbe } from "@/engine/scene/PerfProbe";
@@ -99,14 +101,23 @@ export default function Game() {
   // recoverable case within a few seconds for anyone slower than an instant
   // click through "BEGIN" — `onboarded` in the closure is the same guard
   // that blocks Onboarding's own onComplete from mattering twice.
+  //
+  // Same trip also recovers progress (day, VILLE, gear — see engine/save.ts),
+  // not just the hero/egg pick: this effect only ever runs before a single
+  // local action has happened (Onboarding gates the whole world while it's
+  // false), so a wallet with a server-side player_stats row is unambiguously
+  // a returning player on a fresh device, never a conflict with local play.
   useEffect(() => {
     if (mode.id !== "foxglade" || onboarded || !magicConfigured()) return;
     let cancelled = false;
     (async () => {
       await useWallet.getState().restore();
       const address = useWallet.getState().address;
-      const server = address ? await pullOnboarding(address) : null;
-      if (cancelled || !server?.hasOnboarded) return;
+      if (!address) return;
+      const [server, stats] = await Promise.all([pullOnboarding(address), pullPlayerStats(address)]);
+      if (cancelled) return;
+      if (stats) useGame.getState().hydrateFromServer(stats);
+      if (!server?.hasOnboarded) return;
       writeOnboarding({ hasOnboarded: true, heroId: "man", eggVariant: server.eggVariant, completedAt: server.completedAt });
       setOnboarded(true);
     })();

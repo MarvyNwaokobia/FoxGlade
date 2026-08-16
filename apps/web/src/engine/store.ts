@@ -16,7 +16,7 @@ import {
 } from "@/engine/config/shop";
 import { clearSave, loadSave, writeSave, NEW_SAVE } from "@/engine/save";
 import { claimOnChain, evolvePetOnChain, recordPetRunOnChain, revivePetOnChain, stampEvent } from "@/engine/chain/relay";
-import { pushPlayerStats } from "@/engine/chain/playerStatsSync";
+import { pushPlayerStats, type ServerPlayerStats } from "@/engine/chain/playerStatsSync";
 import { FOX_GROW_STAGES, FOX_RUST, foxRustFor } from "@/engine/config/fox";
 
 /** Read once at module load — the state below is seeded from it. */
@@ -46,6 +46,26 @@ export function carryCap(owned: string[]): number {
  *  there's actually a choice between more than one. */
 function ownedWeaponCount(owned: string[]): number {
   return SHOP_ITEMS.filter((i) => i.category === "weapon" && owned.includes(i.id)).length;
+}
+
+/** Same untrusted-shape problem loadSave solves for localStorage, applied to a
+ *  server response instead: validate every field rather than trust it. */
+function sanitizeServerStats(stats: ServerPlayerStats) {
+  const num = (v: unknown, fallback: number) => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : fallback);
+  const owned =
+    Array.isArray(stats.owned) && stats.owned.every((i) => typeof i === "string")
+      ? [...new Set([...stats.owned, "w_rifle"])]
+      : [...NEW_SAVE.owned];
+  const equippedWeapon = (Object.keys(WEAPON_STATS) as WeaponId[]).includes(stats.equippedWeapon as WeaponId)
+    ? (stats.equippedWeapon as WeaponId)
+    : DEFAULT_WEAPON;
+  return {
+    day: Math.max(1, Math.floor(num(stats.day, 1))),
+    villeBanked: num(stats.villeBanked, 0),
+    villeEarned: num(stats.villeEarned, 0),
+    owned,
+    equippedWeapon,
+  };
 }
 
 export type RoundState = "playing" | "won" | "lost";
@@ -260,6 +280,13 @@ interface GameState {
   newGameNonce: number;
   endRound: (reason: Exclude<RoundReason, null>) => void;
   restart: () => void;
+  /** Adopt a server-side stats snapshot (playerStatsSync.ts pullPlayerStats) —
+   *  the returning-user counterpart to a fresh local save. Only ever called
+   *  before a single local action has run (see Game.tsx: the wallet pull that
+   *  feeds this fires while the onboarding wizard still gates the world), so
+   *  there's nothing local to reconcile against — this is exactly `restart()`
+   *  seeded from the server's numbers instead of NEW_SAVE's. */
+  hydrateFromServer: (stats: ServerPlayerStats) => void;
 }
 
 /**
@@ -924,6 +951,72 @@ export const useGame = create<GameState>((set, get) => {
       foxRustBanksLeft: 0,
       owned: [...NEW_SAVE.owned],
       equippedWeapon: NEW_SAVE.equippedWeapon,
+      roundState: "playing",
+      roundReason: null,
+      roundNonce: s.roundNonce + 1,
+      newGameNonce: s.newGameNonce + 1,
+      respawnNonce: s.respawnNonce + 1,
+    }));
+  },
+
+  hydrateFromServer: (stats) => {
+    const { day, villeBanked, villeEarned, owned, equippedWeapon } = sanitizeServerStats(stats);
+    writeSave({ day, villeBanked, villeEarned, owned, equippedWeapon });
+
+    runtime.guardianBriefed = false;
+    runtime.roundStartAt = performance.now();
+    runtime.dayAnnounceAt = performance.now();
+    runtime.hintSilenced.fill(false);
+    runtime.hintStolen.fill(false);
+    runtime.hintClaimed.fill(false);
+    runtime.hintBanked.fill(false);
+    runtime.hintCracked.fill(false);
+    runtime.refugeIndex = -1;
+    runtime.lootLostAt = -1;
+    runtime.lootSalvaged = 0;
+    runtime.treasureStolenAt = -1;
+    runtime.chapterAt = -1;
+    runtime.chapterName = CHAPTERS[0].name;
+    runtime.chapterBrief = chapterBriefFor(day, 0);
+    runtime.treasureCrackedAt = -1;
+    runtime.revealRealUntil = -1;
+    runtime.sniffReadyAt = 0;
+    clearHintHistory();
+    reseedHints(false);
+    clearLeads();
+
+    set((s) => ({
+      armorySelectOpen: false,
+      treasureClaimed: false,
+      claimedRarity: null,
+      treasureCracked: false,
+      bombsLeft: bombCapacity(owned),
+      playerHealth: MAX_PLAYER_HEALTH,
+      restoresLeft: REST.charges,
+      lockboxes: 0,
+      extraLives: 0,
+      ammoInMag: WEAPON_STATS[equippedWeapon].magSize,
+      reloadEndsAt: -1,
+      isDead: false,
+      day,
+      dayOver: false,
+      dayProgress: 0,
+      chapter: 0,
+      phaseResolved: 0,
+      phaseRequired: phaseRequiredFor(day, 0),
+      treasuresBanked: 0,
+      treasuresRequired: treasuresForDay(day),
+      treasuresResolved: 0,
+      treasuresStolen: 0,
+      villeCarrying: 0,
+      villeBanked,
+      villeEarned,
+      // A hydrated save is stamped "now" (writeSave above), so there's no gap
+      // to be rusty from — same reasoning as restart()'s fresh save.
+      foxHoursAway: 0,
+      foxRustBanksLeft: 0,
+      owned,
+      equippedWeapon,
       roundState: "playing",
       roundReason: null,
       roundNonce: s.roundNonce + 1,
