@@ -105,7 +105,11 @@ const base: React.CSSProperties = {
   position: "fixed",
   top: "calc(env(safe-area-inset-top, 0px) + 186px)",
   right: "calc(env(safe-area-inset-right, 0px) + 14px)",
-  zIndex: 30,
+  // Same bug as HamburgerMenu/Pause's triggers: this sits on the right side,
+  // under MobileControls' lookZone (zIndex 40, pointerEvents:auto over the
+  // whole right ~56% of the screen) — below it, a tap here was always
+  // swallowed as a look-drag instead of reaching this button.
+  zIndex: 45,
   fontFamily: "ui-sans-serif, system-ui, sans-serif",
   fontSize: 12,
   letterSpacing: 0.3,

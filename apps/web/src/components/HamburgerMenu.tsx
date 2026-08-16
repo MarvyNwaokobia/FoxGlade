@@ -128,7 +128,15 @@ const styles: Record<string, React.CSSProperties> = {
     position: "fixed",
     top: "calc(env(safe-area-inset-top, 0px) + 14px)",
     left: "calc(env(safe-area-inset-left, 0px) + 14px)",
-    zIndex: 30,
+    // Above MobileControls' stickZone (zIndex 40, apps/web/src/components/
+    // MobileControls.tsx) — that div is an invisible full-height touch-capture
+    // layer over the LEFT 44% of the screen, which is exactly where this
+    // button sits. Below it (the old zIndex 30), a real tap here never
+    // reached this button at all: the browser hit-tests to the topmost
+    // element by z-index regardless of paint order, so the tap silently
+    // registered as a move-stick touch instead. Found in playtest — the
+    // button was visible, felt like it should work, and did nothing.
+    zIndex: 45,
     width: 40,
     height: 40,
     borderRadius: 10,

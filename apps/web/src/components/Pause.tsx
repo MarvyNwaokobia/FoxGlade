@@ -107,7 +107,10 @@ const styles: Record<string, React.CSSProperties> = {
     position: "fixed",
     top: "calc(env(safe-area-inset-top, 0px) + 14px)",
     left: "calc(env(safe-area-inset-left, 0px) + 62px)",
-    zIndex: 30,
+    // See the identical comment on HamburgerMenu.tsx's trigger — same fix,
+    // same cause: MobileControls' stickZone (zIndex 40) sat above this
+    // button's old zIndex 30 and silently ate every tap meant for it.
+    zIndex: 45,
     width: 40,
     height: 40,
     borderRadius: 10,
