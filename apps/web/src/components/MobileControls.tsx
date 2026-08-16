@@ -339,13 +339,20 @@ export function MobileControls() {
         JUMP
       </button>
 
-      {/* Hold to aim, like the desktop right-mouse. */}
-      <button style={{ ...styles.btnRound, ...at("right", 194, 20, 66) }} {...holdKey("KeyV")}>
+      {/* Hold to aim, like the desktop right-mouse. Brighter than the plain
+          secondary buttons — it sits in the same bottom row as FIRE and the
+          contextual verb, so it reads as one of the buttons you press
+          mid-fight, not a background utility. */}
+      <button style={{ ...styles.btnRound, ...styles.primary, ...at("right", 194, 20, 66) }} {...holdKey("KeyV")}>
         AIM
       </button>
 
-      {/* Up the right edge: used, but never mid-burst. Kept clear of the minimap. */}
-      <button style={{ ...styles.btnRound, ...styles.btnSmall, ...at("right", 201, 96, 52) }} {...bomb}>
+      {/* Up the right edge: used, but never mid-burst. Kept clear of the
+          minimap (see the layout note above — this row stays compact on
+          purpose). BOMB gets the gold accent: the one situational, high-impact
+          verb up here, same as CROUCH getting none marks it as the plain,
+          low-stakes one beside it. */}
+      <button style={{ ...styles.btnRound, ...styles.btnSmall, ...styles.accent, ...at("right", 201, 96, 52) }} {...bomb}>
         BOMB
       </button>
       <button style={{ ...styles.btnRound, ...styles.btnSmall, ...at("right", 125, 96, 52) }} {...tap("KeyC")}>
@@ -483,6 +490,21 @@ const styles: Record<string, React.CSSProperties> = {
   btnSmall: { fontSize: 11 },
   /** The contextual verb. Its colour is set live, because its meaning changes. */
   action: { fontSize: 12 },
+  /** A bottom-row combat verb, not a background utility — brighter than the
+   *  plain dark buttons so it visually pairs with FIRE/action instead of
+   *  reading as the same weight as CROUCH/BOMB above it. */
+  primary: {
+    background: "rgba(255,255,255,0.16)",
+    borderColor: "rgba(255,255,255,0.5)",
+  },
+  /** The one situational, high-impact secondary verb — gold like the rest of
+   *  the game's accent colour (the joystick knob, VILLE, a hot action
+   *  button), so it stands out from CROUCH beside it the same way Valor's
+   *  lock button stands out from its own plain neighbours. */
+  accent: {
+    background: "rgba(242,193,78,0.32)",
+    borderColor: "rgba(242,193,78,0.75)",
+  },
   /** FIRE. The one control that must be findable without looking, so it's the
    *  only red thing on the pad and the only one this size. */
   fire: {

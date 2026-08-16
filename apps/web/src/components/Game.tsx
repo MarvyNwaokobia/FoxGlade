@@ -31,6 +31,7 @@ import { MapScreen } from "@/components/MapScreen";
 import { Tutorial } from "@/components/Tutorial";
 import { TutorialBrief } from "@/components/TutorialBrief";
 import { Onboarding } from "@/components/Onboarding";
+import { ConnectGate } from "@/components/ConnectGate";
 import { loadOnboarding } from "@/engine/onboarding";
 import { useWallet } from "@/engine/chain/wallet";
 import { reconcileAccount } from "@/engine/chain/accountSync";
@@ -88,27 +89,45 @@ export default function Game() {
   // with ssr:false (see app/page.tsx), so it never renders on the server.
   const [onboarded, setOnboarded] = useState(() => mode.id !== "foxglade" || loadOnboarding().hasOnboarded);
 
-  // Subscribed (not read via getState()) so this re-renders — and the effect
-  // below re-fires — the instant a wallet becomes known, from EITHER path:
-  // WalletButton's own silent restore() on mount, or a player typing their
-  // email in and confirming the OTP by hand. WalletButton is mounted on the
-  // onboarding screen now too (see below), so "by hand" can happen there as
-  // well as after — a returning player on a device that's never onboarded no
-  // longer has to sit through the wizard blind before they can prove who they
-  // are.
+  // Connecting is mandatory for Foxglade, ahead of onboarding itself (Marvy's
+  // call, 2026-08-16) — every player has a wallet address from minute one,
+  // not just optionally somewhere alongside the wizard. `restoring` covers
+  // the one moment that would otherwise flash ConnectGate's form at a
+  // returning player with a live session: true until the initial silent
+  // restore() below — an already-authorized injected wallet, or a live Magic
+  // session — has had its one chance to resolve, false forever after.
+  const [restoring, setRestoring] = useState(true);
   const address = useWallet((s) => s.address);
 
-  // Reconciliation, NOT a gate: an earlier version blocked the wizard behind
-  // a silent wallet-session restore first, so a player who *could* skip it
-  // (already onboarded elsewhere, same Magic wallet) would — but Magic's
-  // iframe handshake measured 3-5s in practice, and EVERY first-time player
-  // (no session to restore at all, the overwhelming majority) sat through
-  // that same wait for nothing. Showing the wizard immediately costs nothing
-  // for everyone else, and reconciling against the server the moment a
-  // wallet shows up still catches the recoverable case for anyone slower
-  // than an instant click through "BEGIN". `mode.id` gate: onboarding (and
-  // the day/VILLE/gear progress the same pick unlocks — engine/save.ts) is
-  // Foxglade-only, Nighthaul's lore doesn't fit it.
+  useEffect(() => {
+    if (mode.id !== "foxglade") {
+      setRestoring(false);
+      return;
+    }
+    let cancelled = false;
+    // Bounded, not just awaited: this screen is a mandatory blocker now, and
+    // restore()'s Magic leg is a real network round trip — a stalled or slow
+    // connection must never leave a player stuck on "checking" forever. If it
+    // lands late, `address` still updates reactively and carries them past
+    // the gate on its own; this timeout only controls how long the form's
+    // own buttons stay hidden behind the checking state.
+    const timeout = new Promise<void>((resolve) => setTimeout(resolve, 6000));
+    Promise.race([useWallet.getState().restore(), timeout]).finally(() => {
+      if (!cancelled) setRestoring(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode.id]);
+
+  // Reconcile local state against the server the moment an address is known
+  // — from the silent restore() above, or from ConnectGate's email/wallet
+  // buttons. Two directions (accountSync.ts): a fresh device adopts the
+  // server's onboarding pick and progress; a device that already has a local
+  // pick or save (anyone who played before this gate existed, connecting for
+  // the first time) pushes it up, since neither was ever guaranteed to have
+  // reached the server before now.
   useEffect(() => {
     if (mode.id !== "foxglade" || !address) return;
     let cancelled = false;
@@ -120,13 +139,12 @@ export default function Game() {
     };
   }, [mode.id, address]);
 
+  if (mode.id === "foxglade" && (restoring || !address)) {
+    return <ConnectGate checking={restoring} />;
+  }
+
   if (mode.id === "foxglade" && !onboarded) {
-    return (
-      <>
-        <Onboarding onComplete={() => setOnboarded(true)} />
-        <WalletButton />
-      </>
-    );
+    return <Onboarding onComplete={() => setOnboarded(true)} />;
   }
 
   return (
