@@ -46,6 +46,20 @@ export function ensureSchema(): Promise<void> {
     `
       )
       .then(() => pool!.query(`ALTER TABLE onboarding ADD COLUMN IF NOT EXISTS pet_token_id TEXT;`))
+      .then(() =>
+        pool!.query(`
+      CREATE TABLE IF NOT EXISTS player_stats (
+        wallet_address TEXT PRIMARY KEY,
+        ville_banked INTEGER NOT NULL DEFAULT 0,
+        ville_earned INTEGER NOT NULL DEFAULT 0,
+        treasures_banked INTEGER NOT NULL DEFAULT 0,
+        day INTEGER NOT NULL DEFAULT 1,
+        equipped_weapon TEXT NOT NULL DEFAULT 'assault_rifle',
+        owned JSONB NOT NULL DEFAULT '[]'::jsonb,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+    `)
+      )
       .then(() => undefined);
   }
   return migrated;
@@ -72,4 +86,71 @@ export async function getPetTokenId(walletAddress: string): Promise<string | nul
     walletAddress.toLowerCase(),
   ]);
   return rows[0]?.pet_token_id ?? null;
+}
+
+export interface PlayerStats {
+  villeBanked: number;
+  villeEarned: number;
+  treasuresBanked: number;
+  day: number;
+  equippedWeapon: string;
+  owned: string[];
+  updatedAt: number;
+}
+
+/**
+ * A snapshot of a player's progress, mirrored server-side so it can be read
+ * by someone OTHER than the player (the public card page, engine/chain/
+ * playerStatsSync.ts on the client) — everything it holds otherwise lives
+ * only in the player's own localStorage (engine/save.ts). Pushed at a few
+ * checkpoints (day rollover, a secured bank), not every state change: this
+ * is a profile snapshot, not a source of truth gameplay reads from.
+ */
+export async function upsertPlayerStats(
+  walletAddress: string,
+  stats: Omit<PlayerStats, "updatedAt">
+): Promise<void> {
+  if (!pool) return;
+  await pool.query(
+    `INSERT INTO player_stats
+       (wallet_address, ville_banked, ville_earned, treasures_banked, day, equipped_weapon, owned, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+     ON CONFLICT (wallet_address) DO UPDATE SET
+       ville_banked = EXCLUDED.ville_banked,
+       ville_earned = EXCLUDED.ville_earned,
+       treasures_banked = EXCLUDED.treasures_banked,
+       day = EXCLUDED.day,
+       equipped_weapon = EXCLUDED.equipped_weapon,
+       owned = EXCLUDED.owned,
+       updated_at = now()`,
+    [
+      walletAddress.toLowerCase(),
+      stats.villeBanked,
+      stats.villeEarned,
+      stats.treasuresBanked,
+      stats.day,
+      stats.equippedWeapon,
+      JSON.stringify(stats.owned),
+    ]
+  );
+}
+
+export async function getPlayerStats(walletAddress: string): Promise<PlayerStats | null> {
+  if (!pool) return null;
+  const { rows } = await pool.query(
+    `SELECT ville_banked, ville_earned, treasures_banked, day, equipped_weapon, owned, updated_at
+     FROM player_stats WHERE wallet_address = $1`,
+    [walletAddress.toLowerCase()]
+  );
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    villeBanked: row.ville_banked,
+    villeEarned: row.ville_earned,
+    treasuresBanked: row.treasures_banked,
+    day: row.day,
+    equippedWeapon: row.equipped_weapon,
+    owned: Array.isArray(row.owned) ? row.owned : [],
+    updatedAt: new Date(row.updated_at).getTime(),
+  };
 }

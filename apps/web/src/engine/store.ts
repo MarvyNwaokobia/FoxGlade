@@ -16,6 +16,7 @@ import {
 } from "@/engine/config/shop";
 import { clearSave, loadSave, writeSave, NEW_SAVE } from "@/engine/save";
 import { claimOnChain, evolvePetOnChain, recordPetRunOnChain, revivePetOnChain, stampEvent } from "@/engine/chain/relay";
+import { pushPlayerStats } from "@/engine/chain/playerStatsSync";
 import { FOX_GROW_STAGES, FOX_RUST, foxRustFor } from "@/engine/config/fox";
 
 /** Read once at module load — the state below is seeded from it. */
@@ -284,6 +285,23 @@ export function anyOverlayOpen(s: GameState): boolean {
 }
 
 export const useGame = create<GameState>((set, get) => {
+  /** Push the current card-worthy stats to the server mirror (playerStatsSync.ts)
+   *  — best-effort, silent no-op without a connected wallet. Called at the same
+   *  checkpoints as the on-chain relay's own stamps (relay.ts): a secured bank
+   *  and a day rollover, not on every state change — this is a profile
+   *  snapshot, not a source of truth anything reads back from. */
+  function syncStats(): void {
+    const s = get();
+    pushPlayerStats({
+      villeBanked: s.villeBanked,
+      villeEarned: s.villeEarned,
+      treasuresBanked: s.treasuresBanked,
+      day: s.day,
+      equippedWeapon: s.equippedWeapon,
+      owned: s.owned,
+    });
+  }
+
   /**
    * Reset to the dawn of the CURRENT day — used by both a no-charm death and
    * choosing to retry the day from the day-end overlay (DESIGN §14.10). Wallet,
@@ -471,6 +489,7 @@ export const useGame = create<GameState>((set, get) => {
       // Same moment PetNFT.recordRun's decay clock is meant to reset on — a
       // completed treasure run, not just logging in.
       recordPetRunOnChain();
+      syncStats();
     }
   },
 
@@ -837,6 +856,7 @@ export const useGame = create<GameState>((set, get) => {
     }));
     // Real on-chain stamp — the world rolled over to a new day.
     stampEvent("dayAdvanced");
+    syncStats();
   },
 
   roundState: "playing",

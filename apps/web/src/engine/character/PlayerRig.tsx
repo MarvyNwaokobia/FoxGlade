@@ -79,7 +79,7 @@ export interface PlayerRigState {
 
 export type CharacterModelId = "man" | "sentinel" | "phantom" | "berserker" | "operator";
 
-const MODEL_PATHS: Record<CharacterModelId, string> = {
+export const MODEL_PATHS: Record<CharacterModelId, string> = {
   man: "/characters/glb/player_man.glb", // realistic Mixamo character (Marvy's), converted FBX→GLB
   sentinel: "/characters/glb/sentinel.glb",
   phantom: "/characters/glb/phantom.glb",

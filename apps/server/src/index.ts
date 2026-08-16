@@ -11,7 +11,15 @@ import {
   TREASURE_NFT_ABI,
   VILLE_TOKEN_ABI,
 } from "./contracts.js";
-import { pool, dbConfigured, ensureSchema, getPetTokenId, savePetTokenId } from "./db.js";
+import {
+  pool,
+  dbConfigured,
+  ensureSchema,
+  getPetTokenId,
+  savePetTokenId,
+  getPlayerStats,
+  upsertPlayerStats,
+} from "./db.js";
 
 const app = express();
 app.use(express.json());
@@ -130,6 +138,85 @@ app.post("/onboarding", async (req, res) => {
   } catch (err) {
     console.error("onboarding save failed", err);
     res.status(500).json({ error: "onboarding save failed" });
+  }
+});
+
+/**
+ * Player-card snapshot — VILLE/treasures/day/loadout mirrored server-side so
+ * something OTHER than the player's own browser can read it (the public card
+ * page, a future re-visit from a new device). Same additive shape as
+ * onboarding above: no wallet, or the DB being unset, is a silent no-op on
+ * the client (engine/chain/playerStatsSync.ts) — nothing about gameplay
+ * reads this back, it's a mirror, not a source of truth.
+ */
+const MIN_SYNC_INTERVAL_MS = 2_000;
+const lastSyncAt = new Map<string, number>();
+
+app.get("/player/:address", async (req, res) => {
+  if (!dbConfigured()) {
+    res.status(503).json({ error: "player stats persistence not configured" });
+    return;
+  }
+  const { address } = req.params;
+  if (!isAddress(address)) {
+    res.status(400).json({ error: "invalid wallet address" });
+    return;
+  }
+  try {
+    const stats = await getPlayerStats(address);
+    if (!stats) {
+      res.status(404).json({ error: "no stats for this wallet yet" });
+      return;
+    }
+    res.json(stats);
+  } catch (err) {
+    console.error("player stats fetch failed", err);
+    res.status(500).json({ error: "player stats fetch failed" });
+  }
+});
+
+app.post("/player/sync", async (req, res) => {
+  if (!dbConfigured()) {
+    res.status(503).json({ error: "player stats persistence not configured" });
+    return;
+  }
+  const { address, villeBanked, villeEarned, treasuresBanked, day, equippedWeapon, owned } = req.body ?? {};
+  if (typeof address !== "string" || !isAddress(address)) {
+    res.status(400).json({ error: "invalid wallet address" });
+    return;
+  }
+  if (
+    !Number.isInteger(villeBanked) ||
+    !Number.isInteger(villeEarned) ||
+    !Number.isInteger(treasuresBanked) ||
+    !Number.isInteger(day) ||
+    villeBanked < 0 ||
+    villeEarned < 0 ||
+    treasuresBanked < 0 ||
+    day < 1
+  ) {
+    res.status(400).json({ error: "invalid stat fields" });
+    return;
+  }
+  if (typeof equippedWeapon !== "string" || !Array.isArray(owned) || !owned.every((i) => typeof i === "string")) {
+    res.status(400).json({ error: "invalid equippedWeapon/owned" });
+    return;
+  }
+
+  const key = address.toLowerCase();
+  const last = lastSyncAt.get(key) ?? 0;
+  if (Date.now() - last < MIN_SYNC_INTERVAL_MS) {
+    res.status(429).json({ error: "too many syncs, slow down" });
+    return;
+  }
+  lastSyncAt.set(key, Date.now());
+
+  try {
+    await upsertPlayerStats(address, { villeBanked, villeEarned, treasuresBanked, day, equippedWeapon, owned });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("player stats sync failed", err);
+    res.status(500).json({ error: "player stats sync failed" });
   }
 });
 
