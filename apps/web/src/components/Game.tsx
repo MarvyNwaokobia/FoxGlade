@@ -31,12 +31,9 @@ import { MapScreen } from "@/components/MapScreen";
 import { Tutorial } from "@/components/Tutorial";
 import { TutorialBrief } from "@/components/TutorialBrief";
 import { Onboarding } from "@/components/Onboarding";
-import { loadOnboarding, writeOnboarding } from "@/engine/onboarding";
+import { loadOnboarding } from "@/engine/onboarding";
 import { useWallet } from "@/engine/chain/wallet";
-import { magicConfigured } from "@/engine/chain/magic";
-import { pullOnboarding } from "@/engine/chain/onboardingSync";
-import { pullPlayerStats } from "@/engine/chain/playerStatsSync";
-import { useGame } from "@/engine/store";
+import { reconcileAccount } from "@/engine/chain/accountSync";
 import { WalletButton } from "@/components/WalletButton";
 import { isTouchDevice } from "@/engine/input/touch";
 import { PerfProbe } from "@/engine/scene/PerfProbe";
@@ -91,44 +88,45 @@ export default function Game() {
   // with ssr:false (see app/page.tsx), so it never renders on the server.
   const [onboarded, setOnboarded] = useState(() => mode.id !== "foxglade" || loadOnboarding().hasOnboarded);
 
-  // Background reconciliation, NOT a gate: an earlier version blocked the
-  // wizard behind a silent wallet-session restore first, so a player who
-  // *could* skip it (already onboarded elsewhere, same Magic wallet) would —
-  // but Magic's iframe handshake measured 3-5s in practice, and EVERY
-  // first-time player (no session to restore at all, the overwhelming
-  // majority) sat through that same wait for nothing. Showing the wizard
-  // immediately costs nothing for everyone else, and this still catches the
-  // recoverable case within a few seconds for anyone slower than an instant
-  // click through "BEGIN" — `onboarded` in the closure is the same guard
-  // that blocks Onboarding's own onComplete from mattering twice.
-  //
-  // Same trip also recovers progress (day, VILLE, gear — see engine/save.ts),
-  // not just the hero/egg pick: this effect only ever runs before a single
-  // local action has happened (Onboarding gates the whole world while it's
-  // false), so a wallet with a server-side player_stats row is unambiguously
-  // a returning player on a fresh device, never a conflict with local play.
+  // Subscribed (not read via getState()) so this re-renders — and the effect
+  // below re-fires — the instant a wallet becomes known, from EITHER path:
+  // WalletButton's own silent restore() on mount, or a player typing their
+  // email in and confirming the OTP by hand. WalletButton is mounted on the
+  // onboarding screen now too (see below), so "by hand" can happen there as
+  // well as after — a returning player on a device that's never onboarded no
+  // longer has to sit through the wizard blind before they can prove who they
+  // are.
+  const address = useWallet((s) => s.address);
+
+  // Reconciliation, NOT a gate: an earlier version blocked the wizard behind
+  // a silent wallet-session restore first, so a player who *could* skip it
+  // (already onboarded elsewhere, same Magic wallet) would — but Magic's
+  // iframe handshake measured 3-5s in practice, and EVERY first-time player
+  // (no session to restore at all, the overwhelming majority) sat through
+  // that same wait for nothing. Showing the wizard immediately costs nothing
+  // for everyone else, and reconciling against the server the moment a
+  // wallet shows up still catches the recoverable case for anyone slower
+  // than an instant click through "BEGIN". `mode.id` gate: onboarding (and
+  // the day/VILLE/gear progress the same pick unlocks — engine/save.ts) is
+  // Foxglade-only, Nighthaul's lore doesn't fit it.
   useEffect(() => {
-    if (mode.id !== "foxglade" || onboarded || !magicConfigured()) return;
+    if (mode.id !== "foxglade" || !address) return;
     let cancelled = false;
-    (async () => {
-      await useWallet.getState().restore();
-      const address = useWallet.getState().address;
-      if (!address) return;
-      const [server, stats] = await Promise.all([pullOnboarding(address), pullPlayerStats(address)]);
-      if (cancelled) return;
-      if (stats) useGame.getState().hydrateFromServer(stats);
-      if (!server?.hasOnboarded) return;
-      writeOnboarding({ hasOnboarded: true, heroId: "man", eggVariant: server.eggVariant, completedAt: server.completedAt });
-      setOnboarded(true);
-    })();
+    reconcileAccount(address).then(() => {
+      if (!cancelled) setOnboarded((prev) => prev || loadOnboarding().hasOnboarded);
+    });
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode.id, onboarded]);
+  }, [mode.id, address]);
 
   if (mode.id === "foxglade" && !onboarded) {
-    return <Onboarding onComplete={() => setOnboarded(true)} />;
+    return (
+      <>
+        <Onboarding onComplete={() => setOnboarded(true)} />
+        <WalletButton />
+      </>
+    );
   }
 
   return (

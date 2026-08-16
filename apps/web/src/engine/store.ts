@@ -281,11 +281,11 @@ interface GameState {
   endRound: (reason: Exclude<RoundReason, null>) => void;
   restart: () => void;
   /** Adopt a server-side stats snapshot (playerStatsSync.ts pullPlayerStats) —
-   *  the returning-user counterpart to a fresh local save. Only ever called
-   *  before a single local action has run (see Game.tsx: the wallet pull that
-   *  feeds this fires while the onboarding wizard still gates the world), so
-   *  there's nothing local to reconcile against — this is exactly `restart()`
-   *  seeded from the server's numbers instead of NEW_SAVE's. */
+   *  the returning-user counterpart to a fresh local save. Callers (see
+   *  engine/chain/accountSync.ts) only ever invoke this once they've verified
+   *  the local save is still untouched, so there's nothing local to reconcile
+   *  against — this is exactly `restart()` seeded from the server's numbers
+   *  instead of NEW_SAVE's. */
   hydrateFromServer: (stats: ServerPlayerStats) => void;
 }
 

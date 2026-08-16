@@ -108,8 +108,12 @@ const base: React.CSSProperties = {
   // Same bug as HamburgerMenu/Pause's triggers: this sits on the right side,
   // under MobileControls' lookZone (zIndex 40, pointerEvents:auto over the
   // whole right ~56% of the screen) — below it, a tap here was always
-  // swallowed as a look-drag instead of reaching this button.
-  zIndex: 45,
+  // swallowed as a look-drag instead of reaching this button. Above
+  // Onboarding's own 100: this button is also mounted there now, so a
+  // returning player on a device that's never onboarded can connect before
+  // picking a hero/egg, not just after — it has to sit on top of that panel
+  // to be reachable, not behind it.
+  zIndex: 105,
   fontFamily: "ui-sans-serif, system-ui, sans-serif",
   fontSize: 12,
   letterSpacing: 0.3,
