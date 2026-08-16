@@ -69,7 +69,15 @@ function Turntable() {
 export function HeroShowcase() {
   return (
     <Canvas
-      camera={{ position: [0, 0.35, 2.5], fov: 32, near: 0.1, far: 20 }}
+      camera={{ position: [0, 0.05, 2.7], fov: 34, near: 0.1, far: 20 }}
+      // No lookAt on the camera prop itself (R3F sets position, not orientation) —
+      // without this the camera just faces -Z at its own height, which centred the
+      // frame around the chest and cropped everything below the knee. Aiming it at
+      // the body's rough vertical midpoint (feet sit at world y -1.05 — see
+      // Turntable's group offset) gets the whole figure, feet included, in frame.
+      // Distance/fov pulled in from the first fix (3.4/36) to fill the card more —
+      // full body still fits, just larger, less empty margin top and bottom.
+      onCreated={({ camera }) => camera.lookAt(0, -0.2, 0)}
       gl={{ antialias: true, alpha: true, toneMapping: TONE_MAPPING, toneMappingExposure: EXPOSURE }}
       dpr={[1, 2]}
     >

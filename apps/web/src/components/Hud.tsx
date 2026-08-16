@@ -160,6 +160,21 @@ export function Hud() {
   // tallest touch button (CROUCH's top edge sits ~232px above the bottom) —
   // see the note by `cramped` above.
   const raiseHud = touchLayout && cramped;
+  // Same breakpoint the old WalletButton used for the same reason: on a short
+  // landscape phone (~375-430px tall) MobileControls' second row sits close
+  // enough to the top that anything anchored much below the minimap needs to
+  // tuck in higher, or it collides with FOX/CROUCH/BOMB.
+  const [mapCompact, setMapCompact] = useState(false);
+  useEffect(() => {
+    const measure = () => setMapCompact(window.innerWidth < 520 || window.innerHeight < 440);
+    measure();
+    window.addEventListener("resize", measure);
+    window.addEventListener("orientationchange", measure);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("orientationchange", measure);
+    };
+  }, []);
   const health = useGame((s) => s.playerHealth);
   const maxHealth = useGame((s) => s.maxPlayerHealth);
   const isDead = useGame((s) => s.isDead);
@@ -599,6 +614,41 @@ export function Hud() {
     };
   }, []);
 
+  // Growth stage is the fox's, and the fox IS the rank — so in a mode without
+  // one there is nothing here to report. Shared between the desktop and touch
+  // wallet layouts below (only the surrounding container differs), so it's
+  // computed once rather than duplicated inline in both branches.
+  const foxGrowthLine = gameMode().fox && (() => {
+    const foxStage = foxStageOf(owned);
+    const growth = foxGrowthFor(foxStage);
+    const nextGrow = foxNextGrow(owned);
+    const rust = foxRustNow(foxHoursAway, foxRustBanksLeft);
+    const misread = Math.min(0.95, growth.misreadChance + rust.misreadAdd);
+    return (
+      <div style={touchLayout ? styles.foxStageTouch : styles.foxStage}>
+        🦊 {growth.name}
+        {/* Name the thing growth actually buys. "Grow it for 200 VILLE" says
+            nothing about WHY you'd want to; its nose is the why.
+            On a phone this whole line ran nearly half the screen width, so
+            the price — the least urgent part — is dropped there. */}
+        <span style={styles.foxNext}>, {noseLabel(misread)}</span>
+        {/* Rust is a real, felt penalty (config/fox.ts FOX_RUST) — it must
+            say so, or a slower, dumber fox just reads as the game being
+            broken. Naming the cause AND the fix in one line is what makes
+            a punishment feel like a mechanic. */}
+        {rust.speedMult < 1 && (
+          <span style={styles.foxNext}>
+            {" "}
+            · rusty from time away — bank {foxRustBanksLeft} more to shake it off
+          </span>
+        )}
+        {!touchLayout && nextGrow && (
+          <span style={styles.foxNext}>. Grow it in the Market for {nextGrow.price} VILLE</span>
+        )}
+      </div>
+    );
+  })();
+
   return (
     <>
       {/* Red damage flash */}
@@ -637,58 +687,42 @@ export function Hud() {
         <div style={styles.damageArcMark} />
       </div>
 
-      {/* Loot wallet, top-left: banked total + what you're carrying (unbanked) */}
-      <div style={styles.wallet}>
-        {/* Which day this is. The run is a life now rather than a session, and
-            the number that has been climbing since you first played is the only
-            thing on screen that says so. */}
-        <div style={styles.dayCount}>
-          DAY {day} <span style={styles.dayQuota}>· {treasuresResolved}/{treasuresRequired} found</span>
-        </div>
-        <div style={styles.walletBanked}>🏦 {villeBanked} VILLE</div>
-        {villeCarrying > 0 && <div style={styles.walletCarry}>◆ carrying {villeCarrying}, bank it</div>}
-        {/* Growth stage is the fox's, and the fox IS the rank — so in a mode
-            without one there is nothing here to report. */}
-        {gameMode().fox && (() => {
-          const foxStage = foxStageOf(owned);
-          const growth = foxGrowthFor(foxStage);
-          const nextGrow = foxNextGrow(owned);
-          const rust = foxRustNow(foxHoursAway, foxRustBanksLeft);
-          const misread = Math.min(0.95, growth.misreadChance + rust.misreadAdd);
-          return (
-            <div style={styles.foxStage}>
-              🦊 {growth.name}
-              {/* Name the thing growth actually buys. "Grow it for 200 VILLE" says
-                  nothing about WHY you'd want to; its nose is the why.
-                  On a phone this whole line ran nearly half the screen width, so
-                  the price — the least urgent part — is dropped there. */}
-              <span style={styles.foxNext}>, {noseLabel(misread)}</span>
-              {/* Rust is a real, felt penalty (config/fox.ts FOX_RUST) — it must
-                  say so, or a slower, dumber fox just reads as the game being
-                  broken. Naming the cause AND the fix in one line is what makes
-                  a punishment feel like a mechanic. */}
-              {rust.speedMult < 1 && (
-                <span style={styles.foxNext}>
-                  {" "}
-                  · rusty from time away — bank {foxRustBanksLeft} more to shake it off
-                </span>
-              )}
-              {!touchLayout && nextGrow && (
-                <span style={styles.foxNext}>. Grow it in the Market for {nextGrow.price} VILLE</span>
-              )}
+      {/* Loot wallet: a left-aligned vertical stack on desktop (unchanged —
+          plenty of room up there); on touch, day/VILLE and the clock flank
+          the compass at the very top of the screen instead of stacking below
+          it (Marvy's call, 2026-08-16) — a row centred UNDER the compass was
+          still reading as "in the middle" no matter how tight the gap got,
+          because the compass itself was always going to be the tallest thing
+          up there. Going around it instead of under it puts both back at the
+          same top edge as the hamburger/minimap, with nothing left to clear. */}
+      {touchLayout ? (
+        <>
+          <div style={styles.walletTouchLeft}>
+            {/* Which day this is. The run is a life now rather than a session,
+                and the number that has been climbing since you first played is
+                the only thing on screen that says so. */}
+            <div style={styles.dayCount}>
+              DAY {day} <span style={styles.dayQuota}>· {treasuresResolved}/{treasuresRequired} found</span>
             </div>
-          );
-        })()}
-        {/* The fox's status (cooldown / scouting / down), where the centre pill
-            used to be but out of the way. */}
-        {gameMode().fox && touchLayout && <div ref={sniffEl} style={styles.foxStatusTouch} />}
-        {touchLayout && (
-          <div style={styles.timerTouch}>
+            <div style={styles.walletBanked}>🏦 {villeBanked} VILLE</div>
+            {villeCarrying > 0 && <div style={styles.walletCarry}>◆ carrying {villeCarrying}, bank it</div>}
+          </div>
+          <div style={styles.walletTouchRight}>
             <div ref={timerEl} style={styles.timerNum}>06:00</div>
             <div ref={chapterEl} style={styles.timerLabel}>Dawn</div>
           </div>
-        )}
-      </div>
+          <div style={styles.foxGrowthTouchWrap}>{foxGrowthLine}</div>
+        </>
+      ) : (
+        <div style={styles.wallet}>
+          <div style={styles.dayCount}>
+            DAY {day} <span style={styles.dayQuota}>· {treasuresResolved}/{treasuresRequired} found</span>
+          </div>
+          <div style={styles.walletBanked}>🏦 {villeBanked} VILLE</div>
+          {villeCarrying > 0 && <div style={styles.walletCarry}>◆ carrying {villeCarrying}, bank it</div>}
+          {foxGrowthLine}
+        </div>
+      )}
 
       {/* Time of day + chapter.
           On DESKTOP it sits top-right under the minimap. On TOUCH it moves to the
@@ -884,7 +918,25 @@ export function Hud() {
       {/* Proximity prompt (claim / false lead) — text set from the game loop */}
       <div ref={promptEl} style={styles.prompt} />
 
-      {/* Mute toggle, bottom-right (the one interactive HUD element) */}
+      {/* Fox sniff status, tucked under the minimap on touch (Marvy's call,
+          2026-08-16) — it used to sit near the compass/wallet row, crowding
+          the area this pass was trying to declutter. The minimap's own
+          corner had nothing below it once WalletButton came out of gameplay
+          entirely (Game.tsx), so that's where it moved to. `mapCompact`
+          matches the breakpoint the old WalletButton used for the same spot,
+          for the same reason: on a short landscape phone, MobileControls'
+          second row sits high enough that anything here needs to tuck in
+          closer to the minimap or risk the same collision that button used
+          to have. */}
+      {touchLayout && gameMode().fox && (
+        <div ref={sniffEl} style={{ ...styles.foxStatusTouch, ...styles.foxStatusMap, top: mapCompact ? 112 : 186 }} />
+      )}
+
+      {/* Mute toggle. Bottom-right on desktop (the one interactive HUD
+          element down there); on touch, wedged into the gap between the
+          clock and the minimap instead — both of those pushed apart 40px to
+          fit it (Marvy's call, 2026-08-16; see walletTouchRight's own
+          `right` for its half of that). */}
       <button
         type="button"
         // pointerdown, not click: the touch zones preventDefault, and the
@@ -955,7 +1007,7 @@ export function Hud() {
 const styles: Record<string, React.CSSProperties> = {
   compassWrap: {
     position: "absolute",
-    top: 18,
+    top: 10,
     left: "50%",
     transform: "translateX(-50%)",
     textAlign: "center",
@@ -1048,17 +1100,8 @@ const styles: Record<string, React.CSSProperties> = {
     pointerEvents: "none",
     userSelect: "none",
   },
-  timerTouch: {
-    // In the wallet's FLOW, not absolutely placed: the block above it grows a
-    // "carrying" line and a fox line, and any fixed offset would eventually be
-    // sat on by one of them.
-    marginTop: 10,
-    textAlign: "left",
-    pointerEvents: "none",
-    userSelect: "none",
-  },
   timerNum: {
-    fontSize: 30,
+    fontSize: 26,
     fontWeight: 700,
     color: "#e8eef2",
     fontVariantNumeric: "tabular-nums",
@@ -1067,7 +1110,7 @@ const styles: Record<string, React.CSSProperties> = {
     textShadow: TEXT_SHADOW,
   },
   timerLabel: {
-    fontSize: 11,
+    fontSize: 10,
     letterSpacing: 1.5,
     textTransform: "uppercase",
     color: "rgba(232,238,242,0.75)",
@@ -1158,12 +1201,66 @@ const styles: Record<string, React.CSSProperties> = {
     pointerEvents: "none",
     userSelect: "none",
   },
+  // Touch's counterpart to `wallet` above: day/VILLE flank the compass on the
+  // left instead of stacking under it (Marvy's call, 2026-08-16 — a row
+  // centred below the compass kept reading as "in the middle" no matter how
+  // tight the gap got, since the compass was always the tallest thing up
+  // there). Same top edge as the hamburger row and the minimap, same solid
+  // pill treatment as walletTouchRight — the shadow alone (TEXT_SHADOW, used
+  // everywhere else) held up fine over most of the scene but washed out over
+  // a bright sky or pale wall right where this used to sit (Marvy's
+  // playtest, 2026-08-16); a dark backing fixes that outright.
+  walletTouchLeft: {
+    position: "absolute",
+    top: 14,
+    left: "calc(env(safe-area-inset-left, 0px) + 110px)",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    padding: "8px 14px",
+    borderRadius: 12,
+    background: "rgba(11,13,16,0.6)",
+    border: "1px solid rgba(255,255,255,0.1)",
+    boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+    pointerEvents: "none",
+    userSelect: "none",
+  },
+  // The clock, flanking the compass on the right. `right` clears the mute
+  // button (muteBtnTouch, right:178, 36px wide) which sits between this and
+  // the minimap — the minimap only shrinks TOWARD its top-right corner
+  // (transformOrigin) on a narrow/short screen, so its own left edge only
+  // ever moves further away, never closer, and this offset stays safe.
+  walletTouchRight: {
+    position: "absolute",
+    top: 14,
+    right: "calc(env(safe-area-inset-right, 0px) + 220px)",
+    padding: "8px 14px",
+    borderRadius: 12,
+    background: "rgba(11,13,16,0.6)",
+    border: "1px solid rgba(255,255,255,0.1)",
+    boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+    textAlign: "left",
+    pointerEvents: "none",
+    userSelect: "none",
+  },
+  // The fox's longer growth line, centred under the compass on its own —
+  // its length varies too much (rust warning, misread-chance text) to flank
+  // the compass alongside day/VILLE without risking an overlap on a narrow
+  // phone.
+  foxGrowthTouchWrap: {
+    position: "absolute",
+    top: 76,
+    left: "50%",
+    transform: "translateX(-50%)",
+    pointerEvents: "none",
+    userSelect: "none",
+  },
   dayCount: {
-    fontSize: 11,
+    fontSize: 10,
     letterSpacing: 2,
     fontWeight: 700,
     color: "rgba(232,238,242,0.8)",
-    marginBottom: 2,
+    marginBottom: 6,
     textShadow: TEXT_SHADOW,
   },
   dayQuota: {
@@ -1172,7 +1269,7 @@ const styles: Record<string, React.CSSProperties> = {
     textShadow: TEXT_SHADOW,
   },
   walletBanked: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 700,
     color: "#ffd873",
     letterSpacing: 0.5,
@@ -1180,22 +1277,35 @@ const styles: Record<string, React.CSSProperties> = {
     textShadow: TEXT_SHADOW,
   },
   walletCarry: {
-    marginTop: 3,
+    marginTop: 6,
     fontSize: 12,
     color: "#aef2cb",
     letterSpacing: 0.3,
     textShadow: TEXT_SHADOW,
   },
   foxStage: {
-    marginTop: 5,
+    marginTop: 10,
     fontSize: 13,
     fontWeight: 600,
     color: "#f0a860",
     letterSpacing: 0.3,
     textShadow: TEXT_SHADOW,
   },
+  // Touch's counterpart to `foxStage` — a centred caption under the wallet
+  // row instead of an inline continuation of the day/VILLE stack, since its
+  // length varies too much (rust warning, misread-chance text) to hold a
+  // fixed column width in the row above.
+  foxStageTouch: {
+    marginTop: 2,
+    fontSize: 12,
+    fontWeight: 600,
+    color: "#f0a860",
+    letterSpacing: 0.3,
+    textAlign: "center",
+    maxWidth: 280,
+    textShadow: TEXT_SHADOW,
+  },
   foxStatusTouch: {
-    marginTop: 4,
     display: "inline-block",
     padding: "2px 8px",
     borderRadius: 999,
@@ -1212,6 +1322,14 @@ const styles: Record<string, React.CSSProperties> = {
     textShadow: TEXT_SHADOW,
     pointerEvents: "none",
     userSelect: "none",
+  },
+  // Positions foxStatusTouch under the minimap instead of in the wallet row
+  // — `top` is set inline (mapCompact is dynamic), this just anchors it
+  // right, under the minimap's own right:14.
+  foxStatusMap: {
+    position: "absolute",
+    right: "calc(env(safe-area-inset-right, 0px) + 14px)",
+    zIndex: 45,
   },
   foxNext: {
     fontSize: 11,
@@ -1584,12 +1702,17 @@ const styles: Record<string, React.CSSProperties> = {
     userSelect: "none",
   },
   /** Touch placement: the bottom-right corner now belongs to the FIRE arc, so
-   *  the speaker moves up beside the compass, where nothing else lives. */
+   *  the speaker moves up between the clock and the minimap instead (Marvy's
+   *  call, 2026-08-16). Same top:14 as walletTouchRight/the minimap — one
+   *  clean top edge across all three. right:178 splits the gap those two
+   *  were pushed apart to make (minimap's left edge sits at 172; this centres
+   *  a 36px button in the ~46px opened up between there and walletTouchRight's
+   *  own right:220). */
   muteBtnTouch: {
-    right: "auto",
+    top: 14,
+    right: "calc(env(safe-area-inset-right, 0px) + 178px)",
     bottom: "auto",
-    top: 18,
-    left: "calc(50% + 46px)",
+    left: "auto",
     width: 36,
     height: 36,
     fontSize: 16,

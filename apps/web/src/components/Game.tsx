@@ -35,13 +35,18 @@ import { ConnectGate } from "@/components/ConnectGate";
 import { loadOnboarding } from "@/engine/onboarding";
 import { useWallet } from "@/engine/chain/wallet";
 import { reconcileAccount } from "@/engine/chain/accountSync";
-import { WalletButton } from "@/components/WalletButton";
 import { isTouchDevice } from "@/engine/input/touch";
 import { PerfProbe } from "@/engine/scene/PerfProbe";
 import { ShaderWarmup } from "@/engine/scene/ShaderWarmup";
 import { perfOff } from "@/engine/scene/perf";
 import { detectDeviceTier, qualityOverride } from "@/engine/scene/deviceTier";
 import { QUALITY } from "@/engine/scene/qualityPresets";
+
+// TEMP (Marvy, 2026-08-16): the mandatory connect gate off so the onboarding
+// wizard can be tested on its own, without a wallet — flip back to true to
+// restore the wallet-first flow. Onboarding itself is back to its normal,
+// always-on behavior (see `onboarded` below).
+const CONNECT_GATE_ENABLED = false;
 
 /**
  * Top-level game mount: the R3F canvas plus the DOM HUD overlay. Client-only
@@ -139,7 +144,7 @@ export default function Game() {
     };
   }, [mode.id, address]);
 
-  if (mode.id === "foxglade" && (restoring || !address)) {
+  if (CONNECT_GATE_ENABLED && mode.id === "foxglade" && (restoring || !address)) {
     return <ConnectGate checking={restoring} />;
   }
 
@@ -193,7 +198,6 @@ export default function Game() {
         <PerfProbe />
       </Canvas>
       <Hud />
-      <WalletButton />
       <Tutorial />
       <Minimap />
       <Shop />

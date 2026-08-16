@@ -306,12 +306,18 @@ export function MobileControls() {
       {/* ── The right thumb ──
           Laid out like a shooter's pad rather than a geometric curve: one large
           primary under the thumb in the corner, the two verbs you press mid-fight
-          in a row beside it, and CROUCH/BOMB directly above them in a second row
-          instead of stacked up the whole right edge — that old column reached
+          in a row beside it, and FOX/CROUCH/BOMB directly above them in a second
+          row instead of stacked up the whole right edge — that old column reached
           82px higher (to bottom:232) than it needed to and ran straight into the
           minimap/wallet-connect button on a short landscape screen. Tucked under
-          the primary row now, closer to where the thumb already rests. */}
-      <button style={{ ...styles.btnRound, ...styles.fire, ...at("right", 18, 18, 90) }} {...hold((v) => (touch.fire = v))}>
+          the primary row now, closer to where the thumb already rests, and the
+          whole cluster dropped another 8px toward the bottom edge (Marvy's call,
+          2026-08-16) to sit closer to where a thumb resting on the phone's edge
+          already is. Two full rows of 3, columns lined up: FOX sits directly over
+          FIRE and next to CROUCH — it used to live on the LEFT edge, by the
+          joystick, but there's no reason left AND right thumbs should both have
+          to cover it, and grouping every button on one side reads as one pad. */}
+      <button style={{ ...styles.btnRound, ...styles.fire, ...at("right", 18, 10, 90) }} {...hold((v) => (touch.fire = v))}>
         FIRE
       </button>
 
@@ -319,7 +325,7 @@ export function MobileControls() {
           under pressure — BANK, GRAB, ROLL, VAULT are all the same key. */}
       <button
         ref={eBtn}
-        style={{ ...styles.btnRound, ...styles.action, ...at("right", 118, 20, 66) }}
+        style={{ ...styles.btnRound, ...styles.action, ...at("right", 118, 12, 66) }}
         onPointerDown={(e) => {
           e.stopPropagation();
           e.currentTarget.setPointerCapture(e.pointerId);
@@ -343,28 +349,33 @@ export function MobileControls() {
           secondary buttons — it sits in the same bottom row as FIRE and the
           contextual verb, so it reads as one of the buttons you press
           mid-fight, not a background utility. */}
-      <button style={{ ...styles.btnRound, ...styles.primary, ...at("right", 194, 20, 66) }} {...holdKey("KeyV")}>
+      <button style={{ ...styles.btnRound, ...styles.primary, ...at("right", 194, 12, 66) }} {...holdKey("KeyV")}>
         AIM
       </button>
 
-      {/* Up the right edge: used, but never mid-burst. Kept clear of the
-          minimap (see the layout note above — this row stays compact on
-          purpose). BOMB gets the gold accent: the one situational, high-impact
-          verb up here, same as CROUCH getting none marks it as the plain,
-          low-stakes one beside it. */}
-      <button style={{ ...styles.btnRound, ...styles.btnSmall, ...styles.accent, ...at("right", 201, 96, 52) }} {...bomb}>
-        BOMB
-      </button>
-      <button style={{ ...styles.btnRound, ...styles.btnSmall, ...at("right", 125, 96, 52) }} {...tap("KeyC")}>
-        CROUCH
-      </button>
-
-      {/* Nighthaul has no companion, so the button would command nothing. */}
+      {/* Directly over FIRE, closest to it in the second row too. Row sits at
+          bottom:114, not 88 — FIRE is 90px tall (top edge at bottom:100), a
+          full 24px taller than the 66px action/AIM row beside it, so the row
+          above FIRE's own column needs that much extra clearance or FOX
+          overlaps it. CROUCH/BOMB only strictly needed bottom:88 (they sit
+          above the shorter 66px buttons), but the whole row stays level to
+          read as one grid rather than a jagged one. */}
       {gameMode().fox && (
-        <button style={{ ...styles.btnRound, ...styles.btnSmall, ...at("left", 34, 158, 56) }} {...tap("KeyQ")}>
+        <button style={{ ...styles.btnRound, ...styles.btnSmall, ...at("right", 37, 114, 52) }} {...tap("KeyQ")}>
           FOX
         </button>
       )}
+      <button style={{ ...styles.btnRound, ...styles.btnSmall, ...at("right", 125, 114, 52) }} {...tap("KeyC")}>
+        CROUCH
+      </button>
+      {/* Up the right edge: used, but never mid-burst. Kept clear of the
+          minimap (see the layout note above — this row stays compact on
+          purpose). BOMB gets the gold accent: the one situational, high-impact
+          verb up here, same as CROUCH/FOX getting none marks them as the plain,
+          low-stakes ones beside it. */}
+      <button style={{ ...styles.btnRound, ...styles.btnSmall, ...styles.accent, ...at("right", 201, 114, 52) }} {...bomb}>
+        BOMB
+      </button>
 
       {/* Contextual respawn / restart */}
       {isDead && (
