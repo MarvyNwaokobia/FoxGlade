@@ -118,6 +118,12 @@ export const runtime = {
    *  (E) or the Hud tap prompt clear it. No auto-dismiss timer: reading speed
    *  isn't the game's to guess at. */
   guardianGate: false,
+  /** True while a touch device is being held in portrait during actual play —
+   *  the camera framing, HUD layout and thumb-cluster spacing are all tuned for
+   *  landscape (see RotateDevicePrompt.tsx), so this folds into `paused` the
+   *  same way `guardianGate` does rather than letting someone fight a HUD that
+   *  was never laid out for the shape they're holding it in. */
+  rotatePrompt: false,
   /** Bumped by PlayerController (E) or the Hud tap prompt each time the player
    *  acknowledges the CURRENT page of the briefing. Guardian.tsx watches this
    *  counter rather than being told to dismiss directly, because the briefing

@@ -403,7 +403,7 @@ export function PlayerController() {
     // The guardian gate (Marvy's call) pauses the world the same way the shop
     // and the day-over overlay do — nobody keeps moving while you're being
     // made to read something, that's the entire point of the gate.
-    runtime.paused = overlaysOpen || useGame.getState().dayOver || runtime.guardianGate;
+    runtime.paused = overlaysOpen || useGame.getState().dayOver || runtime.guardianGate || runtime.rotatePrompt;
     if (useGame.getState().roundState === "playing" && runtime.paused) {
       runtime.roundStartAt += dt * 1000;
     }
@@ -442,7 +442,8 @@ export function PlayerController() {
       useGame.getState().roundState !== "playing" ||
       overlaysOpen ||
       useGame.getState().dayOver ||
-      runtime.guardianGate;
+      runtime.guardianGate ||
+      runtime.rotatePrompt;
 
     // Mobile look: apply the accumulated touch-drag to yaw/pitch (already in
     // radians), then consume it. No pointer lock on touch, so this replaces it.

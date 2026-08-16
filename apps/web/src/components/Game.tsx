@@ -26,6 +26,7 @@ import { HamburgerMenu } from "@/components/HamburgerMenu";
 import { Pause } from "@/components/Pause";
 import { Minimap } from "@/components/Minimap";
 import { MobileControls } from "@/components/MobileControls";
+import { RotateDevicePrompt } from "@/components/RotateDevicePrompt";
 import { MapScreen } from "@/components/MapScreen";
 import { Tutorial } from "@/components/Tutorial";
 import { TutorialBrief } from "@/components/TutorialBrief";
@@ -181,6 +182,9 @@ export default function Game() {
       {/* Opening map + first-run teaching. Last in the tree so it sits above the
           HUD and the touch controls. */}
       <MapScreen />
+      {/* Blocks play on a touch device held in portrait — zIndex 200, above
+          everything else including the map. */}
+      {mobile && <RotateDevicePrompt />}
       {/* DOM loading screen with a progress bar until assets are ready. */}
       <Loader
         containerStyles={{ background: "#1a140f" }}
