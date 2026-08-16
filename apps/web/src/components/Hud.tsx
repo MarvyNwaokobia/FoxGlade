@@ -22,6 +22,16 @@ import { gameMode } from "@/engine/config/mode";
 import { thieves, MAX_THIEVES } from "@/engine/npc/thieves";
 import { isTouchDevice } from "@/engine/input/touch";
 
+/** Every loose HUD text sits directly over the live 3D scene — a bright sky
+ *  through a doorway, a pale wall, anything — with no background pill behind
+ *  it. Without a shadow, light-coloured text (the clock, the wallet, the fox
+ *  line) disappears against a light patch of the world; found in playtest.
+ *  A tight dark shadow plus a soft wider one holds legible against any
+ *  background without needing a scrim box behind every line. Matches the
+ *  chapterBanner's own shadow below, just given a name so it stops getting
+ *  reinvented per-element. */
+const TEXT_SHADOW = "0 1px 2px rgba(0,0,0,0.95), 0 1px 8px rgba(0,0,0,0.6)";
+
 const HINT_DEFAULT = "#8fd0e0"; // pale cyan ping (the fox pill, at rest)
 const HINT_REAL = "#f2c14e"; // gold (the fox pill, once it's digging)
 // HINT_FAKE went with the candidate dots: nothing on the HUD is allowed to know
@@ -1054,8 +1064,17 @@ const styles: Record<string, React.CSSProperties> = {
     fontVariantNumeric: "tabular-nums",
     letterSpacing: 1,
     lineHeight: 1,
+    textShadow: TEXT_SHADOW,
   },
-  timerLabel: { fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", color: "rgba(232,238,242,0.5)", marginTop: 2, whiteSpace: "nowrap" },
+  timerLabel: {
+    fontSize: 11,
+    letterSpacing: 1.5,
+    textTransform: "uppercase",
+    color: "rgba(232,238,242,0.75)",
+    marginTop: 2,
+    whiteSpace: "nowrap",
+    textShadow: TEXT_SHADOW,
+  },
   chapterBanner: {
     position: "absolute",
     left: "50%",
@@ -1143,12 +1162,14 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 11,
     letterSpacing: 2,
     fontWeight: 700,
-    color: "rgba(232,238,242,0.55)",
+    color: "rgba(232,238,242,0.8)",
     marginBottom: 2,
+    textShadow: TEXT_SHADOW,
   },
   dayQuota: {
     letterSpacing: 0.5,
-    color: "rgba(232,238,242,0.4)",
+    color: "rgba(232,238,242,0.65)",
+    textShadow: TEXT_SHADOW,
   },
   walletBanked: {
     fontSize: 16,
@@ -1156,12 +1177,14 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#ffd873",
     letterSpacing: 0.5,
     fontVariantNumeric: "tabular-nums",
+    textShadow: TEXT_SHADOW,
   },
   walletCarry: {
     marginTop: 3,
     fontSize: 12,
     color: "#aef2cb",
     letterSpacing: 0.3,
+    textShadow: TEXT_SHADOW,
   },
   foxStage: {
     marginTop: 5,
@@ -1169,6 +1192,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     color: "#f0a860",
     letterSpacing: 0.3,
+    textShadow: TEXT_SHADOW,
   },
   foxStatusTouch: {
     marginTop: 4,
@@ -1176,17 +1200,24 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "2px 8px",
     borderRadius: 999,
     border: `1px solid ${HINT_DEFAULT}`,
+    // Was a bare outline with no fill — legible over the game's own dark
+    // panels but not over a bright sky or pale wall. A faint dark backing
+    // (not the border colour, which stays the outline's own job) fixes it
+    // without turning a pill into a solid HUD chip.
+    background: "rgba(11,13,16,0.55)",
     color: HINT_DEFAULT,
     fontSize: 12,
     letterSpacing: 0.3,
     whiteSpace: "nowrap",
+    textShadow: TEXT_SHADOW,
     pointerEvents: "none",
     userSelect: "none",
   },
   foxNext: {
     fontSize: 11,
     fontWeight: 400,
-    color: "rgba(232,238,242,0.5)",
+    color: "rgba(232,238,242,0.75)",
+    textShadow: TEXT_SHADOW,
   },
   foxToast: {
     position: "absolute",
