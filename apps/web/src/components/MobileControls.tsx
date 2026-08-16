@@ -19,6 +19,10 @@ const RUN_AT = 1.45;
 const LOOK_SENS = 0.0055; // rad per screen px
 /** Fraction of the screen width that belongs to the move thumb. */
 const STICK_ZONE = 0.44;
+/** Where the stick lives — always, never wherever a thumb happens to land
+ *  (see the MobileControls doc comment for why the earlier floating version
+ *  got replaced). Matches the old joyHome offset, now the only offset. */
+const JOY_HOME = { left: 30, bottom: 26 };
 
 /**
  * Place a round control at a fixed offset from a bottom corner.
@@ -42,23 +46,20 @@ function at(side: "left" | "right", x: number, y: number, size: number): React.C
     height: size,
   };
 }
-/** How far up the left edge the FOX button's underside sits (px from the bottom).
- *  The floating stick's ring is kept below this so it can't be drawn over the one
- *  button on that side. */
-const LEFT_BTN_BOTTOM = 158;
-
 /**
  * On-screen touch controls, rendered only on touch devices.
  *
- * Two things about the first version made the game genuinely hard to play with
- * thumbs, and both are fixed here.
- *
- * **The stick was pinned to a fixed spot.** A 112 px circle at a fixed offset off
- * the bottom-left corner, which your thumb has to find without looking — and
- * miss it by 20 px and you swing the camera instead of walking. Every shipped
- * mobile shooter uses a floating stick: put your thumb down anywhere in the left
- * zone and the stick appears under it. That's what happens now; the ring is
- * drawn where you touched, not where the CSS said.
+ * **The stick is FIXED, not floating.** An earlier version spawned the ring
+ * wherever the thumb first touched down, on the theory that a fixed 112px
+ * target is hard to find blind. In practice (Marvy's own playtest) it read as
+ * broken instead: the "joystick" visibly relocating itself to whatever you
+ * touched didn't look like a control, and there was nothing to glance at
+ * before touching to know where movement even lived. It's drawn at one place
+ * now (JOY_HOME) with four tick marks so it reads as a real d-pad at a
+ * glance — but the touch-capture ZONE is still the whole left `STICK_ZONE` of
+ * the screen, so you don't need pixel accuracy to use it: the drag vector is
+ * just always measured from the fixed ring's centre instead of from wherever
+ * you happened to put your thumb down (see `moveJoy`).
  *
  * **The look layer covered the whole screen and only honoured one finger.** So a
  * left thumb landing off-stick claimed the look pointer, and the right thumb —
@@ -72,24 +73,33 @@ export function MobileControls() {
 
   const eBtn = useRef<HTMLButtonElement>(null); // context label: GRAB / BANK / CLAIM
   const knob = useRef<HTMLDivElement>(null);
-  const joyRing = useRef<HTMLDivElement>(null); // follows the thumb (floating stick)
-  // The stick's resting HOME. A floating stick beats a fixed pad to play with,
-  // but it gives a first-time player nothing to aim at — the left half of the
-  // screen is simply blank until you happen to touch it. This is the affordance
-  // a fixed pad has, without giving up the floating behaviour: it shows where to
-  // start, and gets out of the way the moment the live ring appears.
-  const joyHome = useRef<HTMLDivElement>(null);
+  const joyRing = useRef<HTMLDivElement>(null); // fixed at JOY_HOME, never moves
   const joyId = useRef<number | null>(null);
+  // The ring's actual on-screen centre. Measured from the DOM element rather
+  // than recomputed from JOY_HOME + env(safe-area-inset-*) by hand, so it's
+  // exactly right on a notched phone without duplicating CSS's own env() math
+  // in JS. Fixed once per layout (mount + resize/orientationchange) — NOT
+  // per touch, which is the whole point: every drag, wherever in the zone it
+  // starts, is measured from this same point.
   const joyCenter = useRef({ x: 0, y: 0 });
   const lookId = useRef<number | null>(null);
   const lookLast = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
     touch.enabled = true;
+    const measure = () => {
+      const r = joyRing.current?.getBoundingClientRect();
+      if (r) joyCenter.current = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    window.addEventListener("orientationchange", measure);
     return () => {
       touch.enabled = false;
       touch.moveX = touch.moveY = touch.lookDX = touch.lookDY = 0;
       touch.run = touch.fire = touch.jump = false;
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("orientationchange", measure);
     };
   }, []);
 
@@ -158,31 +168,18 @@ export function MobileControls() {
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  // ── Left thumb: a FLOATING stick ──
-  // The ring is positioned where the thumb lands, so there is nothing to find.
+  // ── Left thumb: a FIXED stick ──
+  // The ring never moves — only the knob inside it does, clamped to the ring's
+  // own radius. A touch anywhere in the left zone still drives it (no need to
+  // land pixel-precisely on a 112px target), but the drag is always measured
+  // from the ring's real, fixed centre, not from wherever the thumb first
+  // touched — that's the difference from the old floating version.
   const onJoyDown = (e: React.PointerEvent) => {
     if (joyId.current !== null) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     joyId.current = e.pointerId;
-    // Keep the ring clear of the verb row above it. The stick spawns wherever
-    // the thumb lands, and the natural resting place for a left thumb in
-    // landscape is exactly where FOX / ROLL / CROUCH sit — so the ring drew over
-    // them and you could no longer read the button you were about to press.
-    // Clamping only the ring's ORIGIN (not the touch centre) means the stick
-    // still tracks your actual thumb; it just doesn't render up in the verbs.
-    // Clamping only the ring's ORIGIN (never the touch centre) means the stick
-    // still tracks your actual thumb; the drawing just doesn't ride up over FOX.
-    const ringY = Math.max(e.clientY, window.innerHeight - LEFT_BTN_BOTTOM + JOY_R);
-    joyCenter.current = { x: e.clientX, y: e.clientY };
-    const ring = joyRing.current;
-    if (ring) {
-      ring.style.left = `${e.clientX - JOY_R}px`;
-      ring.style.top = `${ringY - JOY_R}px`;
-      ring.style.opacity = "1";
-    }
-    // Hand over from the resting ring to the live one — two rings on screen at
-    // once would read as two sticks.
-    if (joyHome.current) joyHome.current.style.opacity = "0";
+    if (knob.current) knob.current.style.transition = ""; // instant tracking during drag
+    if (joyRing.current) joyRing.current.style.borderColor = "rgba(242,193,78,0.75)";
     moveJoy(e.clientX, e.clientY);
   };
   const onJoyMove = (e: React.PointerEvent) => {
@@ -194,11 +191,11 @@ export function MobileControls() {
     joyId.current = null;
     touch.moveX = touch.moveY = 0;
     touch.run = false;
-    if (knob.current) knob.current.style.transform = "translate(0px, 0px)";
-    // Fade the ring out rather than leaving a dot where your thumb used to be,
-    // and bring the resting ring back so there's somewhere to aim for next time.
-    if (joyRing.current) joyRing.current.style.opacity = "0";
-    if (joyHome.current) joyHome.current.style.opacity = "1";
+    if (knob.current) {
+      knob.current.style.transition = "transform 0.12s ease-out"; // spring back
+      knob.current.style.transform = "translate(0px, 0px)";
+    }
+    if (joyRing.current) joyRing.current.style.borderColor = "rgba(255,255,255,0.32)";
   };
   function moveJoy(px: number, py: number) {
     let dx = (px - joyCenter.current.x) / JOY_R;
@@ -294,18 +291,26 @@ export function MobileControls() {
         onPointerCancel={onLookUp}
       />
 
-      {/* The floating stick itself — drawn wherever the thumb went down. */}
+      {/* The stick — fixed at JOY_HOME, always visible, never relocates. Four
+          tick marks read as a d-pad at a glance, which a bare dashed circle
+          didn't: there was nothing on it to say "this moves in 4 directions"
+          before you'd already touched it and watched it react. */}
       <div ref={joyRing} style={styles.joyRing}>
+        <div style={{ ...styles.joyTick, top: 6, left: "50%", transform: "translateX(-50%)" }} />
+        <div style={{ ...styles.joyTick, bottom: 6, left: "50%", transform: "translateX(-50%)" }} />
+        <div style={{ ...styles.joyTick, left: 6, top: "50%", transform: "translateY(-50%) rotate(90deg)" }} />
+        <div style={{ ...styles.joyTick, right: 6, top: "50%", transform: "translateY(-50%) rotate(90deg)" }} />
         <div ref={knob} style={styles.joyKnob} />
       </div>
 
       {/* ── The right thumb ──
           Laid out like a shooter's pad rather than a geometric curve: one large
           primary under the thumb in the corner, the two verbs you press mid-fight
-          in a row beside it, and the occasional ones stacked up the edge where
-          they're reachable but never in the way. The previous arc put everything
-          at the same reach, which sounds fair and in practice means nothing is
-          where your thumb already is. */}
+          in a row beside it, and CROUCH/BOMB directly above them in a second row
+          instead of stacked up the whole right edge — that old column reached
+          82px higher (to bottom:232) than it needed to and ran straight into the
+          minimap/wallet-connect button on a short landscape screen. Tucked under
+          the primary row now, closer to where the thumb already rests. */}
       <button style={{ ...styles.btnRound, ...styles.fire, ...at("right", 18, 18, 90) }} {...hold((v) => (touch.fire = v))}>
         FIRE
       </button>
@@ -340,19 +345,13 @@ export function MobileControls() {
       </button>
 
       {/* Up the right edge: used, but never mid-burst. Kept clear of the minimap. */}
-      <button style={{ ...styles.btnRound, ...styles.btnSmall, ...at("right", 30, 116, 56) }} {...bomb}>
+      <button style={{ ...styles.btnRound, ...styles.btnSmall, ...at("right", 201, 96, 52) }} {...bomb}>
         BOMB
       </button>
-      <button style={{ ...styles.btnRound, ...styles.btnSmall, ...at("right", 30, 176, 56) }} {...tap("KeyC")}>
+      <button style={{ ...styles.btnRound, ...styles.btnSmall, ...at("right", 125, 96, 52) }} {...tap("KeyC")}>
         CROUCH
       </button>
 
-      {/* ── The left thumb ──
-          Nothing but the stick and the companion. The stick is still FLOATING —
-          it spawns under wherever the thumb lands, which beats a fixed pad — but
-          it now has a visible home ring so there is something to aim for on a
-          first play, which is what the fixed-pad layouts get right. */}
-      <div ref={joyHome} style={styles.joyHome} />
       {/* Nighthaul has no companion, so the button would command nothing. */}
       {gameMode().fox && (
         <button style={{ ...styles.btnRound, ...styles.btnSmall, ...at("left", 34, 158, 56) }} {...tap("KeyQ")}>
@@ -437,22 +436,32 @@ const styles: Record<string, React.CSSProperties> = {
     pointerEvents: "auto",
     touchAction: "none",
   },
-  // Positioned in JS wherever the thumb lands; hidden until then.
+  // Fixed at JOY_HOME — always the same spot, never repositioned in JS. The
+  // border brightens on press (onJoyDown/onJoyUp) as the only "you're on it"
+  // feedback, since the ring itself no longer moves to show that.
   joyRing: {
     position: "absolute",
-    left: 0,
-    top: 0,
+    left: `calc(env(safe-area-inset-left, 0px) + ${JOY_HOME.left}px)`,
+    bottom: `calc(env(safe-area-inset-bottom, 0px) + ${JOY_HOME.bottom}px)`,
     width: JOY_R * 2,
     height: JOY_R * 2,
     borderRadius: 999,
-    background: "rgba(20,20,24,0.28)",
-    border: "1.5px solid rgba(255,255,255,0.28)",
+    background: "rgba(20,20,24,0.3)",
+    border: "1.5px solid rgba(255,255,255,0.32)",
     pointerEvents: "none",
-    opacity: 0,
-    transition: "opacity 0.14s ease-out",
+    transition: "border-color 0.1s ease-out",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
+  },
+  /** One of 4 short marks on the ring's rim (N/E/S/W) — reads as "this is a
+   *  d-pad" at a glance, before a thumb ever touches it. */
+  joyTick: {
+    position: "absolute",
+    width: 3,
+    height: 10,
+    borderRadius: 2,
+    background: "rgba(255,255,255,0.4)",
   },
   joyKnob: {
     width: JOY_R,
@@ -461,6 +470,10 @@ const styles: Record<string, React.CSSProperties> = {
     background: "rgba(242,193,78,0.75)",
     border: "1.5px solid rgba(255,255,255,0.5)",
     pointerEvents: "none",
+    // No transition here on purpose — during a drag (moveJoy, every pointer
+    // move) the knob has to track the thumb instantly, not ease toward it.
+    // onJoyUp turns a transition on just for the release-to-centre spring,
+    // then clears it before the next press.
   },
   /** Every control on the pad is a circle. One shape is one language, and a
    *  circle is the shape a thumb actually lands on — a rounded rectangle has
@@ -477,19 +490,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     background: "rgba(178,59,59,0.55)",
     borderColor: "rgba(255,255,255,0.55)",
-  },
-  /** Where the stick rests before you touch it (see the joyHome ref). */
-  joyHome: {
-    position: "absolute",
-    left: "calc(env(safe-area-inset-left, 0px) + 30px)",
-    bottom: "calc(env(safe-area-inset-bottom, 0px) + 26px)",
-    width: JOY_R * 2,
-    height: JOY_R * 2,
-    borderRadius: 999,
-    border: "2px dashed rgba(255,255,255,0.28)",
-    background: "rgba(20,20,24,0.2)",
-    pointerEvents: "none",
-    transition: "opacity 0.15s ease",
   },
   center: {
     ...btnBase,
