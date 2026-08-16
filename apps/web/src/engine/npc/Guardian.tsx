@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useFrame } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { SpeechBubble } from "./SpeechBubble";
 import { runtime } from "@/engine/runtime";
 import { useGame } from "@/engine/store";
 import { audio } from "@/engine/audio/audio";
-import { VILLAGE } from "@/engine/world/village";
+import { VILLAGE, BOXES3D } from "@/engine/world/village";
+import { raycastBoxes } from "@/engine/world/collision";
 import { HINTS } from "@/engine/world/hints";
 import { steerTowards } from "@/engine/fox/foxBrain";
 import { NpcRig, type NpcRigState } from "@/engine/character/NpcRig";
@@ -72,10 +73,43 @@ const LEAVE_DIST = 26; // how far it walks off before vanishing
  */
 const STEP_OUT_GRACE = 0.7; // seconds
 
+/**
+ * Camera-sight gate (Marvy's call, 2026-08-16): being in range is no longer
+ * enough to freeze the world — you have to actually be LOOKING at the
+ * guardian. Stepping out and walking past the post with your back turned (or
+ * a wall between you and it) no longer locks the camera mid-turn; the gate
+ * only engages once the guardian is genuinely on screen and unobstructed.
+ *
+ * Two checks, both required: an angle test against the camera's own live FOV
+ * (so aiming down sights, which narrows it, makes the guardian harder to
+ * "catch" — consistent with what's actually visible), and a raycast against
+ * the same BOXES3D geometry every other line-of-sight check in the game uses
+ * (Blocker.tsx's enemy-sees-player check, projectiles, aim-assist) so a wall
+ * or building corner between you and the post genuinely blocks it.
+ */
+const GUARDIAN_EYE_Y = 1.5; // roughly chest/head height — where "seeing" it means seeing it
+const VIEW_MARGIN_DEG = 6; // a little slack so the trigger doesn't feel razor-edge
+const _sightTarget = new THREE.Vector3();
+const _sightDir = new THREE.Vector3();
+const _camForward = new THREE.Vector3();
+
+function cameraSeesGuardian(camera: THREE.Camera, guardianPos: THREE.Vector3): boolean {
+  _sightTarget.set(guardianPos.x, GUARDIAN_EYE_Y, guardianPos.z);
+  _sightDir.subVectors(_sightTarget, camera.position);
+  if (_sightDir.lengthSq() < 1e-8) return true; // camera is basically on top of it
+  _sightDir.normalize();
+  camera.getWorldDirection(_camForward);
+  const angleDeg = THREE.MathUtils.radToDeg(_camForward.angleTo(_sightDir));
+  const halfFov = (camera as THREE.PerspectiveCamera).fov / 2 + VIEW_MARGIN_DEG;
+  if (angleDeg > halfFov) return false;
+  return raycastBoxes(camera.position, _sightTarget, BOXES3D) >= 1;
+}
+
 type Phase = "gone" | "waiting" | "speaking" | "leaving";
 const _goal = new THREE.Vector3();
 
 export function Guardian() {
+  const { camera } = useThree();
   const group = useRef<THREE.Group>(null);
   const pos = useRef(VILLAGE.guardianPost.clone());
   const phase = useRef<Phase>("gone");
@@ -163,8 +197,15 @@ export function Guardian() {
         // the bedroom wall while you were still waking up, which threw away the
         // one beat this scene exists for. It speaks when you are OUTSIDE — and
         // now only once you've BEEN outside for a beat (STEP_OUT_GRACE), not on
-        // the exact frame you cross the threshold.
-        if (!runtime.sheltered && d <= SPEAK_RANGE && steppedOutFor >= STEP_OUT_GRACE) {
+        // the exact frame you cross the threshold — AND only once the camera has
+        // actually turned to see it (cameraSeesGuardian, above). Proximity gets
+        // you into the conversation's range; looking is what starts it.
+        if (
+          !runtime.sheltered &&
+          d <= SPEAK_RANGE &&
+          steppedOutFor >= STEP_OUT_GRACE &&
+          cameraSeesGuardian(camera, pos.current)
+        ) {
           phase.current = "speaking";
           runtime.guardianGate = true;
           const real = HINTS.find((h) => h.real);
