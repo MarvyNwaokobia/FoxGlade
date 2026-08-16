@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { formatEther } from "viem";
 import { useWallet } from "@/engine/chain/wallet";
 import { ON_CHAIN_ITEMS, onChainItemId } from "@/engine/chain/itemIds";
 import {
@@ -13,13 +14,15 @@ import {
   onChainVilleBalance,
   type ResaleListing,
 } from "@/engine/chain/marketplace";
+import { claimSeasonReward, claimableReward, currentSeasonId } from "@/engine/chain/season";
 import { publicClient } from "@/engine/chain/client";
 import { ADDRESSES, ARMORY_ITEMS_ABI } from "@/engine/chain/contracts";
 import { OnChainConfirm } from "./OnChainConfirm";
 
 type Confirm =
   | { kind: "list"; itemId: string; localName: string; price: number }
-  | { kind: "buy"; listing: ResaleListing; name: string };
+  | { kind: "buy"; listing: ResaleListing; name: string }
+  | { kind: "claimSeason"; seasonId: bigint; amount: bigint };
 
 /**
  * "Trade" tab — real, on-chain player-to-player resale (Marvy's call,
@@ -36,6 +39,7 @@ export function OnChainMarket() {
   const [villeBalance, setVilleBalance] = useState<bigint>(0n);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [listPrice, setListPrice] = useState<Record<string, string>>({});
+  const [season, setSeason] = useState<{ id: bigint; claimable: bigint } | null>(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
 
   useEffect(() => {
@@ -59,6 +63,11 @@ export function OnChainMarket() {
       setApproved(await isApprovedForTrading(address as `0x${string}`));
       setVilleBalance(await onChainVilleBalance(address as `0x${string}`));
       setListings(await getActiveResaleListings());
+      // 0 (no season ever started) reads the same as "nothing finalized yet" —
+      // claimable(0, address) is always 0, so this never needs a special case.
+      const seasonId = await currentSeasonId();
+      const amount = await claimableReward(seasonId, address as `0x${string}`);
+      if (!cancelled) setSeason({ id: seasonId, claimable: amount });
     })();
     return () => {
       cancelled = true;
@@ -77,6 +86,22 @@ export function OnChainMarket() {
   return (
     <div style={styles.root}>
       <div style={styles.balanceRow}>On-chain VILLE: {(Number(villeBalance) / 1e18).toFixed(0)}</div>
+
+      {season && season.claimable > 0n && (
+        <>
+          <div style={styles.section}>Tournament</div>
+          <div style={styles.row}>
+            <span style={styles.rowName}>Season {season.id.toString()} prize</span>
+            <span style={styles.rowPrice}>{formatEther(season.claimable)} AVAX</span>
+            <button
+              style={styles.smallBtn}
+              onClick={() => setConfirm({ kind: "claimSeason", seasonId: season.id, amount: season.claimable })}
+            >
+              Claim
+            </button>
+          </div>
+        </>
+      )}
 
       <div style={styles.section}>Your on-chain gear</div>
       {!approved && ownedItems.length > 0 && (
@@ -192,6 +217,18 @@ export function OnChainMarket() {
           onClose={() => setConfirm(null)}
           onConfirm={async () => {
             await buyResaleOnChain(confirm.listing.resaleId, Number(confirm.listing.price) / 1e18);
+            refresh();
+          }}
+        />
+      )}
+      {confirm?.kind === "claimSeason" && (
+        <OnChainConfirm
+          title="Claim tournament prize"
+          lines={[`${formatEther(confirm.amount)} AVAX for Season ${confirm.seasonId.toString()}.`, "This is a real, gas-paying transaction."]}
+          confirmLabel="Claim it"
+          onClose={() => setConfirm(null)}
+          onConfirm={async () => {
+            await claimSeasonReward(confirm.seasonId);
             refresh();
           }}
         />

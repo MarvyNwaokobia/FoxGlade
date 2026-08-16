@@ -15,8 +15,8 @@ import {
   type WeaponId,
 } from "@/engine/config/shop";
 import { clearSave, loadSave, writeSave, NEW_SAVE } from "@/engine/save";
-import { claimOnChain, stampEvent } from "@/engine/chain/relay";
-import { FOX_RUST, foxRustFor } from "@/engine/config/fox";
+import { claimOnChain, evolvePetOnChain, recordPetRunOnChain, revivePetOnChain, stampEvent } from "@/engine/chain/relay";
+import { FOX_GROW_STAGES, FOX_RUST, foxRustFor } from "@/engine/config/fox";
 
 /** Read once at module load — the state below is seeded from it. */
 const SAVE = loadSave();
@@ -454,6 +454,9 @@ export const useGame = create<GameState>((set, get) => {
     // salvaged partial carry) and only if a wallet is connected — see relay.ts.
     if (secured && rarity) {
       claimOnChain(amount, rarity === "rare" ? 1 : 0);
+      // Same moment PetNFT.recordRun's decay clock is meant to reset on — a
+      // completed treasure run, not just logging in.
+      recordPetRunOnChain();
     }
   },
 
@@ -507,7 +510,9 @@ export const useGame = create<GameState>((set, get) => {
   pauseOpen: false,
   openPause: () => set((s) => (s.roundState === "playing" && !s.isDead ? { pauseOpen: true } : s)),
   closePause: () => set({ pauseOpen: false }),
-  buyItem: (id) =>
+  buyItem: (id) => {
+    let evolvedStage: 1 | 2 | 3 | null = null;
+    let revived = false;
     set((s) => {
       const item = SHOP_ITEMS.find((i) => i.id === id);
       if (!item || s.villeBanked < item.price) return s;
@@ -540,6 +545,11 @@ export const useGame = create<GameState>((set, get) => {
             );
             return { villeBanked: s.villeBanked - item.price };
           }
+          case "fox_revive":
+            // Buying it IS using it, same shape as the chart — instantly clears
+            // whatever rust is currently in effect instead of waiting it out.
+            revived = true;
+            return { villeBanked: s.villeBanked - item.price, foxRustBanksLeft: 0 };
           default:
             return s;
         }
@@ -551,6 +561,10 @@ export const useGame = create<GameState>((set, get) => {
       // Young before it was Adult.
       if (item.requires && !s.owned.includes(item.requires)) return s;
       const owned = [...s.owned, id];
+      // A fox growth stage purchase maps 1:1 onto PetNFT.Stage (Kit/Egg is
+      // implicit stage 0, so Young/Adult/Prime are stages 1/2/3 in buy order).
+      const growIdx = FOX_GROW_STAGES.findIndex((g) => g.id === id);
+      if (growIdx >= 0) evolvedStage = (growIdx + 1) as 1 | 2 | 3;
       return {
         villeBanked: s.villeBanked - item.price,
         owned,
@@ -565,7 +579,12 @@ export const useGame = create<GameState>((set, get) => {
           : {}),
         ...(id === "b_satchel" ? { bombsLeft: bombCapacity(owned) } : {}),
       };
-    }),
+    });
+    // Real on-chain calls, fired after the local state actually changed —
+    // see relay.ts for the wallet-connected no-op.
+    if (evolvedStage !== null) evolvePetOnChain(evolvedStage);
+    if (revived) revivePetOnChain();
+  },
   equipWeapon: (gunId) =>
     set((s) => {
       const item = SHOP_ITEMS.find((i) => i.gunId === gunId);

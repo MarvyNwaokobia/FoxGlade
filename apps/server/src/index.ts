@@ -1,7 +1,7 @@
 import "dotenv/config";
 import express from "express";
-import { isAddress, isHex, parseUnits, type Address, type Hex } from "viem";
-import { gameServerAddress, walletClient, withNonce } from "./chain.js";
+import { isAddress, isHex, parseEventLogs, parseUnits, type Address, type Hex } from "viem";
+import { gameServerAddress, publicClient, walletClient, withNonce } from "./chain.js";
 import {
   ADDRESSES,
   ARMORY_ITEMS_ABI,
@@ -11,7 +11,7 @@ import {
   TREASURE_NFT_ABI,
   VILLE_TOKEN_ABI,
 } from "./contracts.js";
-import { pool, dbConfigured, ensureSchema } from "./db.js";
+import { pool, dbConfigured, ensureSchema, getPetTokenId, savePetTokenId } from "./db.js";
 
 const app = express();
 app.use(express.json());
@@ -332,9 +332,150 @@ app.post("/pet/claim", async (req, res) => {
         nonce,
       })
     );
-    res.json({ txHash });
+    // recordRun/evolve/revive all take the pet's tokenId, not the wallet, so
+    // this is the one place that can ever learn it — decode it off the mint
+    // receipt and remember it against the wallet for every later pet action.
+    let tokenId: string | null = null;
+    try {
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+      const [minted] = parseEventLogs({ abi: PET_NFT_ABI, eventName: "PetMinted", logs: receipt.logs });
+      if (minted) {
+        tokenId = minted.args.tokenId.toString();
+        await savePetTokenId(playerAddr, tokenId);
+      }
+    } catch (err) {
+      // The mint itself already succeeded (txHash above is real) — losing the
+      // tokenId just means recordRun/evolve/revive silently no-op later until
+      // this is re-derived some other way. Not worth failing the claim over.
+      console.error("pet tokenId lookup failed after a successful mint", err);
+    }
+    res.json({ txHash, tokenId });
   } catch (err) {
     console.error("pet claim failed", err);
+    res.status(500).json({ error: "on-chain call failed" });
+  }
+});
+
+// recordRun/evolve/revive all act on the pet the wallet already minted (see
+// tokenId capture above) — a wallet with no on-chain pet yet is a clean 404,
+// which the client treats as a silent no-op, same as "no wallet connected."
+const MIN_PET_ACTION_INTERVAL_MS = 2_000;
+const lastPetRunAt = new Map<string, number>();
+const lastPetEvolveAt = new Map<string, number>();
+const lastPetReviveAt = new Map<string, number>();
+
+async function requirePetToken(player: string, res: express.Response): Promise<bigint | null> {
+  const tokenId = await getPetTokenId(player);
+  if (tokenId === null) {
+    res.status(404).json({ error: "no on-chain pet for this wallet yet" });
+    return null;
+  }
+  return BigInt(tokenId);
+}
+
+app.post("/pet/record-run", async (req, res) => {
+  const { player } = req.body ?? {};
+  if (typeof player !== "string" || !isAddress(player)) {
+    res.status(400).json({ error: "invalid player address" });
+    return;
+  }
+  const key = player.toLowerCase();
+  const last = lastPetRunAt.get(key) ?? 0;
+  if (Date.now() - last < MIN_PET_ACTION_INTERVAL_MS) {
+    res.status(429).json({ error: "too many requests, slow down" });
+    return;
+  }
+  lastPetRunAt.set(key, Date.now());
+
+  const tokenId = await requirePetToken(player, res);
+  if (tokenId === null) return;
+  try {
+    const txHash = await withNonce((nonce) =>
+      walletClient.writeContract({
+        address: ADDRESSES.petNFT,
+        abi: PET_NFT_ABI,
+        functionName: "recordRun",
+        args: [tokenId],
+        nonce,
+      })
+    );
+    res.json({ txHash });
+  } catch (err) {
+    console.error("pet record-run failed", err);
+    res.status(500).json({ error: "on-chain call failed" });
+  }
+});
+
+app.post("/pet/evolve", async (req, res) => {
+  const { player, stage } = req.body ?? {};
+  if (typeof player !== "string" || !isAddress(player)) {
+    res.status(400).json({ error: "invalid player address" });
+    return;
+  }
+  if (!Number.isInteger(stage) || stage < 1 || stage > 3) {
+    res.status(400).json({ error: "stage must be an integer in [1, 3]" });
+    return;
+  }
+  const key = player.toLowerCase();
+  const last = lastPetEvolveAt.get(key) ?? 0;
+  if (Date.now() - last < MIN_PET_ACTION_INTERVAL_MS) {
+    res.status(429).json({ error: "too many requests, slow down" });
+    return;
+  }
+  lastPetEvolveAt.set(key, Date.now());
+
+  const tokenId = await requirePetToken(player, res);
+  if (tokenId === null) return;
+  try {
+    const txHash = await withNonce((nonce) =>
+      walletClient.writeContract({
+        address: ADDRESSES.petNFT,
+        abi: PET_NFT_ABI,
+        functionName: "evolve",
+        args: [tokenId, stage],
+        nonce,
+      })
+    );
+    res.json({ txHash });
+  } catch (err) {
+    // Most likely NotForward — the client already thinks this stage was
+    // reached (a stale evolve resent after a refresh, say). Not worth
+    // surfacing as a hard failure since the pet is already at/past this stage
+    // either way.
+    console.error("pet evolve failed", err);
+    res.status(500).json({ error: "on-chain call failed" });
+  }
+});
+
+app.post("/pet/revive", async (req, res) => {
+  const { player } = req.body ?? {};
+  if (typeof player !== "string" || !isAddress(player)) {
+    res.status(400).json({ error: "invalid player address" });
+    return;
+  }
+  const key = player.toLowerCase();
+  const last = lastPetReviveAt.get(key) ?? 0;
+  if (Date.now() - last < MIN_ONBOARD_INTERVAL_MS) {
+    res.status(429).json({ error: "too many requests, slow down" });
+    return;
+  }
+  lastPetReviveAt.set(key, Date.now());
+
+  const tokenId = await requirePetToken(player, res);
+  if (tokenId === null) return;
+  try {
+    const txHash = await withNonce((nonce) =>
+      walletClient.writeContract({
+        address: ADDRESSES.petNFT,
+        abi: PET_NFT_ABI,
+        functionName: "revive",
+        args: [tokenId],
+        nonce,
+      })
+    );
+    res.json({ txHash });
+  } catch (err) {
+    console.error("pet revive failed", err);
     res.status(500).json({ error: "on-chain call failed" });
   }
 });

@@ -24,21 +24,52 @@ export function dbConfigured(): boolean {
 let migrated: Promise<void> | null = null;
 
 /** Idempotent — safe to call on every boot. One small table, no migration
- *  framework needed for a single `CREATE TABLE IF NOT EXISTS`. */
+ *  framework needed for a single `CREATE TABLE IF NOT EXISTS` (+ an `ADD
+ *  COLUMN IF NOT EXISTS` for pet_token_id, added after the table already
+ *  existed in production). */
 export function ensureSchema(): Promise<void> {
   if (!pool) return Promise.resolve();
   if (!migrated) {
-    migrated = pool.query(`
+    migrated = pool
+      .query(
+        `
       CREATE TABLE IF NOT EXISTS onboarding (
         wallet_address TEXT PRIMARY KEY,
         hero_id TEXT NOT NULL DEFAULT 'man',
         egg_variant TEXT,
         has_onboarded BOOLEAN NOT NULL DEFAULT FALSE,
         completed_at TIMESTAMPTZ,
+        pet_token_id TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );
-    `).then(() => undefined);
+    `
+      )
+      .then(() => pool!.query(`ALTER TABLE onboarding ADD COLUMN IF NOT EXISTS pet_token_id TEXT;`))
+      .then(() => undefined);
   }
   return migrated;
+}
+
+/** PetNFT's on-chain functions (recordRun/evolve/revive) take a tokenId, not
+ *  a wallet — this is the only place that remembers which token a wallet's
+ *  egg mint produced. Stored as TEXT since a uint256 tokenId can exceed
+ *  JS/Postgres bigint's safe range in principle, even though in practice
+ *  this contract's ids are small sequential integers. */
+export async function savePetTokenId(walletAddress: string, tokenId: string): Promise<void> {
+  if (!pool) return;
+  await pool.query(
+    `INSERT INTO onboarding (wallet_address, pet_token_id, updated_at)
+     VALUES ($1, $2, now())
+     ON CONFLICT (wallet_address) DO UPDATE SET pet_token_id = EXCLUDED.pet_token_id, updated_at = now()`,
+    [walletAddress.toLowerCase(), tokenId]
+  );
+}
+
+export async function getPetTokenId(walletAddress: string): Promise<string | null> {
+  if (!pool) return null;
+  const { rows } = await pool.query(`SELECT pet_token_id FROM onboarding WHERE wallet_address = $1`, [
+    walletAddress.toLowerCase(),
+  ]);
+  return rows[0]?.pet_token_id ?? null;
 }

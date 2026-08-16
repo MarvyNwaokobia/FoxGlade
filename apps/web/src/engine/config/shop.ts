@@ -205,6 +205,20 @@ export const SHOP_ITEMS: ShopItem[] = [
       requires: g.requires ?? undefined,
     })
   ),
+  {
+    // Rust already wears off on its own after a few bank runs (FOX_RUST) — this
+    // is the impatient version: pay to clear it instantly instead of waiting it
+    // out. Always buyable (no `requires`) since rust can hit a fox at any
+    // growth stage.
+    id: "fox_revive",
+    category: "fox",
+    name: "Revival Charm",
+    desc: "Instantly wears off any rust from time away — no waiting it out.",
+    price: 150,
+    icon: "✨",
+    rarity: "rare",
+    consumable: true,
+  },
 ];
 
 export const CATEGORY_LABEL: Record<ShopCategory, string> = {

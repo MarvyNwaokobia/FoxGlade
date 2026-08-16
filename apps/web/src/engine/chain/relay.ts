@@ -83,3 +83,47 @@ export function claimPetOnChain(): void {
       console.warn("[chain] pet claim relay failed", err);
     });
 }
+
+/** Reset the pet's on-chain decay clock — fired on every successfully banked
+ * treasure, same moment as claimOnChain. A 404 (no on-chain pet for this
+ * wallet yet, e.g. onboarding was completed before this existed) is exactly
+ * as silent as having no wallet at all. */
+export function recordPetRunOnChain(): void {
+  const address = useWallet.getState().address;
+  if (!address) return;
+  fetch("/api/chain/pet-run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ player: address }),
+  }).catch((err) => {
+    console.warn("[chain] pet record-run relay failed", err);
+  });
+}
+
+/** Advance the pet's on-chain growth stage — fired when the player buys the
+ * next fox growth tier in the shop (Young/Adult/Prime). `stage` is the
+ * PetNFT.Stage enum value: 1 = Baby, 2 = Juvenile, 3 = Adult. */
+export function evolvePetOnChain(stage: 1 | 2 | 3): void {
+  const address = useWallet.getState().address;
+  if (!address) return;
+  fetch("/api/chain/pet-evolve", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ player: address, stage }),
+  }).catch((err) => {
+    console.warn("[chain] pet evolve relay failed", err);
+  });
+}
+
+/** Wake a dormant pet — fired when the player buys the Revival Charm. */
+export function revivePetOnChain(): void {
+  const address = useWallet.getState().address;
+  if (!address) return;
+  fetch("/api/chain/pet-revive", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ player: address }),
+  }).catch((err) => {
+    console.warn("[chain] pet revive relay failed", err);
+  });
+}

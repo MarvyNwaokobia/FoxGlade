@@ -93,4 +93,36 @@ export const PET_NFT_ABI = [
     inputs: [{ name: "player", type: "address" }],
     outputs: [{ name: "tokenId", type: "uint256" }],
   },
+  {
+    type: "function",
+    name: "recordRun",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "tokenId", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "evolve",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "tokenId", type: "uint256" },
+      { name: "target", type: "uint8" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "revive",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "tokenId", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    type: "event",
+    name: "PetMinted",
+    inputs: [
+      { name: "player", type: "address", indexed: true },
+      { name: "tokenId", type: "uint256", indexed: true },
+    ],
+  },
 ] as const;

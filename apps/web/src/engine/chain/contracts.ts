@@ -134,3 +134,30 @@ export const ARMORY_ITEMS_ABI = [
     outputs: [{ type: "uint256" }],
   },
 ] as const;
+
+export const SEASON_REWARDS_ABI = [
+  {
+    type: "function",
+    name: "currentSeasonId",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "claimable",
+    stateMutability: "view",
+    inputs: [
+      { name: "seasonId", type: "uint256" },
+      { name: "wallet", type: "address" },
+    ],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "claimReward",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "seasonId", type: "uint256" }],
+    outputs: [],
+  },
+] as const;
