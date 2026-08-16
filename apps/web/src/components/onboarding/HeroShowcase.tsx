@@ -3,7 +3,7 @@
 import { useMemo, useRef } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { PlayerRig, type PlayerRigState } from "@/engine/character/PlayerRig";
+import { PlayerRig, type CharacterModelId, type PlayerRigState } from "@/engine/character/PlayerRig";
 
 // The main village Canvas (Game.tsx) pairs ACES tonemapping with a low
 // exposure (0.82) because a full HDRI sky is doing most of the fill light
@@ -50,7 +50,7 @@ const IDLE_STATE: PlayerRigState = {
   opacity: 1,
 };
 
-function Turntable() {
+function Turntable({ model }: { model: CharacterModelId }) {
   const group = useRef<THREE.Group>(null);
   useFrame((_, dt) => {
     if (group.current) group.current.rotation.y += dt * 0.45;
@@ -61,12 +61,12 @@ function Turntable() {
   const state = useMemo(() => ({ ...IDLE_STATE, position: new THREE.Vector3(), velocity: new THREE.Vector3() }), []);
   return (
     <group ref={group} position={[0, -1.05, 0]}>
-      <PlayerRig state={state} model="man" />
+      <PlayerRig state={state} model={model} />
     </group>
   );
 }
 
-export function HeroShowcase() {
+export function HeroShowcase({ model = "man" }: { model?: CharacterModelId }) {
   return (
     <Canvas
       camera={{ position: [0, 0.05, 2.7], fov: 34, near: 0.1, far: 20 }}
@@ -85,7 +85,7 @@ export function HeroShowcase() {
       <directionalLight position={[2.4, 3.2, 1.8]} intensity={2.6} color="#ffe3b0" />
       <directionalLight position={[-2, 1.2, -1.5]} intensity={1.1} color="#8fb0d9" />
       <directionalLight position={[0, 1.4, -2.6]} intensity={0.9} color="#fff2d8" />
-      <Turntable />
+      <Turntable model={model} />
     </Canvas>
   );
 }

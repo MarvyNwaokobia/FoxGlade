@@ -118,8 +118,18 @@ function HeroStep({ onBack, onNext }: { onBack: () => void; onNext: () => void }
           <div style={styles.heroDesc}>Last one in, first one blamed. Knows the walls better than the family does.</div>
         </div>
         <div style={styles.lockedCol}>
-          <LockedHeroSlot />
-          <LockedHeroSlot />
+          {/* Real previews, not "?" — you can see what's coming, you just
+              can't pick it yet. Converted from design/Mixamo/Ninja.fbx and
+              Female2.fbx ("Kachujin") (2026-08-16), the least-jarring of the
+              unconverted Mixamo candidates checked against the medieval
+              setting.
+              Static portraits, not a second/third live HeroShowcase: two
+              simultaneous WebGL canvases reliably crashed with "Context
+              Lost" in testing, even after fixing each model's own texture
+              size — a real risk on the lower-end phones this game targets,
+              not worth taking for what's just a locked preview. */}
+          <LockedHeroSlot portrait="/characters/portraits/ninja.webp" />
+          <LockedHeroSlot portrait="/characters/portraits/female.webp" />
         </div>
       </div>
       <StepNav onBack={onBack} onNext={onNext} nextLabel="CONTINUE" />
@@ -127,11 +137,58 @@ function HeroStep({ onBack, onNext }: { onBack: () => void; onNext: () => void }
   );
 }
 
-function LockedHeroSlot() {
+function LockedHeroSlot({ portrait }: { portrait?: string }) {
   return (
     <div style={styles.lockedCard}>
-      <div style={styles.lockedGlyph}>?</div>
-      <div style={styles.lockedLabel}>COMING SOON</div>
+      {portrait && (
+        // eslint-disable-next-line @next/next/no-img-element -- a static,
+        // pre-rendered portrait doesn't need next/image's runtime resizing.
+        <img src={portrait} alt="" style={styles.lockedPortrait} />
+      )}
+      {/* A real padlock now, not the 🔒 emoji — flat and small, it read as a
+          placeholder glyph rather than a locked item worth wanting (Marvy's
+          call, 2026-08-16). Sat directly over the portrait, centred, with
+          its own backing plate for contrast against whatever part of the
+          character happens to be behind it. */}
+      {portrait ? <PadlockIcon size={40} /> : <div style={styles.lockedGlyph}>🔒</div>}
+    </div>
+  );
+}
+
+/** A gradient-shaded padlock — steel shackle, brass body, keyhole cutout —
+ *  instead of the flat emoji glyph. Sized and coloured to read as a real
+ *  locked item (gold body echoes the CTA/VILLE gold used everywhere else in
+ *  this wizard) rather than a generic "TBD" marker. */
+function PadlockIcon({ size }: { size: number }) {
+  const uid = "lock"; // single instance per slot, no id collisions on this screen
+  return (
+    <div style={styles.padlockPlate}>
+      <svg width={size} height={size * 1.15} viewBox="0 0 48 56" style={styles.padlockSvg}>
+        <defs>
+          <linearGradient id={`${uid}-shackle`} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#eef2f5" />
+            <stop offset="55%" stopColor="#aab2ba" />
+            <stop offset="100%" stopColor="#6f767d" />
+          </linearGradient>
+          <linearGradient id={`${uid}-body`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#ffdf8f" />
+            <stop offset="45%" stopColor="#f2c14e" />
+            <stop offset="100%" stopColor="#a9711f" />
+          </linearGradient>
+        </defs>
+        <path
+          d="M14 24V17a10 10 0 0 1 20 0v7"
+          fill="none"
+          stroke={`url(#${uid}-shackle)`}
+          strokeWidth={5.5}
+          strokeLinecap="round"
+        />
+        <rect x="8" y="22" width="32" height="28" rx="5" fill={`url(#${uid}-body)`} />
+        {/* Gloss highlight, the thing that sells "metal" over "flat icon". */}
+        <rect x="11" y="25" width="7" height="22" rx="3.5" fill="#fff" opacity={0.22} />
+        <circle cx="24" cy="33" r="4" fill="#3a2a12" />
+        <path d="M22 36h4l1.6 8h-7.2z" fill="#3a2a12" />
+      </svg>
     </div>
   );
 }
@@ -304,6 +361,7 @@ const styles: Record<string, React.CSSProperties> = {
   heroDesc: { color: "rgba(232,238,242,0.5)", fontSize: 11.5, textAlign: "center", lineHeight: 1.5 },
   lockedCol: { display: "flex", flexDirection: "column", gap: 12, width: 108 },
   lockedCard: {
+    position: "relative",
     flex: 1,
     display: "flex",
     flexDirection: "column",
@@ -311,13 +369,43 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "center",
     gap: 6,
     borderRadius: 12,
+    overflow: "hidden",
     border: "1px dashed rgba(255,255,255,0.15)",
     background: "rgba(255,255,255,0.02)",
     opacity: 0.5,
     minHeight: 100,
   },
+  // The static portrait, full-bleed behind the lock glyph, dimmed as a group
+  // by lockedCard's own opacity (CSS opacity on the parent already does
+  // this). object-position skews toward the top: the render's own
+  // rotated-3/4 framing (render_portrait.py) puts the face near the top of
+  // a 640x900 image, and this card is much shorter/wider than that.
+  lockedPortrait: {
+    position: "absolute",
+    inset: 0,
+    width: "100%",
+    height: "100%",
+    objectFit: "cover",
+    objectPosition: "50% 15%",
+  },
   lockedGlyph: { fontSize: 22, color: "rgba(232,238,242,0.4)" },
-  lockedLabel: { fontSize: 8.5, fontWeight: 800, letterSpacing: 1, color: "rgba(232,238,242,0.35)" },
+  // A soft dark radial plate behind the padlock — guarantees contrast
+  // against whatever part of the portrait happens to sit behind it, the
+  // same problem the old text chip solved for "COMING SOON".
+  padlockPlate: {
+    position: "absolute",
+    top: "50%",
+    left: "50%",
+    transform: "translate(-50%, -50%)",
+    width: 68,
+    height: 68,
+    borderRadius: "50%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "radial-gradient(circle, rgba(11,13,16,0.72) 0%, rgba(11,13,16,0.4) 65%, transparent 100%)",
+  },
+  padlockSvg: { filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.6))" },
   eggGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 },
   eggCard: {
     display: "flex",

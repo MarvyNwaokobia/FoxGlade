@@ -77,7 +77,7 @@ export interface PlayerRigState {
   opacity: number; // 0..1 — fades as the camera closes in, so he never hard-vanishes
 }
 
-export type CharacterModelId = "man" | "sentinel" | "phantom" | "berserker" | "operator";
+export type CharacterModelId = "man" | "sentinel" | "phantom" | "berserker" | "operator" | "ninja" | "female";
 
 export const MODEL_PATHS: Record<CharacterModelId, string> = {
   man: "/characters/glb/player_man.glb", // realistic Mixamo character (Marvy's), converted FBX→GLB
@@ -85,13 +85,31 @@ export const MODEL_PATHS: Record<CharacterModelId, string> = {
   phantom: "/characters/glb/phantom.glb",
   berserker: "/characters/glb/berserker.glb",
   operator: "/characters/glb/operator.glb",
+  // Coming-soon roster previews only (Onboarding.tsx's locked slots) — not
+  // selectable heroes yet. Converted from design/Mixamo/Ninja.fbx and
+  // Female2.fbx ("Kachujin") (2026-08-16): the two least-jarring of ~9+5
+  // unconverted Mixamo candidates checked against the medieval setting (the
+  // rest were sci-fi, anime-fantasy pirate/warrior costumes, or WWII
+  // military — see the commit history for the full survey). Raw FBX import
+  // came out ~130x too small — normalized to the same 1.8m-tall,
+  // feet-at-origin convention every other model here uses.
+  ninja: "/characters/glb/ninja.glb",
+  female: "/characters/glb/female.glb",
 };
 
 // Every GLB here is Blender-exported (Valor's rigs AND our FBX→GLB conversions),
 // and they all carry the ~90° Z-up→Y-up root-pitch offset the mixer clips don't
 // account for — so all of them need the per-frame HIPS_PITCH_FIX (see below).
 // Confirmed empirically: without it the converted `man` lies flat / floats.
-const NEEDS_PITCH_FIX = new Set<CharacterModelId>(["man", "sentinel", "phantom", "berserker", "operator"]);
+const NEEDS_PITCH_FIX = new Set<CharacterModelId>([
+  "man",
+  "sentinel",
+  "phantom",
+  "berserker",
+  "operator",
+  "ninja",
+  "female",
+]);
 
 // The Blender-exported GLB rigs carry a ~90° pitch offset on the root (Hips) bone
 // vs the Mixamo clips (Z-up→Y-up export), which lays the character out FLAT. The
