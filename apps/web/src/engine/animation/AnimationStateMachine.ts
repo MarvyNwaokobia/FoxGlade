@@ -130,20 +130,10 @@ export function buildAnimMap(tempo = 1.0): AnimationMap {
   };
 }
 
-/**
- * Which skeleton bones count as "upper body" for the additive run-and-gun layer —
- * the shot/aim clip is masked to these so the legs keep running underneath. Track
- * names are the colon-less mixamorig form (see normalizeBoneTrackName). Spine base
- * stays with the legs (torso bob); Spine1 up + both arms + head are upper.
- */
-const UPPER_BODY_BONES = [
-  "Spine1", "Spine2", "Neck", "Head",
-  "LeftShoulder", "LeftArm", "LeftForeArm", "LeftHand",
-  "RightShoulder", "RightArm", "RightForeArm", "RightHand",
-];
-export function isUpperBodyTrack(trackName: string): boolean {
-  return UPPER_BODY_BONES.some((b) => trackName.startsWith("mixamorig" + b));
-}
+// Moved to boneGroups.ts (2026-08-16) so MixamoLoader can use the same
+// upper/lower split to splice a synthetic combat-ready walk/run — re-exported
+// here so nothing importing it from this module has to change.
+export { isUpperBodyTrack } from "./boneGroups";
 
 export class AnimationStateMachine {
   private currentState: AnimState = AnimState.Idle;

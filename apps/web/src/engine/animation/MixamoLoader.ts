@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
+import { isUpperBodyTrack } from "./boneGroups";
 
 // The shooter animation set ported from Valor — one clip per gameplay state the
 // player drives: idle / walk / run / strafe / fire / dodge + two damage flinches
@@ -31,14 +32,19 @@ export const CLIP_NAMES = {
   vault: "vault", // hurdle / vault over a low obstacle
   // ── Combat-ready locomotion (Blockers only) — a rifle held UP and tracked
   // while walking/running/strafing/planted, so an engaged enemy visibly
-  // advances in a shooting stance instead of the plain unarmed-looking
-  // `walk`/`run` cycle above. `combatStrafeA/B` and `aimIdle` are ported from
-  // Valor's Slim Shooter Pack and load today. `combatWalk`/`combatRun` are
-  // load-gated (see ALL_ANIMS below): the pack's `walking.fbx`/`rifle run.fbx`
-  // fail to parse in three's FBXLoader ("Unknown property type" — the same
-  // known limitation already noted for other files in this pack), so those two
-  // are NOT wired to that broken source. AnimationStateMachine.hasClip() lets
-  // NpcRig fall back to the plain Walk/Run clip until real ones land here.
+  // advances in a shooting stance instead of the more relaxed carry the plain
+  // `walk`/`run` cycle reads as. `combatStrafeA/B` and `aimIdle` are ported
+  // from Valor's Slim Shooter Pack and load today. `combatWalk`/`combatRun`
+  // have no real source file — the pack's own `walking.fbx`/`rifle run.fbx`
+  // fail to parse in three's FBXLoader ("Unknown property type"), and there's
+  // no reason to wait on a fresh Mixamo download to fix that: a Mixamo clip
+  // doesn't carry a weapon mesh, it's a skeleton pose, and `rifleIdle` already
+  // has exactly the upper-body pose this needs. So these two are SYNTHESIZED
+  // at load time instead (see `synthesizeCombatLocomotion` below) — `walk`/
+  // `run`'s own leg tracks, `rifleIdle`'s arm/spine/head tracks spliced on top
+  // via `isUpperBodyTrack`. If a real `Rifle Walking.fbx`/`Rifle Running.fbx`
+  // ever does land at the ALL_ANIMS path below, that real clip wins — the
+  // splice only fills in a name Promise.allSettled didn't already populate.
   combatWalk: "combatWalk",
   combatRun: "combatRun",
   combatStrafeA: "combatStrafeA",
@@ -71,12 +77,10 @@ const ALL_ANIMS: Record<string, string> = {
   [CLIP_NAMES.crouchStrafe]: "/characters/raw/Walk Crouching Right.fbx",
   [CLIP_NAMES.turn]: "/characters/raw/Turning.fbx",
   [CLIP_NAMES.vault]: "/characters/raw/Vault Over Box.fbx",
-  // Not supplied yet (load-skipped like jump/sit/drink/grab/crouch above) — the
-  // Slim Shooter Pack's own walking/run FBX fail to parse, so these deliberately
-  // point at a path nothing has dropped a file at. Mixamo-download "Walking"/
-  // "Running" with the Rifle weapon trait (the same way Rifle Idle.fbx and
-  // Strafe Left/Right.fbx were sourced — those parse fine) and save here to
-  // light this up; until then NpcRig falls back to the plain walk/run clip.
+  // No file dropped here on purpose — see the CLIP_NAMES.combatWalk comment
+  // above. `synthesizeCombatLocomotion` builds these two from clips already
+  // loaded above; this entry stays only as the upgrade path if a real capture
+  // ever replaces the splice.
   [CLIP_NAMES.combatWalk]: "/characters/raw/Rifle Walking.fbx",
   [CLIP_NAMES.combatRun]: "/characters/raw/Rifle Running.fbx",
   [CLIP_NAMES.combatStrafeA]: "/characters/raw/Slim Shooter Pack/strafe.fbx",
@@ -168,6 +172,66 @@ function retargetClip(clip: THREE.AnimationClip, name: string): THREE.AnimationC
   return clip;
 }
 
+/**
+ * Build a synthetic clip: `legs`'s own tracks, with any upper-body bone
+ * (`isUpperBodyTrack` — spine/neck/head/both arms) replaced by that bone's
+ * track from `arms` instead. Not additive — no pose delta is computed or
+ * summed, each bone's rotation just comes from one source clip or the other
+ * outright, so there's no cross-pose-family math to get wrong (the failure
+ * mode that killed the earlier additive "aim-ready layer", see PlayerRig.tsx).
+ *
+ * `arms`'s keyframe span doesn't need to match `legs`'s — the composite
+ * clip's duration is `legs`'s (the real stride length), so on a shorter walk
+ * cycle only the opening slice of `arms`'s pose plays each loop, which for a
+ * gentle idle sway reads as a steady held ready-pose, which is the point.
+ */
+export function spliceUpperBody(
+  legs: THREE.AnimationClip,
+  arms: THREE.AnimationClip,
+  name: string
+): THREE.AnimationClip {
+  const armTrackByBone = new Map<string, THREE.KeyframeTrack>();
+  for (const t of arms.tracks) {
+    if (isUpperBodyTrack(t.name)) armTrackByBone.set(t.name, t);
+  }
+  const tracks = legs.tracks.map((t) =>
+    isUpperBodyTrack(t.name) && armTrackByBone.has(t.name) ? armTrackByBone.get(t.name)!.clone() : t.clone()
+  );
+  // An upper-body bone `arms` animates that `legs` doesn't track at all
+  // (rather than merely holding it still) still needs the pose, or that bone
+  // falls back to the rig's bind pose instead of the ready stance.
+  const legBoneNames = new Set(legs.tracks.map((t) => t.name));
+  for (const [boneName, track] of armTrackByBone) {
+    if (!legBoneNames.has(boneName)) tracks.push(track.clone());
+  }
+  return new THREE.AnimationClip(name, legs.duration, tracks);
+}
+
+/**
+ * Fill in `combatWalk`/`combatRun` if nothing already loaded them (a real
+ * `Rifle Walking.fbx`/`Rifle Running.fbx`, were one ever dropped in, wins —
+ * see the CLIP_NAMES.combatWalk comment). Splices rifleIdle's rifle-ready
+ * upper body onto walk/run's own legs, and copies their stride measurement
+ * across so `matchLocomotionSpeed` cadences the splice exactly like the base
+ * clip it shares legs with — it's the same footfall, just re-tagged.
+ */
+function synthesizeCombatLocomotion(): void {
+  const idle = allClips.get(CLIP_NAMES.rifleIdle);
+  if (!idle) return; // nothing to splice a ready pose from
+  const pairs: [string, string][] = [
+    [CLIP_NAMES.walk, CLIP_NAMES.combatWalk],
+    [CLIP_NAMES.run, CLIP_NAMES.combatRun],
+  ];
+  for (const [legsName, combatName] of pairs) {
+    if (allClips.has(combatName)) continue; // a real capture already won
+    const legs = allClips.get(legsName);
+    if (!legs) continue;
+    allClips.set(combatName, spliceUpperBody(legs, idle, combatName));
+    const stride = clipStride.get(legsName);
+    if (stride) clipStride.set(combatName, stride);
+  }
+}
+
 export async function loadMixamoAnimations(): Promise<Map<string, THREE.AnimationClip>> {
   if (allClips.size > 0) return allClips;
   if (loadingPromise) {
@@ -194,6 +258,8 @@ export async function loadMixamoAnimations(): Promise<Map<string, THREE.Animatio
       })
     );
 
+    synthesizeCombatLocomotion();
+
     const loco = [CLIP_NAMES.walk, CLIP_NAMES.run, CLIP_NAMES.strafeLeft, CLIP_NAMES.strafeRight].filter(
       (n) => clipStride.has(n)
     );
@@ -201,7 +267,10 @@ export async function loadMixamoAnimations(): Promise<Map<string, THREE.Animatio
       `[MixamoLoader] Loaded ${allClips.size}/${entries.length} animations` +
         (loco.length
           ? ` — root motion detected on: ${loco.join(", ")}`
-          : ` — locomotion clips are in-place (cadence is speed-matched)`)
+          : ` — locomotion clips are in-place (cadence is speed-matched)`) +
+        ` — combatWalk/combatRun: ${allClips.has(CLIP_NAMES.combatWalk) ? "ok" : "MISSING"}/${
+          allClips.has(CLIP_NAMES.combatRun) ? "ok" : "MISSING"
+        }`
     );
     loadComplete = true;
   })();
