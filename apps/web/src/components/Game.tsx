@@ -17,6 +17,7 @@ import { AudioDriver } from "@/engine/audio/AudioDriver";
 import { audio } from "@/engine/audio/audio";
 import { Hud } from "@/components/Hud";
 import { Shop } from "@/components/Shop";
+import { ArmorySelect } from "@/components/ArmorySelect";
 import { Profile } from "@/components/Profile";
 import { Bank } from "@/components/Bank";
 import { HelpCenter } from "@/components/HelpCenter";
@@ -168,6 +169,7 @@ export default function Game() {
       <Tutorial />
       <Minimap />
       <Shop />
+      <ArmorySelect />
       <Profile />
       <Bank />
       <HelpCenter />

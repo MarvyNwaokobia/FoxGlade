@@ -41,6 +41,11 @@ export function carryCap(owned: string[]): number {
   if (owned.includes("g_satchel")) return BAG_CAP.g_satchel;
   return BAG_CAP.none;
 }
+/** How many distinct weapons you own — the morning armory only opens when
+ *  there's actually a choice between more than one. */
+function ownedWeaponCount(owned: string[]): number {
+  return SHOP_ITEMS.filter((i) => i.category === "weapon" && owned.includes(i.id)).length;
+}
 
 export type RoundState = "playing" | "won" | "lost";
 export type RoundReason = "claimed" | "timeout" | "thief" | null;
@@ -128,6 +133,13 @@ interface GameState {
   tutorialOpen: boolean;
   openTutorial: () => void;
   closeTutorial: () => void;
+  /** The morning armory (ArmorySelect.tsx) — pick which owned weapon to carry
+   *  out today. Auto-opens at dawn (alongside the guardian reset below) but
+   *  only when there's an actual choice: one weapon owned means nothing to
+   *  pick, so it never bothers you. Resolves indoors, before the guardian's
+   *  gate can even trigger (that needs you outside). */
+  armorySelectOpen: boolean;
+  closeArmorySelect: () => void;
   /** Pause — reachable from anywhere in the world, not just sheltered. Same
    *  freeze every other overlay already gets (see `anyOverlayOpen`): NPCs,
    *  projectiles, and the day clock all stop while this is up. */
@@ -266,7 +278,8 @@ export function anyOverlayOpen(s: GameState): boolean {
     s.helpOpen ||
     s.termsOpen ||
     s.tutorialOpen ||
-    s.pauseOpen
+    s.pauseOpen ||
+    s.armorySelectOpen
   );
 }
 
@@ -302,6 +315,7 @@ export const useGame = create<GameState>((set, get) => {
     reseedHints(false);
     clearLeads();
     set({
+      armorySelectOpen: ownedWeaponCount(s.owned) > 1,
       dayOver: false,
       dayProgress: 0,
       chapter: 0,
@@ -507,6 +521,10 @@ export const useGame = create<GameState>((set, get) => {
   tutorialOpen: false,
   openTutorial: () => set((s) => (s.roundState === "playing" && !s.isDead ? { tutorialOpen: true } : s)),
   closeTutorial: () => set({ tutorialOpen: false }),
+  // Starts closed even on a brand-new game: the starter Carbine is the only
+  // weapon owned, so ownedWeaponCount gates it shut everywhere it's set.
+  armorySelectOpen: false,
+  closeArmorySelect: () => set({ armorySelectOpen: false }),
   pauseOpen: false,
   openPause: () => set((s) => (s.roundState === "playing" && !s.isDead ? { pauseOpen: true } : s)),
   closePause: () => set({ pauseOpen: false }),
@@ -786,6 +804,7 @@ export const useGame = create<GameState>((set, get) => {
     runtime.refugeIndex = -1;
 
     set((st) => ({
+      armorySelectOpen: ownedWeaponCount(st.owned) > 1,
       day,
       dayOver: false,
       dayProgress: 0,
@@ -855,6 +874,7 @@ export const useGame = create<GameState>((set, get) => {
     runtime.revealRealUntil = -1;
     runtime.sniffReadyAt = 0;
     set((s) => ({
+      armorySelectOpen: false, // NEW_SAVE.owned is one weapon — nothing to pick yet
       treasureClaimed: false,
       claimedRarity: null,
       treasureCracked: false,
