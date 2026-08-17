@@ -160,21 +160,6 @@ export function Hud() {
   // tallest touch button (CROUCH's top edge sits ~232px above the bottom) —
   // see the note by `cramped` above.
   const raiseHud = touchLayout && cramped;
-  // Same breakpoint the old WalletButton used for the same reason: on a short
-  // landscape phone (~375-430px tall) MobileControls' second row sits close
-  // enough to the top that anything anchored much below the minimap needs to
-  // tuck in higher, or it collides with FOX/CROUCH/BOMB.
-  const [mapCompact, setMapCompact] = useState(false);
-  useEffect(() => {
-    const measure = () => setMapCompact(window.innerWidth < 520 || window.innerHeight < 440);
-    measure();
-    window.addEventListener("resize", measure);
-    window.addEventListener("orientationchange", measure);
-    return () => {
-      window.removeEventListener("resize", measure);
-      window.removeEventListener("orientationchange", measure);
-    };
-  }, []);
   const health = useGame((s) => s.playerHealth);
   const maxHealth = useGame((s) => s.maxPlayerHealth);
   const isDead = useGame((s) => s.isDead);
@@ -688,28 +673,27 @@ export function Hud() {
       </div>
 
       {/* Loot wallet: a left-aligned vertical stack on desktop (unchanged —
-          plenty of room up there); on touch, day/VILLE and the clock flank
-          the compass at the very top of the screen instead of stacking below
-          it (Marvy's call, 2026-08-16) — a row centred UNDER the compass was
-          still reading as "in the middle" no matter how tight the gap got,
-          because the compass itself was always going to be the tallest thing
-          up there. Going around it instead of under it puts both back at the
-          same top edge as the hamburger/minimap, with nothing left to clear. */}
+          plenty of room up there); on touch it's one compact badge — day/quota
+          and the clock stacked, sized to match the pause button beside it
+          (Marvy's call, 2026-08-17) — next to the hamburger/pause row, same
+          top edge as the minimap. */}
       {touchLayout ? (
         <>
+          {/* VILLE only lives in the Bank/Marketplace now (Marvy's call) — the
+              gamescreen badge is day/quota + the clock, sized down to sit
+              level with the pause button beside it. */}
           <div style={styles.walletTouchLeft}>
             {/* Which day this is. The run is a life now rather than a session,
                 and the number that has been climbing since you first played is
                 the only thing on screen that says so. */}
-            <div style={styles.dayCount}>
+            <div style={styles.dayCountCompact}>
               DAY {day} <span style={styles.dayQuota}>· {treasuresResolved}/{treasuresRequired} found</span>
             </div>
-            <div style={styles.walletBanked}>🏦 {villeBanked} VILLE</div>
+            <div style={styles.touchClockRow}>
+              <span ref={timerEl} style={styles.timerNumCompact}>06:00</span>
+              <span ref={chapterEl} style={styles.timerLabelCompact}>Dawn</span>
+            </div>
             {villeCarrying > 0 && <div style={styles.walletCarry}>◆ carrying {villeCarrying}, bank it</div>}
-          </div>
-          <div style={styles.walletTouchRight}>
-            <div ref={timerEl} style={styles.timerNum}>06:00</div>
-            <div ref={chapterEl} style={styles.timerLabel}>Dawn</div>
           </div>
           <div style={styles.foxGrowthTouchWrap}>{foxGrowthLine}</div>
         </>
@@ -724,13 +708,9 @@ export function Hud() {
         </div>
       )}
 
-      {/* Time of day + chapter.
-          On DESKTOP it sits top-right under the minimap. On TOUCH it moves to the
-          left, under the wallet: `top: 176, right: 20` was chosen against the
-          desktop minimap, and on a landscape phone that is exactly where the FIRE
-          button lives — the clock was rendering behind it, in red, unreadable.
-          The time of day IS the round timer now, so it is the one number that
-          can't be allowed to hide under a thumb. */}
+      {/* Time of day + chapter. DESKTOP only — top-right under the minimap.
+          On touch it's folded into walletTouchLeft instead (same refs, set
+          from the same rAF loop below). */}
       {!touchLayout && (
         <div style={styles.timer}>
           <div ref={timerEl} style={styles.timerNum}>06:00</div>
@@ -843,10 +823,12 @@ export function Hud() {
         </div>
       )}
 
-      {/* Compass, top-center. It shows what you've been TOLD (two fading sectors),
-          the thieves, the vault while you're carrying, and the fox while it's
-          out — but never where the treasure is. */}
-      <div style={styles.compassWrap}>
+      {/* Compass — shows what you've been TOLD (two fading sectors), the
+          thieves, the vault while you're carrying, and the fox's direction
+          while it's out — but never where the treasure is. Centered top on
+          desktop; on touch it sits beside the minimap instead of parked in
+          the middle of the screen (Marvy's call, 2026-08-17). */}
+      <div style={{ ...styles.compassWrap, ...(touchLayout ? styles.compassWrapTouch : null) }}>
         <div style={styles.compass}>
           <svg width={58} height={58} style={styles.compassSvg}>
             {/* Rumour under the lead, so a fresh lie can't paint over the
@@ -872,11 +854,8 @@ export function Hud() {
         </div>
         {/* The send-the-fox pill and its compass blip only exist where a fox does.
             The frame loop above guards on the same refs being null. */}
-        {/* DESKTOP only. On touch this pill hung under the centre compass — a
-            bright cyan bar parked in the middle of the view for the entire run,
-            duplicating a FOX button that is already on screen and already says
-            what it does. The touch build gets the same text down beside the
-            wallet instead (see foxStatusTouch), out of the sightline. */}
+        {/* DESKTOP only — the touch build's version sits under the hamburger/
+            pause row instead (see foxStatusTouchLeft), out of the sightline. */}
         {gameMode().fox && !touchLayout && (
           <div ref={sniffEl} style={styles.sniffPill}>
             🦊 sniff — Q
@@ -918,52 +897,37 @@ export function Hud() {
       {/* Proximity prompt (claim / false lead) — text set from the game loop */}
       <div ref={promptEl} style={styles.prompt} />
 
-      {/* Fox sniff status, tucked under the minimap on touch (Marvy's call,
-          2026-08-16) — it used to sit near the compass/wallet row, crowding
-          the area this pass was trying to declutter. The minimap's own
-          corner had nothing below it once WalletButton came out of gameplay
-          entirely (Game.tsx), so that's where it moved to. `mapCompact`
-          matches the breakpoint the old WalletButton used for the same spot,
-          for the same reason: on a short landscape phone, MobileControls'
-          second row sits high enough that anything here needs to tuck in
-          closer to the minimap or risk the same collision that button used
-          to have. */}
+      {/* Fox sniff status. On touch it sits under the hamburger/pause row on
+          the left (Marvy's call, 2026-08-17) — it used to live under the
+          minimap, but that corner reads better with just the map now. */}
       {touchLayout && gameMode().fox && (
-        <div ref={sniffEl} style={{ ...styles.foxStatusTouch, ...styles.foxStatusMap, top: mapCompact ? 112 : 186 }} />
+        <div ref={sniffEl} style={{ ...styles.foxStatusTouch, ...styles.foxStatusTouchLeft }} />
       )}
 
-      {/* Mute toggle. Bottom-right on desktop (the one interactive HUD
-          element down there); on touch, wedged into the gap between the
-          clock and the minimap instead — both of those pushed apart 40px to
-          fit it (Marvy's call, 2026-08-16; see walletTouchRight's own
-          `right` for its half of that). */}
-      <button
-        type="button"
-        // pointerdown, not click: the touch zones preventDefault, and the
-        // synthesised click after a tap can be swallowed.
-        //
-        // NOTE there is deliberately no stopPropagation here. Browsers hold the
-        // AudioContext suspended until a user gesture, and the resume is bound to
-        // a `pointerdown` listener on WINDOW (see Game.tsx). Stopping propagation
-        // meant that if the speaker was the first thing you touched, the context
-        // never resumed — you'd unmute a graph that was still suspended and hear
-        // nothing at all. Unlock explicitly too, so this button can always turn
-        // the sound back ON rather than only off.
-        onPointerDown={() => {
-          audio.unlock();
-          audio.toggleMute();
-        }}
-        style={{
-          ...styles.muteBtn,
-          ...(touchLayout ? styles.muteBtnTouch : null),
-          opacity: muted ? 0.75 : 1,
-          color: muted ? "rgba(232,238,242,0.5)" : "#f2c14e",
-          borderColor: muted ? "rgba(232,238,242,0.25)" : "rgba(242,193,78,0.75)",
-        }}
-        title="Mute / unmute (M)"
-      >
-        {muted ? "🔇" : "🔊"}
-      </button>
+      {/* Mute toggle — DESKTOP ONLY (bottom-right, the one interactive HUD
+          element down there). On touch, sound is toggled from the pause
+          panel instead (Marvy's call, 2026-08-17) — a floating speaker icon
+          on the gamescreen was one more button competing with the pad; it
+          only needs to be reachable at all, and pause is already the natural
+          place to reach for it. */}
+      {!touchLayout && (
+        <button
+          type="button"
+          onPointerDown={() => {
+            audio.unlock();
+            audio.toggleMute();
+          }}
+          style={{
+            ...styles.muteBtn,
+            opacity: muted ? 0.75 : 1,
+            color: muted ? "rgba(232,238,242,0.5)" : "#f2c14e",
+            borderColor: muted ? "rgba(232,238,242,0.25)" : "rgba(242,193,78,0.75)",
+          }}
+          title="Mute / unmute (M)"
+        >
+          {muted ? "🔇" : "🔊"}
+        </button>
+      )}
 
       {/* Controls, bottom-left — DESKTOP ONLY, and no longer permanent.
           Four lines of key bindings pinned over the world for the entire run is
@@ -1013,6 +977,17 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: "center",
     pointerEvents: "none",
     userSelect: "none",
+  },
+  // Beside the minimap instead of centre-top. `right` is measured against the
+  // minimap's own full-size footprint (top:14/right:14/158px wide) plus a
+  // clear gap — the minimap only ever shrinks TOWARD its top-right corner
+  // (transformOrigin) on a short/narrow screen, so this gap can only grow,
+  // never close, as the map scales down.
+  compassWrapTouch: {
+    top: "calc(env(safe-area-inset-top, 0px) + 14px)",
+    left: "auto",
+    right: "calc(env(safe-area-inset-right, 0px) + 190px)",
+    transform: "none",
   },
   compass: {
     position: "relative",
@@ -1201,15 +1176,13 @@ const styles: Record<string, React.CSSProperties> = {
     pointerEvents: "none",
     userSelect: "none",
   },
-  // Touch's counterpart to `wallet` above: day/VILLE flank the compass on the
-  // left instead of stacking under it (Marvy's call, 2026-08-16 — a row
-  // centred below the compass kept reading as "in the middle" no matter how
-  // tight the gap got, since the compass was always the tallest thing up
-  // there). Same top edge as the hamburger row and the minimap, same solid
-  // pill treatment as walletTouchRight — the shadow alone (TEXT_SHADOW, used
-  // everywhere else) held up fine over most of the scene but washed out over
-  // a bright sky or pale wall right where this used to sit (Marvy's
-  // playtest, 2026-08-16); a dark backing fixes that outright.
+  // Touch's counterpart to `wallet` above: day/quota + the clock, one compact
+  // badge sized to sit level with the pause button beside it (Marvy's call,
+  // 2026-08-17 — VILLE moved out entirely, now Bank/Marketplace-only, so
+  // there was no reason for this to stay wallet-sized). Same top edge as the
+  // hamburger/pause row and the minimap. Dark backing (not just TEXT_SHADOW)
+  // because a bare shadow washed out over a bright sky or pale wall (Marvy's
+  // playtest, 2026-08-16).
   walletTouchLeft: {
     position: "absolute",
     top: 14,
@@ -1217,31 +1190,36 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     alignItems: "flex-start",
-    padding: "8px 14px",
-    borderRadius: 12,
+    padding: "5px 10px",
+    borderRadius: 10,
     background: "rgba(11,13,16,0.6)",
     border: "1px solid rgba(255,255,255,0.1)",
     boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
     pointerEvents: "none",
     userSelect: "none",
   },
-  // The clock, flanking the compass on the right. `right` clears the mute
-  // button (muteBtnTouch, right:178, 36px wide) which sits between this and
-  // the minimap — the minimap only shrinks TOWARD its top-right corner
-  // (transformOrigin) on a narrow/short screen, so its own left edge only
-  // ever moves further away, never closer, and this offset stays safe.
-  walletTouchRight: {
-    position: "absolute",
-    top: 14,
-    right: "calc(env(safe-area-inset-right, 0px) + 220px)",
-    padding: "8px 14px",
-    borderRadius: 12,
-    background: "rgba(11,13,16,0.6)",
-    border: "1px solid rgba(255,255,255,0.1)",
-    boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
-    textAlign: "left",
-    pointerEvents: "none",
-    userSelect: "none",
+  touchClockRow: {
+    display: "flex",
+    alignItems: "baseline",
+    gap: 5,
+    marginTop: 2,
+  },
+  timerNumCompact: {
+    fontSize: 15,
+    fontWeight: 700,
+    color: "#e8eef2",
+    fontVariantNumeric: "tabular-nums",
+    letterSpacing: 0.5,
+    lineHeight: 1,
+    textShadow: TEXT_SHADOW,
+  },
+  timerLabelCompact: {
+    fontSize: 9,
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    color: "rgba(232,238,242,0.7)",
+    whiteSpace: "nowrap",
+    textShadow: TEXT_SHADOW,
   },
   // The fox's longer growth line, centred under the compass on its own —
   // its length varies too much (rust warning, misread-chance text) to flank
@@ -1261,6 +1239,16 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     color: "rgba(232,238,242,0.8)",
     marginBottom: 6,
+    textShadow: TEXT_SHADOW,
+  },
+  // Touch's counterpart to `dayCount` — smaller and with no bottom margin,
+  // since the clock stacks directly under it in the same compact badge.
+  dayCountCompact: {
+    fontSize: 9,
+    letterSpacing: 1,
+    fontWeight: 700,
+    color: "rgba(232,238,242,0.8)",
+    whiteSpace: "nowrap",
     textShadow: TEXT_SHADOW,
   },
   dayQuota: {
@@ -1323,12 +1311,14 @@ const styles: Record<string, React.CSSProperties> = {
     pointerEvents: "none",
     userSelect: "none",
   },
-  // Positions foxStatusTouch under the minimap instead of in the wallet row
-  // — `top` is set inline (mapCompact is dynamic), this just anchors it
-  // right, under the minimap's own right:14.
-  foxStatusMap: {
+  // Positions foxStatusTouch under the hamburger/pause row on the left
+  // (Marvy's call, 2026-08-17), same left edge as HamburgerMenu's own
+  // trigger, same zIndex as that row so it isn't caught under
+  // MobileControls' full-screen touch zones.
+  foxStatusTouchLeft: {
     position: "absolute",
-    right: "calc(env(safe-area-inset-right, 0px) + 14px)",
+    top: "calc(env(safe-area-inset-top, 0px) + 62px)",
+    left: "calc(env(safe-area-inset-left, 0px) + 14px)",
     zIndex: 45,
   },
   foxNext: {
@@ -1700,22 +1690,6 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     pointerEvents: "auto",
     userSelect: "none",
-  },
-  /** Touch placement: the bottom-right corner now belongs to the FIRE arc, so
-   *  the speaker moves up between the clock and the minimap instead (Marvy's
-   *  call, 2026-08-16). Same top:14 as walletTouchRight/the minimap — one
-   *  clean top edge across all three. right:178 splits the gap those two
-   *  were pushed apart to make (minimap's left edge sits at 172; this centres
-   *  a 36px button in the ~46px opened up between there and walletTouchRight's
-   *  own right:220). */
-  muteBtnTouch: {
-    top: 14,
-    right: "calc(env(safe-area-inset-right, 0px) + 178px)",
-    bottom: "auto",
-    left: "auto",
-    width: 36,
-    height: 36,
-    fontSize: 16,
   },
   lockPrompt: { position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" },
   promptCard: {

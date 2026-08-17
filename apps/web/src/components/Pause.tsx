@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useGame, anyOverlayOpen } from "@/engine/store";
+import { audio } from "@/engine/audio/audio";
 
 const GOLD = "#f2c14e";
 const INK = "#e8eef2";
@@ -22,11 +23,23 @@ export function Pause() {
   const closePause = useGame((s) => s.closePause);
   const openMenu = useGame((s) => s.openMenu);
   const [confirmQuit, setConfirmQuit] = useState(false);
+  const [muted, setMuted] = useState(false);
 
   useEffect(() => {
     if (pauseOpen && document.pointerLockElement) document.exitPointerLock();
     if (!pauseOpen) setConfirmQuit(false);
   }, [pauseOpen]);
+
+  // Sound toggle: reflect the persisted mute state and stay in sync with it
+  // (M on desktop, or a mute button elsewhere, can flip it while this is
+  // closed) — same subscription Hud.tsx uses for its own speaker icon.
+  useEffect(() => {
+    setMuted(audio.muted);
+    const off = audio.onMuteChange(setMuted);
+    return () => {
+      off();
+    };
+  }, []);
 
   // Escape both opens and closes pause, the usual game convention. Capture
   // phase (not bubble) is what makes this order-safe: every other overlay's
@@ -65,6 +78,16 @@ export function Pause() {
             <div style={styles.list}>
               <button className="fg-btn fg-btn-primary" style={styles.primary} onClick={closePause}>
                 Resume
+              </button>
+              <button
+                className="fg-btn fg-menu-item"
+                style={styles.item}
+                onClick={() => {
+                  audio.unlock();
+                  audio.toggleMute();
+                }}
+              >
+                {muted ? "🔇 Sound: Off" : "🔊 Sound: On"}
               </button>
               <button
                 className="fg-btn fg-menu-item"
