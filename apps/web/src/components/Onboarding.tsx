@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { HeroShowcase } from "./onboarding/HeroShowcase";
 import { EggArt, EGG_INFO } from "./onboarding/EggArt";
 import { loadOnboarding, writeOnboarding, type EggVariant } from "@/engine/onboarding";
@@ -19,6 +19,29 @@ import { claimHeroOnChain, claimPetOnChain } from "@/engine/chain/relay";
  * mounts it with neither, to iterate on the screen in isolation.
  */
 type Step = "welcome" | "hero" | "egg" | "ready";
+
+/**
+ * Same threshold/pattern as WalletButton.tsx's `compact` check. Every
+ * side-by-side row in this wizard (hero + its two locked previews, the
+ * three egg cards, the ready-step pair) was laid out with fixed pixel
+ * widths and no breakpoint, so on a real phone the content simply
+ * overflowed the panel sideways instead of shrinking — this drives the
+ * narrow-viewport variants added below.
+ */
+function useNarrowViewport(): boolean {
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const measure = () => setNarrow(window.innerWidth < 520);
+    measure();
+    window.addEventListener("resize", measure);
+    window.addEventListener("orientationchange", measure);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("orientationchange", measure);
+    };
+  }, []);
+  return narrow;
+}
 
 const EGG_ORDER: EggVariant[] = ["ember", "moss", "frost"];
 
@@ -105,11 +128,12 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
 }
 
 function HeroStep({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
+  const narrow = useNarrowViewport();
   return (
     <div style={styles.stepBody}>
       <div style={styles.stepTitle}>Your Hero</div>
       <div style={styles.stepSub}>One outlier, for now. More arrive from the Marketplace later.</div>
-      <div style={styles.heroRow}>
+      <div style={{ ...styles.heroRow, ...(narrow ? styles.heroRowNarrow : null) }}>
         <div style={styles.heroCard}>
           <div style={styles.heroCanvasWrap}>
             <HeroShowcase />
@@ -117,7 +141,7 @@ function HeroStep({ onBack, onNext }: { onBack: () => void; onNext: () => void }
           <div style={styles.heroName}>The Outlier</div>
           <div style={styles.heroDesc}>Last one in, first one blamed. Knows the walls better than the family does.</div>
         </div>
-        <div style={styles.lockedCol}>
+        <div style={{ ...styles.lockedCol, ...(narrow ? styles.lockedColNarrow : null) }}>
           {/* Real previews, not "?" — you can see what's coming, you just
               can't pick it yet. Converted from design/Mixamo/Ninja.fbx and
               Female2.fbx ("Kachujin") (2026-08-16), the least-jarring of the
@@ -204,6 +228,7 @@ function EggStep({
   onBack: () => void;
   onNext: () => void;
 }) {
+  const narrow = useNarrowViewport();
   return (
     <div style={styles.stepBody}>
       <div style={styles.stepTitle}>Choose Your Egg</div>
@@ -211,7 +236,7 @@ function EggStep({
         It won't hatch on its own — feed it VILLE at the Market once you're banking treasure. What's inside is the
         same fox either way; the shell is just the part you pick.
       </div>
-      <div style={styles.eggGrid}>
+      <div style={{ ...styles.eggGrid, ...(narrow ? styles.eggGridNarrow : null) }}>
         {EGG_ORDER.map((v) => {
           const info = EGG_INFO[v];
           const selected = egg === v;
@@ -221,12 +246,13 @@ function EggStep({
               onClick={() => onPick(v)}
               style={{
                 ...styles.eggCard,
+                ...(narrow ? styles.eggCardNarrow : null),
                 borderColor: selected ? info.accent : "rgba(255,255,255,0.1)",
                 background: `radial-gradient(120% 90% at 50% 0%, ${info.accent}18, rgba(255,255,255,0.03) 65%)`,
                 ...(selected ? { boxShadow: `0 0 0 1.5px ${info.accent}aa inset` } : null),
               }}
             >
-              <EggArt variant={v} />
+              <EggArt variant={v} size={narrow ? 60 : 96} />
               <div style={{ ...styles.eggName, color: selected ? info.accent : INK }}>{info.name}</div>
               <div style={styles.eggBlurb}>{info.blurb}</div>
             </button>
@@ -250,20 +276,21 @@ function ReadyStep({
   onConfirm: () => void;
 }) {
   const info = EGG_INFO[egg];
+  const narrow = useNarrowViewport();
   return (
     <div style={styles.stepBody}>
       <div style={styles.stepTitle}>Ready</div>
       <div style={styles.stepSub}>The Outlier, and an egg that's chosen its person before it's chosen anything else.</div>
-      <div style={styles.readyRow}>
-        <div style={styles.readyCard}>
+      <div style={{ ...styles.readyRow, ...(narrow ? styles.readyRowNarrow : null) }}>
+        <div style={{ ...styles.readyCard, ...(narrow ? styles.readyCardNarrow : null) }}>
           <div style={styles.heroCanvasWrap}>
             <HeroShowcase />
           </div>
           <div style={styles.heroName}>The Outlier</div>
         </div>
         <div style={styles.readyPlus}>+</div>
-        <div style={styles.readyCard}>
-          <EggArt variant={egg} size={110} />
+        <div style={{ ...styles.readyCard, ...(narrow ? styles.readyCardNarrow : null) }}>
+          <EggArt variant={egg} size={narrow ? 76 : 110} />
           <div style={{ ...styles.heroName, color: info.accent }}>{info.name}</div>
         </div>
       </div>
@@ -332,6 +359,7 @@ const styles: Record<string, React.CSSProperties> = {
     width: "min(760px, 94vw)",
     maxHeight: "88vh",
     overflowY: "auto",
+    overflowX: "hidden",
     background: "linear-gradient(180deg, rgba(24,20,15,0.96), rgba(14,12,10,0.98))",
     border: "1px solid rgba(242,193,78,0.3)",
     borderRadius: 18,
@@ -345,8 +373,13 @@ const styles: Record<string, React.CSSProperties> = {
   stepTitle: { color: GOLD, fontSize: 20, fontWeight: 800, letterSpacing: 1 },
   stepSub: { color: "rgba(232,238,242,0.55)", fontSize: 12.5, lineHeight: 1.6, marginTop: -8 },
   heroRow: { display: "flex", gap: 16, alignItems: "stretch" },
+  // Below ~520px there's no room for a 108px locked column beside the hero
+  // card without forcing a shrink the card can't actually do — it was
+  // overflowing the panel sideways instead. Stack them instead.
+  heroRowNarrow: { flexDirection: "column" },
   heroCard: {
     flex: 1,
+    minWidth: 0,
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
@@ -360,6 +393,9 @@ const styles: Record<string, React.CSSProperties> = {
   heroName: { color: INK, fontWeight: 700, fontSize: 15, marginTop: 4 },
   heroDesc: { color: "rgba(232,238,242,0.5)", fontSize: 11.5, textAlign: "center", lineHeight: 1.5 },
   lockedCol: { display: "flex", flexDirection: "column", gap: 12, width: 108 },
+  // Two locked previews side by side, full width, under the hero card —
+  // reads as "here's what's coming" instead of disappearing entirely.
+  lockedColNarrow: { flexDirection: "row", width: "100%" },
   lockedCard: {
     position: "relative",
     flex: 1,
@@ -406,12 +442,18 @@ const styles: Record<string, React.CSSProperties> = {
     background: "radial-gradient(circle, rgba(11,13,16,0.72) 0%, rgba(11,13,16,0.4) 65%, transparent 100%)",
   },
   padlockSvg: { filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.6))" },
-  eggGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 },
+  // minmax(0, 1fr), not bare 1fr: a plain 1fr track still respects each
+  // item's min-content size, which here was the 96px-wide egg SVG — three
+  // of those don't fit a phone's content width, so the third card was
+  // getting pushed off the edge of the panel.
+  eggGrid: { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14 },
+  eggGridNarrow: { gap: 8 },
   eggCard: {
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
     gap: 8,
+    minWidth: 0,
     padding: "18px 12px",
     borderRadius: 14,
     borderWidth: 1,
@@ -419,10 +461,15 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     color: INK,
   },
+  eggCardNarrow: { padding: "12px 6px", gap: 5 },
   eggName: { fontWeight: 700, fontSize: 13.5 },
   eggBlurb: { fontSize: 10.5, color: "rgba(232,238,242,0.55)", textAlign: "center", lineHeight: 1.5 },
   readyRow: { display: "flex", alignItems: "center", justifyContent: "center", gap: 22 },
+  // Two fixed-200px cards plus the plus-sign needed ~450px — same overflow
+  // as the hero row. Stack them on narrow screens instead.
+  readyRowNarrow: { flexDirection: "column", gap: 10 },
   readyCard: { display: "flex", flexDirection: "column", alignItems: "center", gap: 6, width: 200 },
+  readyCardNarrow: { width: "min(70vw, 220px)" },
   readyPlus: { color: "rgba(242,193,78,0.5)", fontSize: 26, fontWeight: 300 },
   navRow: { display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 },
   backBtn: {
