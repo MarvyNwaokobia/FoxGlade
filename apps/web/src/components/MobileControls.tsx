@@ -313,21 +313,32 @@ export function MobileControls() {
       )}
 
       {/* ── The right thumb ──
-          Laid out like a shooter's pad rather than a geometric curve: one large
-          primary under the thumb in the corner, the two verbs you press
-          mid-fight beside it, and CROUCH/BOMB just above that row — closer
-          together and closer to the bottom edge than before (Marvy's call,
-          2026-08-17), reading as one tight cluster under the thumb instead of
-          a pad with a gap through the middle. */}
-      <button style={{ ...styles.btnRound, ...styles.fire, ...at("right", 16, 6, 90) }} {...hold((v) => (touch.fire = v))}>
+          FIRE anchors the corner; JUMP/AIM/CROUCH/BOMB wrap around its top
+          and left edges instead of sitting in rows beside it (Marvy's call,
+          2026-08-17) — the corner means there's no room to surround it on
+          all four sides, so the wrap covers the two it has room on. Whole
+          cluster sits flush against the bottom edge, as low as it goes. */}
+      <button style={{ ...styles.btnRound, ...styles.fire, ...at("right", 16, 0, 90) }} {...hold((v) => (touch.fire = v))}>
         FIRE
       </button>
 
-      {/* The contextual verb sits closest to FIRE because it's the one you press
-          under pressure — BANK, GRAB, ROLL, VAULT are all the same key. */}
+      {/* Left of FIRE — CROUCH nearer it, BOMB further out. */}
+      <button style={{ ...styles.btnRound, ...styles.btnSmall, ...styles.crouchLabel, ...at("right", 112, 4, 52) }} {...tap("KeyC")}>
+        CROUCH
+      </button>
+      {/* BOMB gets the gold accent: the one situational, high-impact verb in
+          the wrap, same as CROUCH getting none marks it as the plain,
+          low-stakes one beside it. */}
+      <button style={{ ...styles.btnRound, ...styles.btnSmall, ...styles.accent, ...at("right", 170, 4, 52) }} {...bomb}>
+        BOMB
+      </button>
+
+      {/* Above FIRE — the contextual verb (closest to it, the one you press
+          under pressure — BANK, GRAB, ROLL, VAULT are all the same key) and
+          AIM. */}
       <button
         ref={eBtn}
-        style={{ ...styles.btnRound, ...styles.action, ...at("right", 110, 8, 66) }}
+        style={{ ...styles.btnRound, ...styles.action, ...at("right", 16, 92, 62) }}
         onPointerDown={(e) => {
           e.stopPropagation();
           e.currentTarget.setPointerCapture(e.pointerId);
@@ -348,23 +359,10 @@ export function MobileControls() {
       </button>
 
       {/* Hold to aim, like the desktop right-mouse. Brighter than the plain
-          secondary buttons — it sits in the same bottom row as FIRE and the
-          contextual verb, so it reads as one of the buttons you press
+          secondary buttons so it still reads as one of the buttons you press
           mid-fight, not a background utility. */}
-      <button style={{ ...styles.btnRound, ...styles.primary, ...at("right", 180, 8, 66) }} {...holdKey("KeyV")}>
+      <button style={{ ...styles.btnRound, ...styles.primary, ...at("right", 84, 92, 62) }} {...holdKey("KeyV")}>
         AIM
-      </button>
-
-      {/* Second row, tucked close above the first — CROUCH over the action
-          button, BOMB over AIM. */}
-      <button style={{ ...styles.btnRound, ...styles.btnSmall, ...at("right", 108, 88, 52) }} {...tap("KeyC")}>
-        CROUCH
-      </button>
-      {/* BOMB gets the gold accent: the one situational, high-impact verb up
-          here, same as CROUCH getting none marks it as the plain, low-stakes
-          one beside it. */}
-      <button style={{ ...styles.btnRound, ...styles.btnSmall, ...styles.accent, ...at("right", 168, 88, 52) }} {...bomb}>
-        BOMB
       </button>
 
       {/* Contextual respawn / restart */}
@@ -489,6 +487,10 @@ const styles: Record<string, React.CSSProperties> = {
    *  dimensions of their own. */
   btnRound: { ...btnBase, borderRadius: 999, fontSize: 12, padding: 0 },
   btnSmall: { fontSize: 11 },
+  /** CROUCH is the longest label on the pad — btnSmall's 11px ran edge to
+   *  edge on a 52px circle. Tighter size and letter-spacing so it clears the
+   *  rim with room to spare. */
+  crouchLabel: { fontSize: 9.5, letterSpacing: 0.3 },
   /** The contextual verb. Its colour is set live, because its meaning changes. */
   action: { fontSize: 12 },
   /** A bottom-row combat verb, not a background utility — brighter than the

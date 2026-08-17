@@ -978,15 +978,16 @@ const styles: Record<string, React.CSSProperties> = {
     pointerEvents: "none",
     userSelect: "none",
   },
-  // Beside the minimap instead of centre-top. `right` is measured against the
-  // minimap's own full-size footprint (top:14/right:14/158px wide) plus a
-  // clear gap — the minimap only ever shrinks TOWARD its top-right corner
+  // Beside the minimap instead of centre-top, pulled in tight against it
+  // (Marvy's call, 2026-08-17). `right` is measured against the minimap's
+  // own full-size footprint (top:14/right:14/158px wide) plus a small clear
+  // gap — the minimap only ever shrinks TOWARD its top-right corner
   // (transformOrigin) on a short/narrow screen, so this gap can only grow,
   // never close, as the map scales down.
   compassWrapTouch: {
     top: "calc(env(safe-area-inset-top, 0px) + 14px)",
     left: "auto",
-    right: "calc(env(safe-area-inset-right, 0px) + 190px)",
+    right: "calc(env(safe-area-inset-right, 0px) + 176px)",
     transform: "none",
   },
   compass: {
@@ -1221,15 +1222,14 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: "nowrap",
     textShadow: TEXT_SHADOW,
   },
-  // The fox's longer growth line, centred under the compass on its own —
-  // its length varies too much (rust warning, misread-chance text) to flank
-  // the compass alongside day/VILLE without risking an overlap on a narrow
-  // phone.
+  // The fox's growth line, stacked directly above the "send with FOX" pill
+  // on the left (Marvy's call, 2026-08-17) — same left edge as that pill and
+  // the hamburger/pause row above it, so the whole fox column reads as one
+  // stack instead of scattered pieces.
   foxGrowthTouchWrap: {
     position: "absolute",
-    top: 76,
-    left: "50%",
-    transform: "translateX(-50%)",
+    top: "calc(env(safe-area-inset-top, 0px) + 34px)",
+    left: "calc(env(safe-area-inset-left, 0px) + 14px)",
     pointerEvents: "none",
     userSelect: "none",
   },
@@ -1289,7 +1289,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     color: "#f0a860",
     letterSpacing: 0.3,
-    textAlign: "center",
+    textAlign: "left",
     maxWidth: 280,
     textShadow: TEXT_SHADOW,
   },
