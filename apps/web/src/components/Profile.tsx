@@ -113,7 +113,10 @@ export function Profile() {
         <div style={styles.cardSlot}>
           <PlayerCardView
             avatar={avatar}
-            identityLabel={address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "Guest — no wallet connected"}
+            identityLabel={
+              loadOnboarding().username ??
+              (address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "Guest — no wallet connected")
+            }
             day={day}
             treasuresBanked={treasuresBanked}
             villeBanked={villeBanked}

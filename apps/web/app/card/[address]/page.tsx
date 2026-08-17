@@ -29,6 +29,7 @@ export default function PublicCardPage() {
 
   const [stats, setStats] = useState<ServerPlayerStats | null>(null);
   const [avatar, setAvatar] = useState<string | null>(null);
+  const [username, setUsername] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
 
@@ -39,9 +40,10 @@ export default function PublicCardPage() {
       const [serverStats, onboarding] = await Promise.all([pullPlayerStats(address), pullOnboarding(address)]);
       if (cancelled) return;
       setStats(serverStats);
+      setUsername(onboarding?.username ?? null);
       setLoading(false);
       if (serverStats) {
-        document.title = `${address.slice(0, 6)}…${address.slice(-4)} | Foxglade`;
+        document.title = `${onboarding?.username ?? `${address.slice(0, 6)}…${address.slice(-4)}`} | Foxglade`;
         const heroId = (onboarding?.heroId ?? "man") as CharacterModelId;
         heroThumb(heroId).then((url) => {
           if (!cancelled) setAvatar(url);
@@ -83,7 +85,7 @@ export default function PublicCardPage() {
       <div style={styles.stack}>
         <PlayerCardView
           avatar={avatar}
-          identityLabel={`${address.slice(0, 6)}…${address.slice(-4)}`}
+          identityLabel={username ?? `${address.slice(0, 6)}…${address.slice(-4)}`}
           day={stats.day}
           treasuresBanked={stats.treasuresBanked}
           villeBanked={stats.villeBanked}

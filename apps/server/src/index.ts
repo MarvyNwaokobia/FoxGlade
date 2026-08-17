@@ -19,7 +19,12 @@ import {
   savePetTokenId,
   getPlayerStats,
   upsertPlayerStats,
+  isUsernameAvailable,
 } from "./db.js";
+
+/** Must match apps/web/src/engine/onboarding.ts's isValidUsername — enforced
+ *  here too since the client-side check is only a UX nicety, not a boundary. */
+const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
 
 const app = express();
 app.use(express.json());
@@ -82,11 +87,11 @@ app.get("/onboarding/:address", async (req, res) => {
   }
   try {
     const { rows } = await pool!.query(
-      `SELECT hero_id, egg_variant, has_onboarded, completed_at FROM onboarding WHERE wallet_address = $1`,
+      `SELECT hero_id, egg_variant, has_onboarded, completed_at, username FROM onboarding WHERE wallet_address = $1`,
       [address.toLowerCase()]
     );
     if (rows.length === 0) {
-      res.json({ hasOnboarded: false, heroId: null, eggVariant: null, completedAt: null });
+      res.json({ hasOnboarded: false, heroId: null, eggVariant: null, completedAt: null, username: null });
       return;
     }
     const row = rows[0];
@@ -95,10 +100,34 @@ app.get("/onboarding/:address", async (req, res) => {
       heroId: row.hero_id,
       eggVariant: row.egg_variant,
       completedAt: row.completed_at ? new Date(row.completed_at).getTime() : null,
+      username: row.username,
     });
   } catch (err) {
     console.error("onboarding fetch failed", err);
     res.status(500).json({ error: "onboarding fetch failed" });
+  }
+});
+
+/** Live-check for the username step's input, ahead of the actual submit
+ *  (which enforces the same uniqueness for real via the DB's unique index —
+ *  this is a UX nicety, not the boundary). */
+app.get("/username/available", async (req, res) => {
+  if (!dbConfigured()) {
+    res.status(503).json({ error: "onboarding persistence not configured" });
+    return;
+  }
+  const name = req.query.name;
+  const exclude = req.query.exclude;
+  if (typeof name !== "string" || !USERNAME_RE.test(name)) {
+    res.json({ available: false, reason: "invalid" });
+    return;
+  }
+  try {
+    const available = await isUsernameAvailable(name, typeof exclude === "string" ? exclude : undefined);
+    res.json({ available });
+  } catch (err) {
+    console.error("username availability check failed", err);
+    res.status(500).json({ error: "availability check failed" });
   }
 });
 
@@ -107,7 +136,7 @@ app.post("/onboarding", async (req, res) => {
     res.status(503).json({ error: "onboarding persistence not configured" });
     return;
   }
-  const { address, heroId, eggVariant, hasOnboarded, completedAt } = req.body ?? {};
+  const { address, heroId, eggVariant, hasOnboarded, completedAt, username } = req.body ?? {};
   if (typeof address !== "string" || !isAddress(address)) {
     res.status(400).json({ error: "invalid wallet address" });
     return;
@@ -116,15 +145,20 @@ app.post("/onboarding", async (req, res) => {
     res.status(400).json({ error: "invalid heroId/eggVariant" });
     return;
   }
+  if (username !== null && username !== undefined && !USERNAME_RE.test(username)) {
+    res.status(400).json({ error: "invalid username" });
+    return;
+  }
   try {
     await pool!.query(
-      `INSERT INTO onboarding (wallet_address, hero_id, egg_variant, has_onboarded, completed_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, now())
+      `INSERT INTO onboarding (wallet_address, hero_id, egg_variant, has_onboarded, completed_at, username, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, now())
        ON CONFLICT (wallet_address) DO UPDATE SET
          hero_id = EXCLUDED.hero_id,
          egg_variant = EXCLUDED.egg_variant,
          has_onboarded = EXCLUDED.has_onboarded,
          completed_at = EXCLUDED.completed_at,
+         username = COALESCE(EXCLUDED.username, onboarding.username),
          updated_at = now()`,
       [
         address.toLowerCase(),
@@ -132,10 +166,17 @@ app.post("/onboarding", async (req, res) => {
         eggVariant ?? null,
         hasOnboarded === true,
         typeof completedAt === "number" ? new Date(completedAt) : null,
+        typeof username === "string" ? username : null,
       ]
     );
     res.json({ ok: true });
   } catch (err) {
+    // 23505 = unique_violation — the username's already taken (a race with
+    // the live-check above, or someone skipping straight to submit).
+    if ((err as { code?: string })?.code === "23505") {
+      res.status(409).json({ error: "username taken" });
+      return;
+    }
     console.error("onboarding save failed", err);
     res.status(500).json({ error: "onboarding save failed" });
   }

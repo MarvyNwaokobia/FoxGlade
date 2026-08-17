@@ -46,6 +46,17 @@ export function ensureSchema(): Promise<void> {
     `
       )
       .then(() => pool!.query(`ALTER TABLE onboarding ADD COLUMN IF NOT EXISTS pet_token_id TEXT;`))
+      .then(() => pool!.query(`ALTER TABLE onboarding ADD COLUMN IF NOT EXISTS username TEXT;`))
+      // Case-insensitive uniqueness (a functional index on lower()) — two
+      // players can't hold "Fox" and "fox" and be told apart in chat/leader-
+      // boards by case alone. Multiple NULLs are fine: Postgres never treats
+      // two NULLs as equal, so players who onboarded before this column
+      // existed don't collide with each other on it.
+      .then(() =>
+        pool!.query(
+          `CREATE UNIQUE INDEX IF NOT EXISTS onboarding_username_lower_idx ON onboarding (lower(username));`
+        )
+      )
       .then(() =>
         pool!.query(`
       CREATE TABLE IF NOT EXISTS player_stats (
@@ -78,6 +89,21 @@ export async function savePetTokenId(walletAddress: string, tokenId: string): Pr
      ON CONFLICT (wallet_address) DO UPDATE SET pet_token_id = EXCLUDED.pet_token_id, updated_at = now()`,
     [walletAddress.toLowerCase(), tokenId]
   );
+}
+
+/** Live-check for the username step's input — case-insensitive, matching the
+ *  unique index above. `excludeAddress` lets a player re-check their OWN
+ *  current name (e.g. re-submitting after fixing something else) without it
+ *  reading as taken by themselves. */
+export async function isUsernameAvailable(username: string, excludeAddress?: string): Promise<boolean> {
+  if (!pool) return true;
+  const { rows } = await pool.query(
+    excludeAddress
+      ? `SELECT 1 FROM onboarding WHERE lower(username) = lower($1) AND wallet_address != $2`
+      : `SELECT 1 FROM onboarding WHERE lower(username) = lower($1)`,
+    excludeAddress ? [username, excludeAddress.toLowerCase()] : [username]
+  );
+  return rows.length === 0;
 }
 
 export async function getPetTokenId(walletAddress: string): Promise<string | null> {

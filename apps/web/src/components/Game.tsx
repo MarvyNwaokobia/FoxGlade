@@ -44,6 +44,11 @@ import { QUALITY } from "@/engine/scene/qualityPresets";
 
 const CONNECT_GATE_ENABLED = true;
 
+/** hasOnboarded alone isn't enough post-username-step — see `onboarded`'s comment below. */
+function isFullyOnboarded(data: ReturnType<typeof loadOnboarding>): boolean {
+  return data.hasOnboarded && Boolean(data.username);
+}
+
 /**
  * Top-level game mount: the R3F canvas plus the DOM HUD overlay. Client-only
  * (imported with ssr:false from app/page.tsx).
@@ -86,9 +91,14 @@ export default function Game() {
   const mode = gameMode();
 
   // Hero/egg pick, once ever, Foxglade only (Nighthaul's lore doesn't fit it).
-  // Safe to read localStorage in the initializer: this component is mounted
-  // with ssr:false (see app/page.tsx), so it never renders on the server.
-  const [onboarded, setOnboarded] = useState(() => mode.id !== "foxglade" || loadOnboarding().hasOnboarded);
+  // "Onboarded" now requires a username too, not just hasOnboarded — an
+  // account that finished the wizard before the username step existed reads
+  // as NOT onboarded here on purpose, so it lands back in Onboarding (in its
+  // retrofitUsernameOnly mode below) instead of straight into the village
+  // with no name on file. Safe to read localStorage in the initializer: this
+  // component is mounted with ssr:false (see app/page.tsx), so it never
+  // renders on the server.
+  const [onboarded, setOnboarded] = useState(() => mode.id !== "foxglade" || isFullyOnboarded(loadOnboarding()));
 
   // Connecting is mandatory for Foxglade, ahead of onboarding itself (Marvy's
   // call, 2026-08-16) — every player has a wallet address from minute one,
@@ -137,7 +147,7 @@ export default function Game() {
       // it resolves, including the direction that CLEARS a stale local pick
       // made under a different address (accountSync.ts) — ORing with `prev`
       // would silently keep the initial mount-time guess and undo that.
-      if (!cancelled) setOnboarded(loadOnboarding().hasOnboarded);
+      if (!cancelled) setOnboarded(isFullyOnboarded(loadOnboarding()));
     });
     return () => {
       cancelled = true;
@@ -149,7 +159,13 @@ export default function Game() {
   }
 
   if (mode.id === "foxglade" && !onboarded) {
-    return <Onboarding onComplete={() => setOnboarded(true)} skipWelcome />;
+    return (
+      <Onboarding
+        onComplete={() => setOnboarded(true)}
+        skipWelcome
+        retrofitUsernameOnly={loadOnboarding().hasOnboarded}
+      />
+    );
   }
 
   return (

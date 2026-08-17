@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import { HeroShowcase } from "./onboarding/HeroShowcase";
 import { EggArt, EGG_INFO } from "./onboarding/EggArt";
-import { loadOnboarding, writeOnboarding, type EggVariant } from "@/engine/onboarding";
+import { loadOnboarding, writeOnboarding, isValidUsername, type EggVariant } from "@/engine/onboarding";
 import { useWallet } from "@/engine/chain/wallet";
-import { pushOnboarding } from "@/engine/chain/onboardingSync";
+import { pushOnboarding, checkUsernameAvailable } from "@/engine/chain/onboardingSync";
 import { claimHeroOnChain, claimPetOnChain } from "@/engine/chain/relay";
 
 /**
@@ -18,7 +18,7 @@ import { claimHeroOnChain, claimPetOnChain } from "@/engine/chain/relay";
  * dedicated save file and calls `onComplete` if given one; /onboarding-preview
  * mounts it with neither, to iterate on the screen in isolation.
  */
-type Step = "welcome" | "hero" | "egg" | "ready";
+type Step = "welcome" | "username" | "hero" | "egg" | "ready";
 
 /**
  * Same threshold/pattern as WalletButton.tsx's `compact` check. Every
@@ -51,60 +51,135 @@ export interface OnboardingSelection {
 }
 
 export interface OnboardingProps {
-  /** Fires once the player confirms on the "ready" step. */
+  /** Fires once the player confirms on the "ready" step (or, for a
+   *  `retrofitUsernameOnly` mount, once the name alone is saved). */
   onComplete?: (selection: OnboardingSelection) => void;
-  /** Skip the title/tagline/BEGIN step and open straight on hero pick — for
-   *  Game.tsx's mandatory flow, where ConnectGate's own BEGIN click already
-   *  covered it (see Game.tsx). /onboarding-preview mounts with this unset,
-   *  so the welcome step is still there to iterate on in isolation. */
+  /** Skip the title/tagline/BEGIN step and open straight on the username
+   *  step — for Game.tsx's mandatory flow, where ConnectGate's own BEGIN
+   *  click already covered it (see Game.tsx). /onboarding-preview mounts
+   *  with this unset, so the welcome step is still there to iterate on in
+   *  isolation. */
   skipWelcome?: boolean;
+  /** This account already has a hero and egg (hasOnboarded is true) but no
+   *  username on file — an account onboarded before the username step
+   *  existed (see Game.tsx's `needsUsername`). Opens straight on the
+   *  username step same as `skipWelcome` does, but completing it saves the
+   *  name alone and finishes immediately: no reason to walk someone who
+   *  already has a hero and a fox back through picking either again, and
+   *  doing so would re-fire the (non-idempotent, real-mainnet) hero/pet
+   *  mint calls for an account that already holds both. */
+  retrofitUsernameOnly?: boolean;
 }
 
-export function Onboarding({ onComplete, skipWelcome }: OnboardingProps) {
-  const [step, setStep] = useState<Step>(skipWelcome ? "hero" : "welcome");
+export function Onboarding({ onComplete, skipWelcome, retrofitUsernameOnly }: OnboardingProps) {
+  const [step, setStep] = useState<Step>(skipWelcome || retrofitUsernameOnly ? "username" : "welcome");
   const [egg, setEgg] = useState<EggVariant | null>(() => loadOnboarding().eggVariant);
+  const [username, setUsername] = useState(() => loadOnboarding().username ?? "");
   const [saved, setSaved] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const confirm = () => {
-    if (!egg) return;
+  const confirm = async () => {
+    if (!egg || !username || confirming) return;
+    setConfirming(true);
+    setError(null);
     const completedAt = Date.now();
     // Best-effort — a wallet already restored by the time this screen shows
     // (see Game.tsx) means this device's pick is now recoverable on another
     // one too. No wallet yet is a silent no-op, same as every other chain call.
     const address = useWallet.getState().address;
-    writeOnboarding({ hasOnboarded: true, heroId: "man", eggVariant: egg, completedAt, address });
     if (address) {
-      pushOnboarding(address, { heroId: "man", eggVariant: egg, hasOnboarded: true, completedAt });
+      const result = await pushOnboarding(address, {
+        heroId: "man",
+        eggVariant: egg,
+        hasOnboarded: true,
+        completedAt,
+        username,
+      });
+      // Only a genuine 409 (someone else took the name between the live
+      // check and this submit) blocks finishing — a relay/DB outage is
+      // additive-only, same as every other chain call in this app, and
+      // must never strand a player mid-onboarding over it.
+      if (!result.ok && result.reason === "taken") {
+        setConfirming(false);
+        setError("That username was just taken — go back and pick another.");
+        setStep("username");
+        return;
+      }
       // Real, permanent claims — heroId 0 is "The Outlier", the only roster
-      // slot right now (see foxglade-onboarding-roster). Gasless, additive,
-      // silent no-op above if there's no wallet.
+      // slot right now (see foxglade-onboarding-roster). Gasless, additive.
       claimHeroOnChain(0);
       claimPetOnChain();
     }
+    writeOnboarding({ hasOnboarded: true, heroId: "man", eggVariant: egg, completedAt, address, username });
+    setConfirming(false);
     setSaved(true);
     onComplete?.({ heroId: "man", eggVariant: egg });
+  };
+
+  const confirmUsernameOnly = async () => {
+    const existing = loadOnboarding();
+    if (!username || !existing.eggVariant || confirming) return;
+    setConfirming(true);
+    setError(null);
+    const address = useWallet.getState().address;
+    if (address) {
+      const result = await pushOnboarding(address, {
+        heroId: "man",
+        eggVariant: existing.eggVariant,
+        hasOnboarded: true,
+        completedAt: existing.completedAt,
+        username,
+      });
+      if (!result.ok && result.reason === "taken") {
+        setConfirming(false);
+        setError("That username was just taken — try another.");
+        return;
+      }
+    }
+    writeOnboarding({
+      hasOnboarded: true,
+      heroId: "man",
+      eggVariant: existing.eggVariant,
+      completedAt: existing.completedAt,
+      address: address ?? existing.address,
+      username,
+    });
+    setConfirming(false);
+    onComplete?.({ heroId: "man", eggVariant: existing.eggVariant });
   };
 
   return (
     <div style={styles.root}>
       <div style={styles.vignette} />
       <div style={styles.panel}>
-        {step === "welcome" && <WelcomeStep onNext={() => setStep("hero")} />}
-        {step === "hero" && <HeroStep onBack={() => setStep("welcome")} onNext={() => setStep("egg")} />}
+        {step === "welcome" && <WelcomeStep onNext={() => setStep("username")} />}
+        {step === "username" && (
+          <UsernameStep
+            username={username}
+            onChange={setUsername}
+            onBack={() => setStep("welcome")}
+            onNext={retrofitUsernameOnly ? confirmUsernameOnly : () => setStep("hero")}
+            nextLabel={retrofitUsernameOnly ? "ENTER" : "CONTINUE"}
+            busy={confirming}
+            error={error}
+          />
+        )}
+        {step === "hero" && <HeroStep onBack={() => setStep("username")} onNext={() => setStep("egg")} />}
         {step === "egg" && (
           <EggStep egg={egg} onPick={setEgg} onBack={() => setStep("hero")} onNext={() => setStep("ready")} />
         )}
         {step === "ready" && egg && (
-          <ReadyStep egg={egg} saved={saved} onBack={() => setStep("egg")} onConfirm={confirm} />
+          <ReadyStep egg={egg} saved={saved} busy={confirming} error={error} onBack={() => setStep("egg")} onConfirm={confirm} />
         )}
       </div>
-      <StepDots step={step} />
+      {!retrofitUsernameOnly && <StepDots step={step} />}
     </div>
   );
 }
 
 function StepDots({ step }: { step: Step }) {
-  const steps: Step[] = ["welcome", "hero", "egg", "ready"];
+  const steps: Step[] = ["welcome", "username", "hero", "egg", "ready"];
   const i = steps.indexOf(step);
   return (
     <div style={styles.dots}>
@@ -128,6 +203,92 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
       <button style={styles.cta} onClick={onNext}>
         BEGIN
       </button>
+    </div>
+  );
+}
+
+/**
+ * Every dot the player leaves on the village depends on this: it's the
+ * label the marketplace, the leaderboard-shaped bits of a player card, and
+ * (later) chat show instead of a bare truncated address. Debounced live
+ * availability check against the server (checkUsernameAvailable) — the
+ * unique index in apps/server/src/db.ts is what actually enforces it, this
+ * is just fast feedback so a taken name doesn't surface as a submit-time
+ * surprise on the LAST step.
+ */
+function UsernameStep({
+  username,
+  onChange,
+  onBack,
+  onNext,
+  nextLabel,
+  busy,
+  error,
+}: {
+  username: string;
+  onChange: (v: string) => void;
+  onBack: () => void;
+  onNext: () => void;
+  nextLabel: string;
+  busy: boolean;
+  error: string | null;
+}) {
+  const address = useWallet((s) => s.address);
+  const formatValid = isValidUsername(username);
+  const [checking, setChecking] = useState(false);
+  const [available, setAvailable] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!formatValid) {
+      setAvailable(null);
+      setChecking(false);
+      return;
+    }
+    let cancelled = false;
+    setChecking(true);
+    const t = setTimeout(() => {
+      checkUsernameAvailable(username, address ?? undefined).then((result) => {
+        if (cancelled) return;
+        setAvailable(result);
+        setChecking(false);
+      });
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [username, formatValid, address]);
+
+  const canSubmit = formatValid && available !== false && !busy;
+
+  return (
+    <div style={styles.stepBody}>
+      <div style={styles.stepTitle}>Your Name</div>
+      <div style={styles.stepSub}>
+        Tied to this wallet — it&apos;s how the village, the marketplace and your card know you instead of a bare
+        address.
+      </div>
+      <input
+        style={styles.usernameInput}
+        value={username}
+        onChange={(e) => onChange(e.target.value.replace(/\s/g, ""))}
+        placeholder="username"
+        maxLength={20}
+        autoFocus
+      />
+      <div style={styles.usernameStatus}>
+        {username && !formatValid ? (
+          <span style={styles.usernameBad}>3-20 characters — letters, numbers, underscore only.</span>
+        ) : checking ? (
+          <span style={styles.usernameChecking}>Checking…</span>
+        ) : available === false ? (
+          <span style={styles.usernameBad}>That name&apos;s taken.</span>
+        ) : available === true ? (
+          <span style={styles.usernameGood}>Available.</span>
+        ) : null}
+      </div>
+      {error && <div style={styles.error}>{error}</div>}
+      <StepNav onBack={onBack} onNext={onNext} nextLabel={busy ? "…" : nextLabel} nextDisabled={!canSubmit} />
     </div>
   );
 }
@@ -272,11 +433,15 @@ function EggStep({
 function ReadyStep({
   egg,
   saved,
+  busy,
+  error,
   onBack,
   onConfirm,
 }: {
   egg: EggVariant;
   saved: boolean;
+  busy: boolean;
+  error: string | null;
   onBack: () => void;
   onConfirm: () => void;
 }) {
@@ -299,8 +464,9 @@ function ReadyStep({
           <div style={{ ...styles.heroName, color: info.accent }}>{info.name}</div>
         </div>
       </div>
+      {error && <div style={styles.error}>{error}</div>}
       {!saved ? (
-        <StepNav onBack={onBack} onNext={onConfirm} nextLabel="BEGIN YOUR WATCH" />
+        <StepNav onBack={onBack} onNext={onConfirm} nextLabel={busy ? "…" : "BEGIN YOUR WATCH"} nextDisabled={busy} />
       ) : (
         <div style={styles.savedRow}>
           <div style={styles.savedNote}>✓ Saved. Tell me when to wire this in.</div>
@@ -377,6 +543,21 @@ const styles: Record<string, React.CSSProperties> = {
   stepBody: { display: "flex", flexDirection: "column", gap: 16 },
   stepTitle: { color: GOLD, fontSize: 20, fontWeight: 800, letterSpacing: 1 },
   stepSub: { color: "rgba(232,238,242,0.55)", fontSize: 12.5, lineHeight: 1.6, marginTop: -8 },
+  usernameInput: {
+    width: "100%",
+    padding: "14px 16px",
+    borderRadius: 10,
+    border: "1px solid rgba(242,193,78,0.3)",
+    background: "rgba(255,255,255,0.05)",
+    color: INK,
+    fontSize: 15,
+    outline: "none",
+  },
+  usernameStatus: { fontSize: 12, minHeight: 16, marginTop: -8 },
+  usernameGood: { color: "#8fd99a" },
+  usernameBad: { color: "#f28a5c" },
+  usernameChecking: { color: "rgba(232,238,242,0.45)" },
+  error: { color: "#f28a5c", fontSize: 12.5, lineHeight: 1.5 },
   heroRow: { display: "flex", gap: 16, alignItems: "stretch" },
   // Below ~520px there's no room for a 108px locked column beside the hero
   // card without forcing a shrink the card can't actually do — it was

@@ -23,14 +23,28 @@ export interface OnboardingData {
    *  different email/session tested here before), so a stale save can never
    *  get silently attributed — and chain-claimed — to the wrong account. */
   address: string | null;
+  /** The player's chosen display name — part of their identity, tied to
+   *  their wallet address, unique server-side (case-insensitive; see
+   *  apps/server/src/db.ts). `null` until the username step completes; a
+   *  player onboarded before this field existed also reads null until they
+   *  go through it (see Game.tsx's `needsUsername`). */
+  username: string | null;
+}
+
+/** 3-20 chars, alphanumeric + underscore. Must match apps/server/src/
+ *  index.ts's USERNAME_RE — the server enforces this for real, this is only
+ *  the UX-level check (disabling the Next button, live availability calls). */
+export function isValidUsername(name: string): boolean {
+  return /^[a-zA-Z0-9_]{3,20}$/.test(name);
 }
 
 const KEY = "foxglade.onboarding";
-// Bumped 2026-08-17 to add `address` — also has the useful side effect of
-// invalidating every pre-existing save, including any written while the
-// connect gate was briefly disabled for standalone wizard testing, which had
-// no address to tag and would otherwise misattribute to whoever connects next.
-const VERSION = 2;
+// Bumped 2026-08-17 to add `username` — also has the useful side effect of
+// invalidating every pre-existing save, same as the `address` bump just
+// before it (see git history): anyone onboarded under the old schema goes
+// through the wizard once more, this time landing on the new username step
+// instead of skipping straight past it with no name on file.
+const VERSION = 3;
 
 export const NEW_ONBOARDING: OnboardingData = {
   version: VERSION,
@@ -39,6 +53,7 @@ export const NEW_ONBOARDING: OnboardingData = {
   eggVariant: null,
   completedAt: null,
   address: null,
+  username: null,
 };
 
 const memory = new Map<string, string>();
@@ -71,6 +86,7 @@ export function loadOnboarding(): OnboardingData {
       eggVariant: EGG_VARIANTS.includes(p.eggVariant as EggVariant) ? (p.eggVariant as EggVariant) : null,
       completedAt: typeof p.completedAt === "number" ? p.completedAt : null,
       address: typeof p.address === "string" ? p.address : null,
+      username: typeof p.username === "string" ? p.username : null,
     };
   } catch {
     return { ...NEW_ONBOARDING };

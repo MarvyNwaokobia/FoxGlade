@@ -44,18 +44,29 @@ export async function reconcileAccount(address: string): Promise<void> {
   const [server, stats] = await Promise.all([pullOnboarding(address), pullPlayerStats(address)]);
 
   if (server?.hasOnboarded) {
-    if (!local.hasOnboarded || !localIsThisAccounts) {
+    // Also adopts when local is missing a username the server already has —
+    // a second device that finished the wizard (hero/egg/username) before
+    // this one ever did shouldn't leave this device stuck re-asking for a
+    // name that's already on file for this address.
+    if (!local.hasOnboarded || !localIsThisAccounts || (!local.username && server.username)) {
       writeOnboarding({
         hasOnboarded: true,
         heroId: "man",
         eggVariant: server.eggVariant,
         completedAt: server.completedAt,
         address,
+        username: server.username,
       });
     }
-  } else if (local.hasOnboarded && local.eggVariant && localIsThisAccounts) {
+  } else if (local.hasOnboarded && local.eggVariant && local.username && localIsThisAccounts) {
     const completedAt = local.completedAt ?? Date.now();
-    pushOnboarding(address, { heroId: "man", eggVariant: local.eggVariant, hasOnboarded: true, completedAt });
+    pushOnboarding(address, {
+      heroId: "man",
+      eggVariant: local.eggVariant,
+      hasOnboarded: true,
+      completedAt,
+      username: local.username,
+    });
     claimHeroOnChain(0);
     claimPetOnChain();
   } else if (local.hasOnboarded && !localIsThisAccounts) {
