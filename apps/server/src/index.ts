@@ -656,6 +656,40 @@ app.post("/event/stamp", async (req, res) => {
   }
 });
 
+/**
+ * Wipes the server-side onboarding/stats mirrors so every wallet reads as
+ * fresh on its next connect (Marvy's request, 2026-08-17 — a clean slate
+ * for testing the new username step without every account auto-adopting
+ * its old hasOnboarded/pick from the server). Gated behind the SAME
+ * x-relay-secret every other route already requires — not a new trust
+ * boundary, just reusing the one this whole API already runs on.
+ *
+ * Scope: ONLY these two Postgres tables. Cannot and does not touch
+ * anything on-chain — any HeroNFT/PetNFT already minted to a wallet stays
+ * minted; this just clears the record of who's onboarded, so reconnecting
+ * shows the wizard again rather than skipping straight into the village.
+ * Each player's own local device save (localStorage) is untouched too —
+ * out of reach from here — though accountSync.ts's reconcile will overwrite
+ * a stale local "hasOnboarded" with the now-empty server state the next
+ * time that wallet connects, same as any other adopt-from-server case.
+ */
+app.post("/admin/reset-users", async (_req, res) => {
+  if (!dbConfigured()) {
+    res.status(503).json({ error: "onboarding persistence not configured" });
+    return;
+  }
+  try {
+    const [onboarding, stats] = await Promise.all([
+      pool!.query("DELETE FROM onboarding"),
+      pool!.query("DELETE FROM player_stats"),
+    ]);
+    res.json({ ok: true, onboardingRowsDeleted: onboarding.rowCount, playerStatsRowsDeleted: stats.rowCount });
+  } catch (err) {
+    console.error("admin reset-users failed", err);
+    res.status(500).json({ error: "reset failed" });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`foxglade-server listening on :${PORT}, gameServer=${gameServerAddress}`);
 });
