@@ -54,19 +54,20 @@ export function Pause() {
 
   return (
     <>
-      <button style={styles.trigger} onClick={openPause} aria-label="Pause">
+      <button className="fg-btn fg-icon-btn" style={styles.trigger} onClick={openPause} aria-label="Pause">
         ⏸
       </button>
       {pauseOpen && (
         <div style={styles.root} onClick={closePause}>
-          <div style={styles.panel} onClick={(e) => e.stopPropagation()}>
+          <div className="fg-scroll" style={styles.panel} onClick={(e) => e.stopPropagation()}>
             <div style={styles.title}>PAUSED</div>
             <div style={styles.sub}>The village is holding still. Take your time.</div>
             <div style={styles.list}>
-              <button style={styles.primary} onClick={closePause}>
+              <button className="fg-btn fg-btn-primary" style={styles.primary} onClick={closePause}>
                 Resume
               </button>
               <button
+                className="fg-btn fg-menu-item"
                 style={styles.item}
                 onClick={() => {
                   closePause();
@@ -76,7 +77,7 @@ export function Pause() {
                 Menu
               </button>
               {!confirmQuit ? (
-                <button style={styles.itemQuit} onClick={() => setConfirmQuit(true)}>
+                <button className="fg-btn fg-btn-quit" style={styles.itemQuit} onClick={() => setConfirmQuit(true)}>
                   Quit
                 </button>
               ) : (
@@ -85,10 +86,14 @@ export function Pause() {
                     Banked progress saves on its own. Anything you're carrying right now doesn't — leave anyway?
                   </div>
                   <div style={styles.confirmRow}>
-                    <button style={styles.item} onClick={() => setConfirmQuit(false)}>
+                    <button className="fg-btn fg-menu-item" style={styles.item} onClick={() => setConfirmQuit(false)}>
                       Cancel
                     </button>
-                    <button style={styles.itemQuit} onClick={() => window.location.reload()}>
+                    <button
+                      className="fg-btn fg-btn-quit"
+                      style={styles.itemQuit}
+                      onClick={() => window.location.reload()}
+                    >
                       Leave
                     </button>
                   </div>
@@ -135,6 +140,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   panel: {
     width: "min(340px, 92vw)",
+    maxHeight: "86vh",
+    overflowY: "auto",
     background: "linear-gradient(180deg, rgba(24,20,15,0.98), rgba(16,14,11,0.98))",
     border: "1px solid rgba(242,193,78,0.35)",
     borderRadius: 16,

@@ -113,7 +113,7 @@ export function PlayerCardView({
 
   return (
     <div style={{ ...styles.panel, borderColor: `${glow}45`, boxShadow: `0 24px 80px rgba(0,0,0,0.6), 0 0 40px ${glow}12` }}>
-      <div style={styles.body}>
+      <div className="fg-scroll" style={styles.body}>
         <div style={styles.identityRow}>
           <div style={{ ...styles.avatarWrap, borderColor: glow, boxShadow: `0 0 14px ${glow}44` }}>
             {avatar ? <img src={avatar} alt="" style={styles.avatarImg} /> : <span style={styles.avatarFallback}>🧭</span>}

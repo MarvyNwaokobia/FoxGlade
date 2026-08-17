@@ -45,7 +45,7 @@ export function HamburgerMenu() {
 
   return (
     <>
-      <button style={styles.trigger} onClick={openMenu} aria-label="Menu">
+      <button className="fg-btn fg-icon-btn" style={styles.trigger} onClick={openMenu} aria-label="Menu">
         ☰
       </button>
       {menuOpen && (
@@ -53,12 +53,13 @@ export function HamburgerMenu() {
           <div style={styles.panel} onClick={(e) => e.stopPropagation()}>
             <div style={styles.header}>
               <span style={styles.title}>MENU</span>
-              <button style={styles.close} onClick={closeMenu} aria-label="Close">
+              <button className="fg-btn fg-icon-btn" style={styles.close} onClick={closeMenu} aria-label="Close">
                 ✕
               </button>
             </div>
-            <div style={styles.list}>
+            <div className="fg-scroll" style={styles.list}>
               <button
+                className="fg-btn fg-menu-item"
                 style={styles.item}
                 onClick={() => {
                   closeMenu();
@@ -68,6 +69,7 @@ export function HamburgerMenu() {
                 Map
               </button>
               <button
+                className="fg-btn fg-menu-item"
                 style={styles.item}
                 onClick={() => {
                   closeMenu();
@@ -77,6 +79,7 @@ export function HamburgerMenu() {
                 Profile
               </button>
               <button
+                className="fg-btn fg-menu-item"
                 style={styles.item}
                 onClick={() => {
                   closeMenu();
@@ -86,6 +89,7 @@ export function HamburgerMenu() {
                 Marketplace
               </button>
               <button
+                className="fg-btn fg-menu-item"
                 style={styles.item}
                 onClick={() => {
                   closeMenu();
@@ -95,6 +99,7 @@ export function HamburgerMenu() {
                 Bank
               </button>
               <button
+                className="fg-btn fg-menu-item"
                 style={styles.item}
                 onClick={() => {
                   closeMenu();
@@ -104,6 +109,7 @@ export function HamburgerMenu() {
                 Help Center
               </button>
               <button
+                className="fg-btn fg-menu-item"
                 style={styles.item}
                 onClick={() => {
                   closeMenu();
@@ -161,6 +167,9 @@ const styles: Record<string, React.CSSProperties> = {
   },
   panel: {
     width: "min(340px, 92vw)",
+    maxHeight: "min(560px, 86vh)",
+    display: "flex",
+    flexDirection: "column",
     background: "linear-gradient(180deg, rgba(24,20,15,0.98), rgba(16,14,11,0.98))",
     border: "1px solid rgba(242,193,78,0.35)",
     borderRadius: 16,
@@ -173,6 +182,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     padding: "16px 20px",
     borderBottom: "1px solid rgba(255,255,255,0.08)",
+    flexShrink: 0,
   },
   title: { color: GOLD, fontWeight: 800, fontSize: 18, letterSpacing: 3 },
   close: {
@@ -185,7 +195,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 14,
     cursor: "pointer",
   },
-  list: { display: "flex", flexDirection: "column", padding: 12, gap: 8 },
+  list: { display: "flex", flexDirection: "column", padding: 12, gap: 8, overflowY: "auto", minHeight: 0 },
   item: {
     color: INK,
     background: "rgba(255,255,255,0.05)",

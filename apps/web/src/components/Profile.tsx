@@ -77,6 +77,7 @@ export function Profile() {
           <div style={styles.headerRight}>
             {address && (
               <button
+                className="fg-btn fg-btn-ghost"
                 style={styles.share}
                 onClick={() => {
                   shareCardUrl(address).then((ok) => {
@@ -90,25 +91,27 @@ export function Profile() {
                 {shared ? "Link copied!" : "Share ↗"}
               </button>
             )}
-            <button style={styles.close} onClick={closeProfile} aria-label="Close">
+            <button className="fg-btn fg-icon-btn" style={styles.close} onClick={closeProfile} aria-label="Close">
               ✕
             </button>
           </div>
         </div>
 
-        <PlayerCardView
-          avatar={avatar}
-          identityLabel={address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "Guest — no wallet connected"}
-          day={day}
-          treasuresBanked={treasuresBanked}
-          villeBanked={villeBanked}
-          villeEarned={villeEarned}
-          equippedWeapon={equippedWeapon}
-          owned={owned}
-          foxHoursAway={foxHoursAway}
-          foxRustBanksLeft={foxRustBanksLeft}
-          showFox={gameMode().fox}
-        />
+        <div style={styles.cardSlot}>
+          <PlayerCardView
+            avatar={avatar}
+            identityLabel={address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "Guest — no wallet connected"}
+            day={day}
+            treasuresBanked={treasuresBanked}
+            villeBanked={villeBanked}
+            villeEarned={villeEarned}
+            equippedWeapon={equippedWeapon}
+            owned={owned}
+            foxHoursAway={foxHoursAway}
+            foxRustBanksLeft={foxRustBanksLeft}
+            showFox={gameMode().fox}
+          />
+        </div>
       </div>
     </div>
   );
@@ -127,7 +130,15 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: "system-ui, sans-serif",
     padding: 16,
   },
-  stack: { width: "min(560px, 96vw)", maxHeight: "90vh", display: "flex", flexDirection: "column", gap: 10 },
+  stack: {
+    width: "min(560px, 96vw)",
+    maxHeight: "100%",
+    overflow: "hidden",
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+  },
+  cardSlot: { flex: "1 1 auto", minHeight: 0, display: "flex" },
   header: {
     display: "flex",
     justifyContent: "space-between",
@@ -136,6 +147,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: "linear-gradient(180deg, rgba(24,20,15,0.98), rgba(16,14,11,0.98))",
     border: "1px solid",
     borderRadius: 12,
+    flexShrink: 0,
   },
   title: { color: GOLD, fontWeight: 800, fontSize: 18, letterSpacing: 3 },
   headerRight: { display: "flex", alignItems: "center", gap: 8 },
