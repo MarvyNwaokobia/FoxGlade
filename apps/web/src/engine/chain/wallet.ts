@@ -21,6 +21,21 @@ declare global {
   }
 }
 
+/**
+ * Whether a browser-wallet provider actually exists on this page: a desktop
+ * extension, or (on mobile) a wallet app's own in-app browser, which injects
+ * one the same way. A plain mobile browser (Safari, Chrome) never has one —
+ * there's no such thing as a mobile extension — no matter what wallet apps
+ * are installed on the phone, so callers use this to decide whether offering
+ * "connect wallet" makes sense at all rather than showing a button that can
+ * only ever fail (see ConnectGate.tsx; lesson learned the hard way in Valor,
+ * whose self-hosted WalletConnect connector then got dropped entirely after
+ * its pairing relay proved unreachable behind many carrier/ISP resolvers).
+ */
+export function hasInjectedProvider(): boolean {
+  return typeof window !== "undefined" && Boolean(window.ethereum);
+}
+
 export type WalletStatus = "idle" | "sending" | "connected" | "error";
 export type WalletMethod = "magic" | "injected" | null;
 

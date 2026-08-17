@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useWallet } from "@/engine/chain/wallet";
+import { useEffect, useState } from "react";
+import { useWallet, hasInjectedProvider } from "@/engine/chain/wallet";
 import { magicConfigured } from "@/engine/chain/magic";
 
 /**
@@ -12,9 +12,13 @@ import { magicConfigured } from "@/engine/chain/magic";
  *
  * Two ways in, same identity requirement either side: Magic email OTP (no
  * extension needed, works everywhere) or an injected browser wallet
- * (MetaMask etc. — engine/chain/wallet.ts connectInjected). Neither signs
- * anything here; every on-chain action is relayed server-side off just the
- * address (relay.ts), so this screen's only job is learning that address.
+ * (MetaMask etc. — engine/chain/wallet.ts connectInjected). The wallet path
+ * only appears when `hasInjectedProvider()` finds one — a plain mobile
+ * browser never has one, wallet apps installed on the phone or not, so
+ * showing the button there would only ever produce a confusing failure.
+ * Neither path signs anything here; every on-chain action is relayed
+ * server-side off just the address (relay.ts), so this screen's only job is
+ * learning that address.
  *
  * `checking` is the brief window while Game.tsx's mount-time `restore()` is
  * still in flight — shown instead of the form so a returning player with a
@@ -26,6 +30,12 @@ export function ConnectGate({ checking }: { checking: boolean }) {
   const [step, setStep] = useState<"intro" | "form">("intro");
   const [email, setEmail] = useState("");
   const sending = status === "sending";
+  // Checked client-side, after mount, to avoid an SSR/hydration mismatch —
+  // `window` doesn't exist on the server. False on first render means the
+  // wallet row below is briefly absent even on desktop; it appears a beat
+  // later once this resolves.
+  const [walletAvailable, setWalletAvailable] = useState(false);
+  useEffect(() => setWalletAvailable(hasInjectedProvider()), []);
 
   return (
     <div style={styles.root}>
@@ -71,19 +81,23 @@ export function ConnectGate({ checking }: { checking: boolean }) {
             </form>
             {!magicConfigured() && <div style={styles.note}>Email sign-in isn&apos;t configured on this build.</div>}
 
-            <div style={styles.divider}>
-              <div style={styles.dividerLine} />
-              <span>or</span>
-              <div style={styles.dividerLine} />
-            </div>
+            {walletAvailable && (
+              <>
+                <div style={styles.divider}>
+                  <div style={styles.dividerLine} />
+                  <span>or</span>
+                  <div style={styles.dividerLine} />
+                </div>
 
-            <button
-              style={{ ...styles.walletBtn, ...(sending ? styles.ctaDisabled : null) }}
-              onClick={connectInjected}
-              disabled={sending}
-            >
-              CONNECT WALLET
-            </button>
+                <button
+                  style={{ ...styles.walletBtn, ...(sending ? styles.ctaDisabled : null) }}
+                  onClick={connectInjected}
+                  disabled={sending}
+                >
+                  CONNECT WALLET
+                </button>
+              </>
+            )}
 
             {error && <div style={styles.error}>{error}</div>}
           </>
