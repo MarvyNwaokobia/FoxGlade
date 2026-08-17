@@ -33,6 +33,7 @@ export function Profile() {
   const foxHoursAway = useGame((s) => s.foxHoursAway);
   const foxRustBanksLeft = useGame((s) => s.foxRustBanksLeft);
   const address = useWallet((s) => s.address);
+  const logout = useWallet((s) => s.logout);
 
   const [avatar, setAvatar] = useState<string | null>(null);
   const [shared, setShared] = useState(false);
@@ -89,6 +90,18 @@ export function Profile() {
                 }}
               >
                 {shared ? "Link copied!" : "Share ↗"}
+              </button>
+            )}
+            {address && (
+              <button
+                className="fg-btn fg-btn-ghost"
+                style={styles.signOut}
+                onClick={() => {
+                  closeProfile();
+                  logout();
+                }}
+              >
+                Sign out
               </button>
             )}
             <button className="fg-btn fg-icon-btn" style={styles.close} onClick={closeProfile} aria-label="Close">
@@ -161,6 +174,18 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     cursor: "pointer",
     whiteSpace: "nowrap",
+  },
+  signOut: {
+    color: INK,
+    background: "rgba(255,255,255,0.06)",
+    border: "1px solid rgba(255,255,255,0.15)",
+    borderRadius: 8,
+    padding: "8px 12px",
+    fontSize: 12.5,
+    fontWeight: 700,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+    opacity: 0.85,
   },
   close: {
     color: INK,
