@@ -442,11 +442,22 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
       }
     }
 
-    // Never show a T-pose: reveal once the combat idle is driving the rig (or a
-    // short fallback for a slow load).
+    // Never show a T-pose: reveal once a clip is actually driving the rig, not
+    // on a blind timer. The old check revealed at 2500ms regardless of whether
+    // Mixamo had finished loading — on a cold cache (onboarding is often the
+    // very first thing a browser loads, so `loadMixamoAnimations()`'s 25 FBX
+    // fetches start from nothing) that timeout could fire before any clip
+    // existed, showing the raw bind pose. HIPS_PITCH_FIX below then pitches
+    // that undriven T-pose forward 90° unconditionally — arms already
+    // outstretched along the rotation axis stay put while the body swings
+    // horizontal, which is exactly the "flying superman" pose reported on the
+    // hero preview (Marvy's screenshot, 2026-08-17). `currentClipName` is only
+    // non-null once `transition()` actually found a clip and started an
+    // action, so gating on it can't reveal an undriven skeleton. The 8s cap
+    // is a last-resort fallback for a genuinely failed load, not the normal path.
     if (!revealed.current && initDone.current) {
       if (initTime.current === 0) initTime.current = performance.now();
-      if (mixamoApplied.current || performance.now() - initTime.current > 2500) {
+      if (animMachine.currentClipName !== null || performance.now() - initTime.current > 8000) {
         revealed.current = true;
       }
     }
@@ -625,8 +636,12 @@ export const PlayerRig = memo(function PlayerRig({ state, model = "man" }: Playe
     animMachine.update(dt);
 
     // Stand the character upright — cancel the rig's baked-in root pitch (Valor
-    // GLBs only; our FBX→GLB exports are already upright).
-    if (needsPitchFix && hipsBoneRef.current) {
+    // GLBs only; our FBX→GLB exports are already upright). Only while a clip is
+    // actually driving the hips: applied to an undriven bind pose, this same
+    // premultiply is what turned a T-pose into the "flying superman" pose (see
+    // the reveal-gating comment above) — safer to leave a rare undriven frame
+    // as a plain T-pose than to rotate it into something worse.
+    if (needsPitchFix && hipsBoneRef.current && animMachine.currentClipName !== null) {
       hipsBoneRef.current.quaternion.premultiply(HIPS_PITCH_FIX);
       hipsFixApplied.current = true;
     }
