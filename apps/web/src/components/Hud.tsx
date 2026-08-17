@@ -987,7 +987,7 @@ const styles: Record<string, React.CSSProperties> = {
   compassWrapTouch: {
     top: "calc(env(safe-area-inset-top, 0px) + 14px)",
     left: "auto",
-    right: "calc(env(safe-area-inset-right, 0px) + 174px)",
+    right: "calc(env(safe-area-inset-right, 0px) + 172px)",
     transform: "none",
   },
   compass: {
