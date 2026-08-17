@@ -5,8 +5,8 @@ sift real hints from planted decoys, use an in-game marketplace, and mint a
 treasure before the timer or rival NPCs beat you to it — all with a fox companion
 you raise, whose growth and decay *is* your rank.
 
-Built for an Avalanche grant submission. Full design + technical spec:
-**[DESIGN.md](DESIGN.md)**.
+**Live:** [foxglade.app](https://foxglade.app). Built for an Avalanche grant
+submission. Full design + technical spec: **[DESIGN.md](DESIGN.md)**.
 
 Foxglade is a **browser-native web game**: the game runs in the page (Three.js /
 React Three Fiber) alongside the wallet, marketplace, and leaderboard, so the
@@ -24,7 +24,8 @@ FoxGlade/
 │   │   ├── app/       Next App Router (layout, page, api/chain/* relay proxy)
 │   │   └── src/
 │   │       ├── engine/    config/feel, input, player, fox, scene, runtime, chain/
-│   │       └── components/ Game (canvas) + Hud (DOM overlay)
+│   │       └── components/ Game (canvas) + Hud/MobileControls (DOM overlay) +
+│   │                        onboarding/ (hero pick) + ConnectGate
 │   └── server/        gameServer backend (deployed on Railway) — see below
 └── contracts/         Foundry / Solidity — the on-chain layer
     ├── src/           TreasureNFT, VilleToken, ArmoryItems, PetNFT, SeasonRewards
@@ -42,16 +43,25 @@ npm run dev        # → http://localhost:3000
 ```
 
 Click the canvas to capture the mouse. **WASD** move · **Shift** run · **Space**
-jump · **Mouse** look · **Esc** release. All game-feel numbers live in one place —
-[`apps/web/src/engine/config/feel.ts`](apps/web/src/engine/config/feel.ts) — so
-movement, camera, and the fox-follow can be retuned without touching scene code.
+jump · **Mouse** look · **Esc** release. On a touch device the same session gets
+an on-screen pad instead (`apps/web/src/components/MobileControls.tsx`) — fixed
+joystick + look-drag zone, contextual action button, FOX, and combat verbs, laid
+out to keep the primary FIRE thumb-reachable. All game-feel numbers live in one
+place — [`apps/web/src/engine/config/feel.ts`](apps/web/src/engine/config/feel.ts)
+— so movement, camera, and the fox-follow can be retuned without touching scene
+code.
+
+Every visit opens on a mandatory connect screen (`ConnectGate.tsx` — Magic
+email-OTP or an injected wallet, no guest play) followed by a one-time hero pick
+(`components/onboarding/`); returning players skip straight to their saved
+progress. This superseded the earlier optional-wallet framing — every player has
+an address from minute one now, gating onboarding itself rather than sitting
+alongside it.
 
 Current slice: full gray-box loop (movement, NPCs, shooting, hints, marketplace,
-day/night), Magic email-OTP wallet login, and a real on-chain moment — banking a
-secured treasure with a wallet connected mints a `TreasureNFT` and rewards real
-`VilleToken`, live on Avalanche mainnet ([DESIGN.md §8](DESIGN.md), [§14.9](DESIGN.md)).
-Wallet connection stays optional: unconnected play is unaffected, exactly as
-before this landed — the chain layer is additive, never a gate.
+day/night), Magic-or-injected wallet login, and a real on-chain moment — banking
+a secured treasure mints a `TreasureNFT` and rewards real `VilleToken`, live on
+Avalanche mainnet ([DESIGN.md §8](DESIGN.md), [§14.9](DESIGN.md)).
 
 ## gameServer backend (`apps/server`, on Railway)
 

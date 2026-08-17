@@ -303,6 +303,42 @@ restricted transfers make a gasless resale *payout* specifically harder
 than G$'s free transferability allows there. Verified end-to-end against
 live mainnet (a real relayed `buyItemFor` purchase, confirmed on-chain).
 
+**14.12 — Mandatory connect gate, hero-pick onboarding, and a dedicated
+touch pad (2026-08-16 to 2026-08-17, Marvy).** Every visit now opens on
+`ConnectGate.tsx` (Magic email-OTP or an injected wallet) before anything
+else — supersedes 14.8's "wired only after gameplay is proven" framing for
+the *login step* specifically (the on-chain gameplay wiring itself is
+unchanged); guest play is gone, every player has an address from minute
+one. Behind that gate, a one-time hero-pick screen (`components/onboarding/`,
+`engine/onboarding.ts`) offers "The Outlier" now, with roster slots reserved
+(locked cards) for characters bought later in the Marketplace — extends
+14.6's roster direction, still cosmetic-only in v1. Touch devices get a
+dedicated on-screen pad (`MobileControls.tsx`) rather than a scaled-down
+desktop HUD: a fixed joystick plus a separate look-drag zone (two
+independent pointers, not one shared thumb), a contextual action button
+(GRAB/BANK/SHOP/VAULT/REST/ROLL/JUMP, whichever applies), and
+FIRE/AIM/CROUCH/BOMB/FOX wrapped around FIRE's reachable top-left arc
+instead of spread across the screen. The compact top-left HUD badge
+(day/quota + clock) and moving VILLE balance out of the gamescreen entirely
+(now Bank/Marketplace-only) followed the same small-playable-slice,
+feel-reviewed workflow as §14.10 — several passes against Marvy's own
+screenshots (not simulated ones) to fix real overlaps (the fox growth
+caption sitting behind the hamburger/pause buttons; the compass overlapping
+the minimap) and reachability (dropping the whole control cluster to the
+bottom edge, aligning the joystick to FIRE's own baseline).
+
+Separately: the hero-pick preview (and any `PlayerRig` instance) could
+render in a broken, horizontal "flying" pose if it revealed itself before
+its animation clips finished loading — `PlayerRig.tsx`'s reveal used a
+blind 2.5s timer that could fire before Mixamo's 25-file animation set
+loaded on a cold cache, showing the raw bind pose, and `HIPS_PITCH_FIX` (a
+hardcoded rig-orientation correction) then unconditionally rotated that
+undriven T-pose into the reported pose. Fixed by gating the reveal on
+`AnimationStateMachine.currentClipName` actually being set (an 8s timer
+remains as a last-resort fallback for a genuinely failed load) and skipping
+the pitch fix entirely on an undriven skeleton, so a failed load now falls
+back to a plain T-pose instead of a distorted one.
+
 ---
 
 ## 15. Animation & movement plan
