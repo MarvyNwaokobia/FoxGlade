@@ -41,7 +41,10 @@ const GUN_LEN: Record<WeaponId, number> = {
 const GUN_FLIP_Y: Record<WeaponId, boolean> = {
   sidearm: true,
   smg: true,
-  assault_rifle: true,
+  // Held backwards — stock end reading as the muzzle (2026-08-17, Marvy,
+  // confirmed directly against the character screen). Dropping this flip
+  // reverses which end lands at +Z.
+  assault_rifle: false,
   marksman: true,
   legendary: true,
 };
