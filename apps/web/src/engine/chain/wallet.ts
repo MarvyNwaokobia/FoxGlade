@@ -37,6 +37,45 @@ export function hasInjectedProvider(): boolean {
   return typeof window !== "undefined" && Boolean(window.ethereum);
 }
 
+/**
+ * Marks that the player deliberately signed out (Profile's "Sign out"),
+ * distinct from just never having connected. Every silent-restore path
+ * (this file's own `restore()`, and Web3AuthSessionProvider's own restore
+ * effect) checks this and skips itself while it's set — without it, a
+ * returning player who explicitly signed out would get silently
+ * reconnected on their very next visit: an injected wallet's site
+ * permission and a Magic/Web3Auth session both persist independently of
+ * anything FoxGlade does (see the module comment on `restore` below), so
+ * "sign out" alone was never enough to stop them auto-restoring. Cleared
+ * the moment any connect path succeeds again — that's the explicit action
+ * that makes auto-restore trustworthy again on the visit after.
+ */
+const DISCONNECTED_KEY = "foxglade.wallet.disconnected";
+
+function markDisconnected(): void {
+  try {
+    localStorage.setItem(DISCONNECTED_KEY, "1");
+  } catch {
+    /* private browsing, quota, or no storage at all — worst case, auto-restore resumes */
+  }
+}
+
+export function wasExplicitlyDisconnected(): boolean {
+  try {
+    return localStorage.getItem(DISCONNECTED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function clearDisconnected(): void {
+  try {
+    localStorage.removeItem(DISCONNECTED_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 export type WalletStatus = "idle" | "sending" | "connected" | "error";
 export type WalletMethod = "magic" | "injected" | "web3auth" | null;
 
@@ -79,6 +118,7 @@ export const useWallet = create<WalletState>((set, get) => ({
   error: null,
 
   restore: async () => {
+    if (wasExplicitlyDisconnected()) return;
     try {
       const accounts = (await window.ethereum?.request({ method: "eth_accounts" })) as string[] | undefined;
       if (accounts?.[0]) {
@@ -106,6 +146,7 @@ export const useWallet = create<WalletState>((set, get) => ({
       const magic = getMagic();
       await magic.auth.loginWithEmailOTP({ email });
       const info = await magic.user.getInfo();
+      clearDisconnected();
       set({ status: "connected", address: addressOf(info), email: info.email ?? null, method: "magic" });
     } catch (err) {
       set({ status: "error", error: err instanceof Error ? err.message : "Login failed" });
@@ -116,8 +157,10 @@ export const useWallet = create<WalletState>((set, get) => ({
     set({ status: "sending", error: null });
     try {
       const magic = getMagic();
-      // Leaves the page on success — nothing more to do here. If it throws
-      // before navigating (bad config, popup blocked), fall through to error.
+      // Tapping this button IS the explicit action that makes auto-restore
+      // trustworthy again — clear before the redirect, not after, since
+      // nothing runs in this tab once loginWithRedirect navigates away.
+      clearDisconnected();
       await magic.oauth2.loginWithRedirect({
         provider: "google",
         redirectURI: `${window.location.origin}${AUTH_CALLBACK_PATH}`,
@@ -134,8 +177,25 @@ export const useWallet = create<WalletState>((set, get) => ({
     }
     set({ status: "sending", error: null });
     try {
+      // Force the extension's account picker open even if this site was
+      // already authorized (EIP-2255) — plain eth_requestAccounts silently
+      // hands back the previously-approved account with no UI at all once a
+      // site has access, which is exactly what made "sign out, then connect
+      // wallet again" look like it wasn't offering a choice. Not every
+      // wallet implements this permission call, so anything other than an
+      // explicit user rejection (4001) just falls through to the plain
+      // request below.
+      try {
+        await window.ethereum.request({ method: "wallet_requestPermissions", params: [{ eth_accounts: {} }] });
+      } catch (err) {
+        if ((err as { code?: number } | undefined)?.code === 4001) {
+          set({ status: "idle", error: null });
+          return;
+        }
+      }
       const accounts = (await window.ethereum.request({ method: "eth_requestAccounts" })) as string[];
       if (!accounts[0]) throw new Error("No account returned.");
+      clearDisconnected();
       set({ status: "connected", address: accounts[0], email: null, method: "injected" });
     } catch (err) {
       set({ status: "error", error: err instanceof Error ? err.message : "Wallet connect failed" });
@@ -144,6 +204,7 @@ export const useWallet = create<WalletState>((set, get) => ({
 
   setWeb3AuthSession: (address: string | null) => {
     if (address) {
+      clearDisconnected();
       set({ status: "connected", address, email: null, method: "web3auth" });
     } else if (get().method === "web3auth") {
       set({ status: "idle", address: null, email: null, method: null, error: null });
@@ -156,8 +217,11 @@ export const useWallet = create<WalletState>((set, get) => ({
       if (get().method === "web3auth") await disconnectWeb3Auth();
       // Injected wallets have no reliable programmatic disconnect (EIP-1193
       // doesn't require one) — clearing local state below is all a dapp can do;
-      // the extension itself still considers this site authorized.
+      // the extension itself still considers this site authorized. That's what
+      // `markDisconnected` is for: it can't revoke the extension's permission,
+      // but it can stop `restore()` from silently using it next time.
     } finally {
+      markDisconnected();
       set({ status: "idle", address: null, email: null, method: null, error: null });
     }
   },

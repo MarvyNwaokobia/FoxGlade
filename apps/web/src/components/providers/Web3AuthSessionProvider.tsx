@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, type ReactNode } from "react";
 import { Web3AuthProvider, useWeb3Auth, useWeb3AuthConnect, useWeb3AuthDisconnect } from "@web3auth/modal/react";
 import { web3AuthContextConfig, web3authConfigured } from "@/engine/chain/web3auth";
-import { useWallet } from "@/engine/chain/wallet";
+import { useWallet, wasExplicitlyDisconnected } from "@/engine/chain/wallet";
 import { registerWeb3AuthDisconnect } from "@/engine/chain/web3authBridge";
 
 interface Web3AuthWalletValue {
@@ -45,6 +45,19 @@ function Web3AuthBridge({ children }: { children: ReactNode }) {
   useEffect(() => {
     const provider = web3Auth?.provider;
     if (!isConnected || !provider) {
+      setWeb3AuthSession(null);
+      return;
+    }
+    // Defense in depth against wallet.ts's own disconnected flag: logout()
+    // already calls the real web3authDisconnect() when web3auth was the
+    // live method, so this SDK's own isConnected should already be false by
+    // the time a player returns. This only matters for the edge case where
+    // some OTHER method (Magic, injected) was live at sign-out time, leaving
+    // an earlier, separately-alive Web3Auth session on this device that
+    // logout() never touched — surfacing that here would silently reconnect
+    // exactly what the flag exists to prevent, so it gets killed instead.
+    if (wasExplicitlyDisconnected()) {
+      web3authDisconnect().catch(() => {});
       setWeb3AuthSession(null);
       return;
     }
