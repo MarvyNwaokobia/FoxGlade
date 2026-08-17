@@ -987,7 +987,7 @@ const styles: Record<string, React.CSSProperties> = {
   compassWrapTouch: {
     top: "calc(env(safe-area-inset-top, 0px) + 14px)",
     left: "auto",
-    right: "calc(env(safe-area-inset-right, 0px) + 176px)",
+    right: "calc(env(safe-area-inset-right, 0px) + 174px)",
     transform: "none",
   },
   compass: {
@@ -1225,10 +1225,12 @@ const styles: Record<string, React.CSSProperties> = {
   // The fox's growth line, stacked directly above the "send with FOX" pill
   // on the left (Marvy's call, 2026-08-17) — same left edge as that pill and
   // the hamburger/pause row above it, so the whole fox column reads as one
-  // stack instead of scattered pieces.
+  // stack instead of scattered pieces. `top:60` clears the hamburger/pause
+  // row's own bottom edge (14+40=54) — it sat at 34 first, which put it
+  // directly behind those two buttons (Marvy's playtest, 2026-08-17).
   foxGrowthTouchWrap: {
     position: "absolute",
-    top: "calc(env(safe-area-inset-top, 0px) + 34px)",
+    top: "calc(env(safe-area-inset-top, 0px) + 60px)",
     left: "calc(env(safe-area-inset-left, 0px) + 14px)",
     pointerEvents: "none",
     userSelect: "none",
@@ -1314,10 +1316,12 @@ const styles: Record<string, React.CSSProperties> = {
   // Positions foxStatusTouch under the hamburger/pause row on the left
   // (Marvy's call, 2026-08-17), same left edge as HamburgerMenu's own
   // trigger, same zIndex as that row so it isn't caught under
-  // MobileControls' full-screen touch zones.
+  // MobileControls' full-screen touch zones. `top:90` (nudged down from 62)
+  // leaves room for foxGrowthTouchWrap to sit above it without either one
+  // running into the hamburger/pause row.
   foxStatusTouchLeft: {
     position: "absolute",
-    top: "calc(env(safe-area-inset-top, 0px) + 62px)",
+    top: "calc(env(safe-area-inset-top, 0px) + 90px)",
     left: "calc(env(safe-area-inset-left, 0px) + 14px)",
     zIndex: 45,
   },

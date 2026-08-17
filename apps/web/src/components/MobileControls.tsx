@@ -21,8 +21,9 @@ const LOOK_SENS = 0.0055; // rad per screen px
 const STICK_ZONE = 0.44;
 /** Where the stick lives — always, never wherever a thumb happens to land
  *  (see the MobileControls doc comment for why the earlier floating version
- *  got replaced). Matches the old joyHome offset, now the only offset. */
-const JOY_HOME = { left: 30, bottom: 26 };
+ *  got replaced). `bottom:0` lines its base up with FIRE's own bottom edge
+ *  (Marvy's call, 2026-08-17) — both thumbs rest on the same line now. */
+const JOY_HOME = { left: 30, bottom: 0 };
 
 /**
  * Place a round control at a fixed offset from a bottom corner.
@@ -305,9 +306,10 @@ export function MobileControls() {
 
       {/* FOX, back on the left above the stick (Marvy's call, 2026-08-17 —
           reverses the 2026-08-16 move to the right pad). Centred over the
-          ring horizontally, clear of its top edge. */}
+          ring horizontally, clear of its top edge — dropped from 150 to 124
+          to follow the ring's own move down to bottom:0. */}
       {gameMode().fox && (
-        <button style={{ ...styles.btnRound, ...styles.btnSmall, ...at("left", 59, 150, 52) }} {...tap("KeyQ")}>
+        <button style={{ ...styles.btnRound, ...styles.btnSmall, ...at("left", 59, 124, 52) }} {...tap("KeyQ")}>
           FOX
         </button>
       )}
