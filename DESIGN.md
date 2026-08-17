@@ -7,6 +7,12 @@
 
 A single-session arena game set in a walled village: players, accompanied by a growing fox companion, fight through NPC blockers, sift real hints from planted distractions, and use an in-game marketplace to reach and mint a treasure before the timer or rival NPCs beat them to it.
 
+> **Superseded by §14.10 (kept here for history, per this doc's own rule
+> against silently rewriting §1/§2/§12):** "single-session" no longer means
+> "resets every run." Each **day** is still that same short, timer-pressured
+> loop, but `day`, VILLE, gear, and fox growth all persist across days via a
+> real save — see the README's opening line.
+
 ---
 
 ## 2. Core loop
@@ -20,6 +26,11 @@ A single-session arena game set in a walled village: players, accompanied by a g
 4. Bombs let the player clear a radius of blockers at once, but a telegraphed blast-radius overlay makes it possible to accidentally destroy the treasure if thrown carelessly, real risk/reward, not randomness.
 5. A grown fox can occasionally sniff out which of several hints is the real one, on a cooldown that improves as the fox matures, giving a concrete gameplay reason to invest in raising it.
 6. On reaching the treasure, the player triggers an on-chain mint (the treasure becomes an NFT with rarity attributes) and the round ends.
+
+> **Superseded by §14.10/§14.11:** step 6 described the original one-treasure
+> round. It's now one of several treasures banked toward the day's quota —
+> claiming one immediately reveals the next rather than ending anything, and
+> the day itself ends on quota-resolved-or-nightfall, not on a single pickup.
 
 **Design note:** keep "thieves who want your treasure" as NPCs, not other live players, for v1. Live PvP over a single objective invites camping/griefing and is a much harder balance problem than a hackathon timeline supports. It's an easy v2 mode once the core loop is proven fun.
 
@@ -52,9 +63,26 @@ Avalanche's Retro9000 rounds and Build Games competition weight **verifiable on-
 > ships as `apps/web` (Next.js + R3F); the fox is rendered in-scene rather than
 > as a separate avatar SDK.
 
+> **Wallet + backend decisions (locked): Magic, not RainbowKit/Privy; Railway
+> + Express, not Supabase.** §14.8 settled on **Magic** (magic.link)
+> email-OTP → embedded wallet as the primary path (an injected-wallet option
+> sits alongside it, `ConnectGate.tsx`) — same integration Valor already
+> uses, and it removes the extension/seed-phrase barrier the "Wallet/connect"
+> row above was already asking for, just via a different vendor than
+> guessed here. The "Backend" row's Supabase suggestion never got built:
+> `apps/server` is a small standalone Express + viem service instead (README
+> "gameServer backend"), because its job turned out to be holding the
+> `gameServer` signing key and relaying validated on-chain writes, not
+> leaderboard/session sync — closer to a signer than a database.
+
 ---
 
 ## 5. Visual style: 2D vs 3D, and where to get assets
+
+> **Superseded by §14.5:** the target moved from stylized low-poly to
+> semi-realistic (human-realistic, not hyper-real) once real hero/environment
+> art started landing — the reasoning below is kept as the original v1
+> rationale, not the current target.
 
 **Recommendation: stylized low-poly 3D (a "2.5D" middle ground), not flat 2D pixel art and not realistic 3D.**
 
@@ -79,7 +107,7 @@ Practical starting point: one modular low-poly character pack for the player, pl
 - On first launch, before entering the village, the player connects their wallet and goes through onboarding: **pick a base character** (cosmetic archetype, no stat differences in v1) and **pick an egg** (color/pattern, possibly rarity-gated as a marketplace cosmetic).
 - The egg is minted as a `PetNFT` at this point (see Section 7), starting in its Egg stage.
 - Further character customization (armor pieces, weapon skins) is unlocked by purchase with `VilleToken` or gated behind rank tier, tying money and status together without letting money alone buy the top-tier look.
-- The fox grows through the same progression that drives the player's rank (see Section 10), so raising your fox and climbing the leaderboard are literally the same activity, not two separate systems to manage.
+- The fox grows through the same progression that drives the player's rank (see Section 10), so raising your fox and climbing the leaderboard are literally the same activity, not two separate systems to manage. *(Superseded by §14.14: there's no separate rank ladder — fox growth is a direct Shop purchase now.)*
 
 ---
 
@@ -116,6 +144,20 @@ Practical starting point: one modular low-poly character pack for the player, pl
 
 Keep all five contracts intentionally simple. Judges and graders can read straightforward contracts fast; over-engineering here costs time without adding to the pitch.
 
+**Two more shipped later, once onboarding needed something to mint (§14.12) —
+not part of the original v1 minimal set above, but built to the same
+`AuthorizedGame` pattern and deployed via a separate, additive script
+(`script/DeployEvents.s.sol`, run after `Deploy.s.sol`):**
+
+**HeroNFT.sol** (ERC-721)
+- `mintHero(address player, uint8 heroId)` — called once at onboarding for the chosen roster slot (`heroId` 0 = "The Outlier", the only live one; more slots arrive from the Marketplace without touching this contract)
+- No growth/decay state — a permanent record of the pick, not a living companion like `PetNFT`
+
+**GameEvents.sol**
+- Not a token — a permanent, cheap on-chain stamp for gameplay moments that don't carry a reward of their own: death, a day's quota complete, a day advancing
+- `stamp(address player, EventType eventType)`, `onlyGameServer` — no storage beyond the emitted event, so a death-frequency moment doesn't cost more than it has to
+- Exists because §11's on-chain-activity mapping wants unique-wallet activity beyond just the reward-bearing mints; a plain event log is the cheapest way to add more of it without inventing a reward for moments that shouldn't have one
+
 ---
 
 ## 8. Milestone plan (solo dev, AI-assisted)
@@ -149,6 +191,15 @@ Compared to the football idea, this is meaningfully cheaper: no full character a
 ---
 
 ## 10. Economy, monthly tournaments, and pet-linked rank
+
+> **Layer 3 (Renown/rank/decay) — see §14.14: the shipped game replaced this
+> with a simpler mechanic.** Layers 1 and 2 below are accurate as written.
+> Layer 3 is not: there's no "Renown" anywhere in the codebase, no player
+> rank-title ladder, and fox growth is a direct Shop purchase rather than a
+> threshold you cross through ordinary play. The on-chain `PetNFT` contract
+> still implements Layer 3 exactly as designed (health/decay/dormancy,
+> Renown-threshold framing in its own doc comment) — only the *client's*
+> trigger for calling it changed, not the contract.
 
 **Layer 1: In-game token (no cash-out pressure)**
 - Treasures pay out `VilleToken`, not AVAX, not a stablecoin.
@@ -276,16 +327,17 @@ Build sequence agreed for this (small playable slices, feel-reviewed one at a ti
 
 **14.11 — Day-end is a hard stop, not a walk-home-and-press-E prompt (2026-08-13, Marvy). Supersedes the "funnels you to the bank... then home to sleep" bullet in §14.10.** Playtesting slices 1–5 surfaced a real gap: `dayOver` unlocked going to bed but forced nothing, so a player could keep wandering after the day was actually over without any signal that something had changed — easy to miss entirely. Fix, matching the existing death-screen pattern exactly: the instant `dayOver` flips true (quota resolved or nightfall, no exception for either cause), `PlayerController` sets `runtime.paused` (which blockers/thieves/projectiles already respect) and freezes player movement, and `Hud.tsx` puts up a full-screen overlay — same visual language as the death screen — reporting the split ("X banked, Y lost to thieves") with two explicit choices: **E** sleeps through to Day N+1 (`sleep()`, now callable from anywhere, the `HOME_INDEX` location gate is gone), **R** retries the same day (`store.ts`'s new `retryDay()`, sharing the exact reset a no-charm death already used — both now call a private `resetToDawn()` helper so the two paths can't drift apart). The old shelter prompt's `canSleep` branch and the slice-3 day-end toast are both removed as redundant — the overlay says the same thing, more prominently, and persists until you choose. Retry is offered unconditionally, not gated on having failed the quota; there's no requirement to have missed it to want another attempt at today.
 
-All five contracts (`VilleToken`, `TreasureNFT`, `PetNFT`, `ArmoryItems`, `SeasonRewards`) are **UUPS-upgradeable** (OpenZeppelin `contracts-upgradeable`, each deployed as an `ERC1967Proxy` in front of a logic contract, `initialize()` instead of a constructor). `owner` (the upgrade/admin authority — can rotate `gameServer`, whitelist spenders, and call `upgradeToAndCall`) is Marvy's **Safe multisig**, set via `SAFE_ADDRESS` in `contracts/.env` and passed as `initialOwner` at deploy time — the deploy key itself never holds owner power once `SAFE_ADDRESS` is set. `gameServer` stays a separate, non-multisig hot key (a Railway-hosted backend signer) since it must auto-sign every gameplay event with no manual approval step, which a Safe can't do without a relayer.
+All seven contracts (`VilleToken`, `TreasureNFT`, `PetNFT`, `ArmoryItems`, `SeasonRewards`, `HeroNFT`, `GameEvents`) are **UUPS-upgradeable** (OpenZeppelin `contracts-upgradeable`, each deployed as an `ERC1967Proxy` in front of a logic contract, `initialize()` instead of a constructor). `owner` (the upgrade/admin authority — can rotate `gameServer`, whitelist spenders, and call `upgradeToAndCall`) is Marvy's **Safe multisig**, set via `SAFE_ADDRESS` in `contracts/.env` and passed as `initialOwner` at deploy time — the deploy key itself never holds owner power once `SAFE_ADDRESS` is set. `gameServer` stays a separate, non-multisig hot key (a Railway-hosted backend signer) since it must auto-sign every gameplay event with no manual approval step, which a Safe can't do without a relayer.
 
 The Railway backend (`apps/server`) is live and wired to real gameplay
 (2026-08-11): banking a secured treasure, with a wallet connected, mints a
 `TreasureNFT` and rewards `VilleToken` for real, relayed through a Next.js
 server route (`apps/web/app/api/chain/claim`) that keeps the relay's shared
 secret server-side. Verified end-to-end against live mainnet. See the README's
-"gameServer backend" section for the full request path. Not yet wired:
-`PetNFT` (needs onboarding UI), `SeasonRewards` (needs a tournament UI) —
-deferred until their gameplay UI exists.
+"gameServer backend" section for the full request path. **Superseded by
+§14.13**: `PetNFT` is now also fully wired (it was blocked on the onboarding
+egg-pick UI, which has since shipped). `SeasonRewards`' claim side is wired;
+its scoring side is not.
 
 **Marketplace, real on-chain ownership + player-to-player trading
 (2026-08-11).** `ArmoryItems` upgraded to v2 via the Safe (new storage
@@ -338,6 +390,71 @@ undriven T-pose into the reported pose. Fixed by gating the reveal on
 remains as a last-resort fallback for a genuinely failed load) and skipping
 the pitch fix entirely on an undriven skeleton, so a failed load now falls
 back to a plain T-pose instead of a distorted one.
+
+**14.13 — Two more contracts, and the fox/hero chain wiring is further along
+than earlier notes claimed (as of 2026-08-17, Marvy — a docs audit, not new
+work).** `HeroNFT` and `GameEvents` (§7) exist and are both live on mainnet,
+deployed via a separate additive script alongside the original five. Neither
+was ever written up here or in the README, which is corrected now, not a new
+decision:
+
+- **`HeroNFT`** mints on onboarding confirm (`claimHeroOnChain(0)`,
+  `Onboarding.tsx`) — one token per player for their roster pick.
+- **`PetNFT`** — the earlier "not yet wired, needs onboarding UI" note (just
+  above) was accurate when written but is now stale: the egg-pick UI shipped
+  as part of onboarding, and `claimPetOnChain()` mints the egg on the same
+  confirm. It stays wired through play, not just at onboarding:
+  `recordPetRunOnChain()` resets the on-chain decay clock on every banked
+  treasure, `evolvePetOnChain(stage)` fires on a shop growth-tier purchase,
+  `revivePetOnChain()` fires on buying the Revival Charm — all in `store.ts`,
+  same fire-and-forget/wallet-gated shape as the treasure claim (§ README
+  "gameServer backend").
+- **`GameEvents`** stamps `death`, `dayComplete`, and `dayAdvanced` from the
+  same real trigger points in `store.ts` (`stampEvent(...)` at the death/
+  day-resolution/day-advance call sites) — a genuine gameplay hook, not a
+  dead code path.
+- **`SeasonRewards` is the one still genuinely incomplete**, and it's a real
+  gap, not a docs gap: the *claim* half is live — `OnChainMarket.tsx` reads
+  `currentSeasonId`/`claimableReward` and has a working "Claim tournament
+  prize" button that calls the real, player-paid `claimReward()` — but
+  nothing anywhere calls `SeasonRewards.addScore`, so no season currently
+  accrues a balance for anyone to claim. Tournament scoring itself (§10
+  Layer 2) still needs its gameplay hook before this contract does anything
+  end-to-end.
+
+**14.14 — Fox growth is a Shop purchase, not Renown crossing a threshold; the
+player rank-title ladder was never built (docs audit, 2026-08-17).** §10
+Layer 3 described growth and rank as one system driven by an accumulating
+"Renown" score earned from ordinary play. That never shipped. What's live
+instead, in `engine/config/fox.ts`:
+
+- **Growth is bought, not earned passively.** Four stages — Kit (free,
+  starting), Young (100 VILLE), Adult (200), Prime (300, `misreadChance: 0`)
+  — each a normal `SHOP_ITEMS` entry gated on owning the stage before it
+  (`store.ts`'s `requires` check). Banking loot earns the VILLE; growing the
+  fox is a separate, deliberate spend, "same as a weapon or a bag" (the
+  module's own doc comment). `evolvePetOnChain(stage)` fires at the moment of
+  that purchase, which is what actually drives the on-chain `PetNFT.evolve` —
+  not a Renown threshold.
+- **No player rank-title ladder** (Wanderer → Scavenger → ... → Legend)
+  exists anywhere in the client. `DAY {day}` (§14.10) is the only
+  progression number shown to the player now.
+- **Decay is now "rust," not health/dormancy** — a lighter, session-scoped
+  debuff (worse nose, calmer/slower fox) from real hours away, that wears off
+  on its own after a few banked runs this session or can be instantly
+  cleared by buying the Revival Charm (`fox_revive`, 150 VILLE) — never a
+  hard-blocking "stops earning Renown" state, because there's no Renown to
+  stop earning. `revivePetOnChain()` still fires on that purchase, calling
+  the same on-chain `revive()`.
+- **The on-chain contract is untouched and still literally Layer-3-shaped**
+  (`PetNFT.sol`'s own doc comment still reads "Grows as Renown crosses
+  thresholds; health decays from inactivity") — `currentHealth`/`isDormant`
+  still compute a real decay curve off `lastSuccessfulRunTimestamp` between
+  actual play sessions, entirely independent of the client's local "rust"
+  feel. Nothing reads that on-chain health back into the client today, so
+  the two decay notions coexist without contradicting each other in play,
+  but a future pass reconciling "does the UI's rust ever reflect the
+  contract's real dormancy" is open, not resolved.
 
 ---
 

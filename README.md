@@ -1,9 +1,11 @@
 # Foxglade
 
-A single-session arena game set in a walled village: fight through NPC blockers,
-sift real hints from planted decoys, use an in-game marketplace, and mint a
-treasure before the timer or rival NPCs beat you to it — all with a fox companion
-you raise, whose growth and decay *is* your rank.
+A walled-village survival game, one day at a time: fight through NPC blockers,
+sift real hints from planted decoys, use an in-game marketplace, and bank your
+day's quota of treasure before the timer or rival NPCs beat you to it. Progress
+carries forward day to day rather than resetting per session — VILLE, gear, and
+a fox companion you raise, whose growth and decay *is* your rank
+([DESIGN.md §14.10](DESIGN.md)).
 
 **Live:** [foxglade.app](https://foxglade.app). Built for an Avalanche grant
 submission. Full design + technical spec: **[DESIGN.md](DESIGN.md)**.
@@ -28,8 +30,9 @@ FoxGlade/
 │   │                        onboarding/ (hero pick) + ConnectGate
 │   └── server/        gameServer backend (deployed on Railway) — see below
 └── contracts/         Foundry / Solidity — the on-chain layer
-    ├── src/           TreasureNFT, VilleToken, ArmoryItems, PetNFT, SeasonRewards
-    ├── script/        Deploy.s.sol
+    ├── src/           TreasureNFT, VilleToken, ArmoryItems, PetNFT,
+    │                  SeasonRewards, HeroNFT, GameEvents
+    ├── script/        Deploy.s.sol (original 5) + DeployEvents.s.sol (+2, later)
     └── test/          Foundry tests
 ```
 
@@ -95,6 +98,12 @@ restriction (see `VilleToken.sol`) makes a gasless resale payout require
 either inflating supply or custody-holding VILLE, and a direct transaction
 keeps the sink property intact without either.
 
+The same `gameServer` key also relays the onboarding and fox-lifecycle mints —
+`POST /hero`, `/pet` (egg mint), `/pet/record-run`, `/pet/evolve`, and
+`/pet/revive` — and `POST /event` for the `GameEvents` stamps, each proxied
+through its own `apps/web/app/api/chain/*` route the same way the treasure
+claim is.
+
 `apps/server` is intentionally **not** an npm workspace — it has its own
 `package.json`/lockfile so Railway can build it standalone with its Root
 Directory set to `apps/server`, independent of the web app's workspace. Gameplay
@@ -115,9 +124,12 @@ npm run dev                # → http://localhost:8080
 
 ## Contracts
 
-Five intentionally-simple contracts (see [DESIGN.md §7](DESIGN.md)), all
+Seven intentionally-simple contracts (see [DESIGN.md §7](DESIGN.md)), all
 **UUPS-upgradeable** ([DESIGN.md §14.9](DESIGN.md)) and **live on Avalanche
-C-Chain mainnet**:
+C-Chain mainnet**. `HeroNFT` and `GameEvents` shipped later than the original
+five, via a separate additive deploy — see
+[`contracts/script/DeployEvents.s.sol`](contracts/script/DeployEvents.s.sol),
+run *after* `Deploy.s.sol`, not in place of it:
 
 | Contract | Standard | Role | Mainnet proxy |
 |---|---|---|---|
@@ -126,6 +138,8 @@ C-Chain mainnet**:
 | `ArmoryItems` | ERC-1155 | Marketplace — consumables + cosmetics priced in VILLE; routes a pool cut | `0x3d95a695baFc865cC17366B7f2f35b19fD741987` |
 | `PetNFT` | ERC-721 | The fox — growth stage + **derived** health (decay computed as a view) | `0x217F88139a85E2DD6338732abEc109f55dDe5c01` |
 | `SeasonRewards` | — | Monthly tournament scoring + native-AVAX prize pool; winner-initiated claims | `0x3C462908c5F1e3a45009f4Ac82dB67Bb95f812DB` |
+| `HeroNFT` | ERC-721 | Minted once at onboarding for the chosen hero (roster index; more slots arrive via the Marketplace) | `0xd3A15075053FF36875C6daFE4d439D1Cb1b05d09` |
+| `GameEvents` | — | Cheap on-chain stamp for death / day-complete / day-advanced — no reward, just a permanent record | `0x4459734087282b0F171c6417B19131bFB00cC687` |
 
 A shared `AuthorizedGame` base defines the `gameServer` key — the single off-chain
 signer trusted to relay validated gameplay outcomes on-chain. **This key is the v1
@@ -164,17 +178,27 @@ The deploy script auto-whitelists `ArmoryItems` as VilleToken's sole spender
 
 Design settled ([DESIGN.md §12 locked decisions](DESIGN.md), [§13 known risks](DESIGN.md));
 contracts build, pass tests, and are **deployed live on Avalanche mainnet**;
-the web game has the full gray-box loop, Magic wallet login, a real
-on-chain treasure-claim path, and a real on-chain marketplace — gasless
-relayed purchases plus genuine player-to-player resale — all verified
-end-to-end against live mainnet. Not yet wired to chain: the fox's `PetNFT`
-(needs the onboarding egg-pick UI first), and `SeasonRewards`
-(needs a tournament UI). Remaining work follows the M0–M9 milestones.
+the web game has the full gray-box loop, mandatory Magic/injected wallet login
+with a hero-and-egg onboarding, and multiple real on-chain paths — treasure
+claims, the marketplace (gasless relayed purchases plus genuine
+player-to-player resale), and the fox: onboarding mints both `HeroNFT` and a
+`PetNFT` egg, and `PetNFT` stays live through play (decay-clock reset on every
+banked treasure, growth-stage `evolve` on a shop purchase, `revive` on buying
+the Revival Charm) — all verified end-to-end against live mainnet.
+`GameEvents` stamps death/day-complete/day-advanced the same way. Not fully
+wired: `SeasonRewards` — the *claim* side is live (a real "Claim tournament
+prize" button in the on-chain marketplace, reading `currentSeasonId`/
+`claimableReward`), but nothing yet calls `addScore` during gameplay, so no
+season currently accrues a real balance to claim. Remaining work follows the
+M0–M9 milestones.
 
 ## Known design risks worth re-reading before building
 
 The load-bearing ones, in full in [DESIGN.md §13](DESIGN.md): VILLE needs a real
-sink (not just a faucet); off-chain Renown is a trust boundary; fox health must be
-*derived* not ticked; decide who pays for `evolve`; a mis-thrown bomb shouldn't
-zero a run; and **scope is the biggest grant threat** — protect the fox
-mint/evolve loop and cut NPC ambition before you cut that.
+sink (not just a faucet); trusting the client's report of gameplay outcomes is a
+real trust boundary (the design predates it, back when this was framed around
+"off-chain Renown" specifically — see [DESIGN.md §14.14](DESIGN.md) for how
+fox growth actually works now — but the underlying boundary is unchanged); fox
+health must be *derived* not ticked; decide who pays for `evolve`; a mis-thrown
+bomb shouldn't zero a run; and **scope is the biggest grant threat** — protect
+the fox mint/evolve loop and cut NPC ambition before you cut that.
