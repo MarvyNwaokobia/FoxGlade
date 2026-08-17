@@ -42,11 +42,7 @@ import { perfOff } from "@/engine/scene/perf";
 import { detectDeviceTier, qualityOverride } from "@/engine/scene/deviceTier";
 import { QUALITY } from "@/engine/scene/qualityPresets";
 
-// TEMP (Marvy, 2026-08-16): the mandatory connect gate off so the onboarding
-// wizard can be tested on its own, without a wallet — flip back to true to
-// restore the wallet-first flow. Onboarding itself is back to its normal,
-// always-on behavior (see `onboarded` below).
-const CONNECT_GATE_ENABLED = false;
+const CONNECT_GATE_ENABLED = true;
 
 /**
  * Top-level game mount: the R3F canvas plus the DOM HUD overlay. Client-only
