@@ -58,9 +58,22 @@ export function ConnectGate({ checking }: { checking: boolean }) {
     }
     useWallet.setState({ status: "sending", error: null });
     try {
-      await connectWeb3Auth();
+      // Bounded, not just awaited: Web3Auth's connect() doesn't reliably
+      // reject when the player just closes its sheet without picking
+      // anything (observed: the sheet disappears but the promise never
+      // settles either way) — without this, `status` stays "sending"
+      // forever and CONNECT WALLET is permanently disabled until reload.
+      // Same shape as Game.tsx's own restore() timeout, same reason.
+      let timedOut = false;
+      const timeout = new Promise<void>((resolve) => setTimeout(() => { timedOut = true; resolve(); }, 20000));
+      await Promise.race([connectWeb3Auth(), timeout]);
       // Success publishes the address asynchronously (Web3AuthSessionProvider
-      // watches the SDK's own connected state) — nothing to set here.
+      // watches the SDK's own connected state) — nothing to set here. If it
+      // timed out instead, just let the player try again rather than error —
+      // closing a wallet sheet isn't a failure worth alarming over.
+      if (timedOut && useWallet.getState().status === "sending") {
+        useWallet.setState({ status: "idle", error: null });
+      }
     } catch (err) {
       useWallet.setState({ status: "error", error: err instanceof Error ? err.message : "Wallet connect failed" });
     }
