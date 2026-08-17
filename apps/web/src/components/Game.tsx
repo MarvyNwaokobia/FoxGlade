@@ -145,7 +145,7 @@ export default function Game() {
   }
 
   if (mode.id === "foxglade" && !onboarded) {
-    return <Onboarding onComplete={() => setOnboarded(true)} />;
+    return <Onboarding onComplete={() => setOnboarded(true)} skipWelcome />;
   }
 
   return (

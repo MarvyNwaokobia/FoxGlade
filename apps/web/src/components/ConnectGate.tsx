@@ -23,6 +23,7 @@ import { magicConfigured } from "@/engine/chain/magic";
  */
 export function ConnectGate({ checking }: { checking: boolean }) {
   const { status, error, login, connectInjected } = useWallet();
+  const [step, setStep] = useState<"intro" | "form">("intro");
   const [email, setEmail] = useState("");
   const sending = status === "sending";
 
@@ -33,13 +34,18 @@ export function ConnectGate({ checking }: { checking: boolean }) {
         <div style={styles.brand}>FOXGLADE</div>
         {checking ? (
           <div style={styles.checking}>Checking for an existing session…</div>
-        ) : (
+        ) : step === "intro" ? (
           <>
             <div style={styles.tagline}>
               One family holds this village, and it doesn&apos;t let a stranger through the gate without a name.
               Connect to enter — your pick and your progress travel with it.
             </div>
-
+            <button style={styles.cta} onClick={() => setStep("form")}>
+              BEGIN
+            </button>
+          </>
+        ) : (
+          <>
             <form
               style={styles.form}
               onSubmit={(e) => {

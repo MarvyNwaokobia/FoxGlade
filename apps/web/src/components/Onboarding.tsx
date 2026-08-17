@@ -53,10 +53,15 @@ export interface OnboardingSelection {
 export interface OnboardingProps {
   /** Fires once the player confirms on the "ready" step. */
   onComplete?: (selection: OnboardingSelection) => void;
+  /** Skip the title/tagline/BEGIN step and open straight on hero pick — for
+   *  Game.tsx's mandatory flow, where ConnectGate's own BEGIN click already
+   *  covered it (see Game.tsx). /onboarding-preview mounts with this unset,
+   *  so the welcome step is still there to iterate on in isolation. */
+  skipWelcome?: boolean;
 }
 
-export function Onboarding({ onComplete }: OnboardingProps) {
-  const [step, setStep] = useState<Step>("welcome");
+export function Onboarding({ onComplete, skipWelcome }: OnboardingProps) {
+  const [step, setStep] = useState<Step>(skipWelcome ? "hero" : "welcome");
   const [egg, setEgg] = useState<EggVariant | null>(() => loadOnboarding().eggVariant);
   const [saved, setSaved] = useState(false);
 
