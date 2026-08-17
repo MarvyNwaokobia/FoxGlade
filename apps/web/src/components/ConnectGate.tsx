@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useWallet, hasInjectedProvider } from "@/engine/chain/wallet";
 import { magicConfigured } from "@/engine/chain/magic";
+import { useWeb3AuthWallet } from "@/components/providers/Web3AuthSessionProvider";
 
 /**
  * The mandatory first screen for Foxglade (Marvy's call, 2026-08-16): every
@@ -11,11 +12,20 @@ import { magicConfigured } from "@/engine/chain/magic";
  * replaces the old guest-play-until-you-feel-like-connecting flow).
  *
  * Two ways in, same identity requirement either side: Magic email OTP (no
- * extension needed, works everywhere) or an injected browser wallet
- * (MetaMask etc. — engine/chain/wallet.ts connectInjected). The wallet path
- * only appears when `hasInjectedProvider()` finds one — a plain mobile
- * browser never has one, wallet apps installed on the phone or not, so
- * showing the button there would only ever produce a confusing failure.
+ * extension needed, works everywhere) or "connect a wallet you already
+ * have". The second path is two different mechanisms behind one button
+ * (engine/chain/wallet.ts): a desktop extension or a wallet's own in-app
+ * browser injects `window.ethereum` directly, connecting in one tap with no
+ * network hop — that's `connectInjected`. A plain mobile browser never has
+ * one, wallet apps installed on the phone or not (there's no such thing as a
+ * mobile extension), so there `hasInjectedProvider()` is false and the same
+ * button instead opens Web3Auth's hosted wallet chooser, which handles the
+ * pairing over managed infrastructure. Chosen over a self-hosted
+ * WalletConnect connector after Valor's own history with one: its pairing
+ * relay gets DNS-blackholed by a lot of consumer ISP/carrier resolvers. The
+ * button only fully disappears if neither path is available (no injected
+ * provider AND Web3Auth isn't configured yet).
+ *
  * Neither path signs anything here; every on-chain action is relayed
  * server-side off just the address (relay.ts), so this screen's only job is
  * learning that address.
@@ -27,15 +37,32 @@ import { magicConfigured } from "@/engine/chain/magic";
  */
 export function ConnectGate({ checking }: { checking: boolean }) {
   const { status, error, login, connectInjected } = useWallet();
+  const { connect: connectWeb3Auth, isReady: web3authReady } = useWeb3AuthWallet();
   const [step, setStep] = useState<"intro" | "form">("intro");
   const [email, setEmail] = useState("");
   const sending = status === "sending";
   // Checked client-side, after mount, to avoid an SSR/hydration mismatch —
   // `window` doesn't exist on the server. False on first render means the
   // wallet row below is briefly absent even on desktop; it appears a beat
-  // later once this resolves.
+  // later once this resolves (same beat Web3Auth's own `isReady` lands on,
+  // for the same reason, when there's no injected provider to fall back on).
   const [walletAvailable, setWalletAvailable] = useState(false);
   useEffect(() => setWalletAvailable(hasInjectedProvider()), []);
+
+  async function handleConnectWallet() {
+    if (walletAvailable) {
+      connectInjected();
+      return;
+    }
+    useWallet.setState({ status: "sending", error: null });
+    try {
+      await connectWeb3Auth();
+      // Success publishes the address asynchronously (Web3AuthSessionProvider
+      // watches the SDK's own connected state) — nothing to set here.
+    } catch (err) {
+      useWallet.setState({ status: "error", error: err instanceof Error ? err.message : "Wallet connect failed" });
+    }
+  }
 
   return (
     <div style={styles.root}>
@@ -81,7 +108,7 @@ export function ConnectGate({ checking }: { checking: boolean }) {
             </form>
             {!magicConfigured() && <div style={styles.note}>Email sign-in isn&apos;t configured on this build.</div>}
 
-            {walletAvailable && (
+            {(walletAvailable || web3authReady) && (
               <>
                 <div style={styles.divider}>
                   <div style={styles.dividerLine} />
@@ -91,7 +118,7 @@ export function ConnectGate({ checking }: { checking: boolean }) {
 
                 <button
                   style={{ ...styles.walletBtn, ...(sending ? styles.ctaDisabled : null) }}
-                  onClick={connectInjected}
+                  onClick={handleConnectWallet}
                   disabled={sending}
                 >
                   CONNECT WALLET

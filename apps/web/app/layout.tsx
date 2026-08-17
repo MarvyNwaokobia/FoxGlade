@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { Web3AuthSessionProvider } from "@/components/providers/Web3AuthSessionProvider";
 
 export const metadata: Metadata = {
   title: "Foxglade",
@@ -22,7 +23,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body>
-        <div id="game-root">{children}</div>
+        <div id="game-root">
+          <Web3AuthSessionProvider>{children}</Web3AuthSessionProvider>
+        </div>
       </body>
     </html>
   );

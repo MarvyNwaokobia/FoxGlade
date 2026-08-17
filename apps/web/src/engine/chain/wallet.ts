@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { MagicUserMetadata } from "magic-sdk";
 import { getMagic, magicConfigured } from "@/engine/chain/magic";
+import { disconnectWeb3Auth } from "@/engine/chain/web3authBridge";
 
 function addressOf(info: MagicUserMetadata): string | null {
   return info.wallets?.ethereum?.publicAddress ?? null;
@@ -37,13 +38,13 @@ export function hasInjectedProvider(): boolean {
 }
 
 export type WalletStatus = "idle" | "sending" | "connected" | "error";
-export type WalletMethod = "magic" | "injected" | null;
+export type WalletMethod = "magic" | "injected" | "web3auth" | null;
 
 interface WalletState {
   status: WalletStatus;
   address: string | null;
   email: string | null;
-  /** Which of the two connect paths produced the current session — decides
+  /** Which of the three connect paths produced the current session — decides
    *  what, if anything, `logout` needs to unwind. */
   method: WalletMethod;
   error: string | null;
@@ -57,6 +58,12 @@ interface WalletState {
   login: (email: string) => Promise<void>;
   /** Browser-wallet connect — prompts the extension for account access. */
   connectInjected: () => Promise<void>;
+  /** Published by Web3AuthSessionProvider once its SDK resolves (or loses)
+   *  an address — that provider owns the actual connect/disconnect calls
+   *  (they're hook-based, this store isn't), and only reports the outcome
+   *  here. Clearing (`null`) is a no-op unless web3auth was the live method,
+   *  so it can't stomp a session `login`/`connectInjected` just produced. */
+  setWeb3AuthSession: (address: string | null) => void;
   logout: () => Promise<void>;
 }
 
@@ -116,9 +123,18 @@ export const useWallet = create<WalletState>((set, get) => ({
     }
   },
 
+  setWeb3AuthSession: (address: string | null) => {
+    if (address) {
+      set({ status: "connected", address, email: null, method: "web3auth" });
+    } else if (get().method === "web3auth") {
+      set({ status: "idle", address: null, email: null, method: null, error: null });
+    }
+  },
+
   logout: async () => {
     try {
       if (get().method === "magic" && magicConfigured()) await getMagic().user.logout();
+      if (get().method === "web3auth") await disconnectWeb3Auth();
       // Injected wallets have no reliable programmatic disconnect (EIP-1193
       // doesn't require one) — clearing local state below is all a dapp can do;
       // the extension itself still considers this site authorized.
