@@ -192,14 +192,3 @@ prize" button in the on-chain marketplace, reading `currentSeasonId`/
 season currently accrues a real balance to claim. Remaining work follows the
 M0–M9 milestones.
 
-## Known design risks worth re-reading before building
-
-The load-bearing ones, in full in [DESIGN.md §13](DESIGN.md): VILLE needs a real
-sink (not just a faucet); trusting the client's report of gameplay outcomes is a
-real trust boundary (the design predates it, back when this was framed around
-"off-chain Renown" specifically — see [DESIGN.md §14.14](DESIGN.md) for how
-fox growth actually works now — but the underlying boundary is unchanged); fox
-health must be *derived* not ticked; decide who pays for `evolve`; a mis-thrown
-bomb shouldn't zero a run; and **scope is the biggest execution risk on a solo
-build** — protect the fox mint/evolve loop and cut NPC ambition before you cut
-that.
