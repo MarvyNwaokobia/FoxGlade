@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { MagicUserMetadata } from "magic-sdk";
-import { getMagic, magicConfigured } from "@/engine/chain/magic";
+import { getMagic, magicConfigured, AUTH_CALLBACK_PATH } from "@/engine/chain/magic";
 import { disconnectWeb3Auth } from "@/engine/chain/web3authBridge";
 
 function addressOf(info: MagicUserMetadata): string | null {
@@ -56,6 +56,10 @@ interface WalletState {
   restore: () => Promise<void>;
   /** Email OTP login — resolves once the wallet address is known. */
   login: (email: string) => Promise<void>;
+  /** Google login via Magic's OAuth extension — redirects away from the
+   *  page; resolution happens on return, at app/auth/callback, which calls
+   *  `restore()` to pick up the now-live Magic session. */
+  loginWithGoogle: () => Promise<void>;
   /** Browser-wallet connect — prompts the extension for account access. */
   connectInjected: () => Promise<void>;
   /** Published by Web3AuthSessionProvider once its SDK resolves (or loses)
@@ -105,6 +109,21 @@ export const useWallet = create<WalletState>((set, get) => ({
       set({ status: "connected", address: addressOf(info), email: info.email ?? null, method: "magic" });
     } catch (err) {
       set({ status: "error", error: err instanceof Error ? err.message : "Login failed" });
+    }
+  },
+
+  loginWithGoogle: async () => {
+    set({ status: "sending", error: null });
+    try {
+      const magic = getMagic();
+      // Leaves the page on success — nothing more to do here. If it throws
+      // before navigating (bad config, popup blocked), fall through to error.
+      await magic.oauth2.loginWithRedirect({
+        provider: "google",
+        redirectURI: `${window.location.origin}${AUTH_CALLBACK_PATH}`,
+      });
+    } catch (err) {
+      set({ status: "error", error: err instanceof Error ? err.message : "Google sign-in failed" });
     }
   },
 

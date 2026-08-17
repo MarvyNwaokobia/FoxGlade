@@ -1,4 +1,5 @@
 import { Magic } from "magic-sdk";
+import { OAuthExtension } from "@magic-ext/oauth2";
 
 /**
  * Avalanche C-Chain mainnet (chainId 43114). Deploying straight to mainnet
@@ -9,14 +10,29 @@ export const AVALANCHE = {
   rpcUrl: process.env.NEXT_PUBLIC_AVALANCHE_RPC_URL || "https://api.avax.network/ext/bc/C/rpc",
 };
 
-let instance: Magic | null = null;
+/**
+ * Google's OAuth leg (magic.oauth2.loginWithRedirect) leaves the page and
+ * comes back here to finish — must match a route registered in BOTH Google
+ * Cloud Console's authorized redirect URIs AND Magic dashboard's "Allowed
+ * Origins & Redirects" for this app (see app/auth/callback/page.tsx).
+ */
+export const AUTH_CALLBACK_PATH = "/auth/callback";
+
+/** Magic's type with the OAuth extension's `.oauth2` namespace attached. */
+type MagicWithOAuth = ReturnType<typeof createMagic>;
+
+let instance: MagicWithOAuth | null = null;
+
+function createMagic(apiKey: string) {
+  return new Magic(apiKey, { network: AVALANCHE, extensions: [new OAuthExtension()] });
+}
 
 /**
  * Lazy singleton — Magic touches `window`, so this must only ever be called
  * client-side (from inside a "use client" component's effect/handler, never
  * at module scope during SSR).
  */
-export function getMagic(): Magic {
+export function getMagic(): MagicWithOAuth {
   if (instance) return instance;
   const apiKey = process.env.NEXT_PUBLIC_MAGIC_API_KEY;
   if (!apiKey) {
@@ -24,7 +40,7 @@ export function getMagic(): Magic {
       "NEXT_PUBLIC_MAGIC_API_KEY is not set — copy apps/web/.env.local.example to .env.local and fill it in."
     );
   }
-  instance = new Magic(apiKey, { network: AVALANCHE });
+  instance = createMagic(apiKey);
   return instance;
 }
 
