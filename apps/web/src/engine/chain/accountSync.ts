@@ -1,4 +1,4 @@
-import { loadOnboarding, writeOnboarding } from "@/engine/onboarding";
+import { loadOnboarding, writeOnboarding, clearOnboarding } from "@/engine/onboarding";
 import { pullOnboarding, pushOnboarding } from "@/engine/chain/onboardingSync";
 import { pullPlayerStats, pushPlayerStats } from "@/engine/chain/playerStatsSync";
 import { claimHeroOnChain, claimPetOnChain } from "@/engine/chain/relay";
@@ -27,25 +27,39 @@ import { NEW_SAVE } from "@/engine/save";
  * there is a product decision (whose device wins?), not a sync bug; the
  * normal push-on-mutation path (store.ts's subscribe + syncStats) will just
  * overwrite the server with local from the next bank/sleep checkpoint on.
+ *
+ * A third direction guards both of the above: local's `hasOnboarded` only
+ * counts if its `address` tag is null (a guest pick, made before any wallet
+ * connected) or matches the address connecting now. A tag for a DIFFERENT
+ * address means this device has someone else's save on it — an earlier
+ * email/session tested here, or (2026-08-17) onboarding completed while the
+ * connect gate was briefly disabled for standalone testing — and must never
+ * be adopted OR pushed for whoever connects next; that would silently claim
+ * a pick, and fire the on-chain hero/pet mint, for the wrong account. It's
+ * cleared instead, so this address gets a genuine wizard.
  */
 export async function reconcileAccount(address: string): Promise<void> {
   const local = loadOnboarding();
+  const localIsThisAccounts = local.address === null || local.address === address;
   const [server, stats] = await Promise.all([pullOnboarding(address), pullPlayerStats(address)]);
 
   if (server?.hasOnboarded) {
-    if (!local.hasOnboarded) {
+    if (!local.hasOnboarded || !localIsThisAccounts) {
       writeOnboarding({
         hasOnboarded: true,
         heroId: "man",
         eggVariant: server.eggVariant,
         completedAt: server.completedAt,
+        address,
       });
     }
-  } else if (local.hasOnboarded && local.eggVariant) {
+  } else if (local.hasOnboarded && local.eggVariant && localIsThisAccounts) {
     const completedAt = local.completedAt ?? Date.now();
     pushOnboarding(address, { heroId: "man", eggVariant: local.eggVariant, hasOnboarded: true, completedAt });
     claimHeroOnChain(0);
     claimPetOnChain();
+  } else if (local.hasOnboarded && !localIsThisAccounts) {
+    clearOnboarding();
   }
 
   const g = useGame.getState();

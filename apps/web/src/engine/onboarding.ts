@@ -16,10 +16,21 @@ export interface OnboardingData {
   heroId: CharacterModelId;
   eggVariant: EggVariant | null;
   completedAt: number | null;
+  /** Which wallet address this pick was made under, if any was connected at
+   *  the time — `null` for a guest pick (no wallet yet). Lets accountSync.ts
+   *  tell "this device's save belongs to the account that's connecting now"
+   *  apart from "this device has someone ELSE's stale save on it" (a
+   *  different email/session tested here before), so a stale save can never
+   *  get silently attributed — and chain-claimed — to the wrong account. */
+  address: string | null;
 }
 
 const KEY = "foxglade.onboarding";
-const VERSION = 1;
+// Bumped 2026-08-17 to add `address` — also has the useful side effect of
+// invalidating every pre-existing save, including any written while the
+// connect gate was briefly disabled for standalone wizard testing, which had
+// no address to tag and would otherwise misattribute to whoever connects next.
+const VERSION = 2;
 
 export const NEW_ONBOARDING: OnboardingData = {
   version: VERSION,
@@ -27,6 +38,7 @@ export const NEW_ONBOARDING: OnboardingData = {
   heroId: "man",
   eggVariant: null,
   completedAt: null,
+  address: null,
 };
 
 const memory = new Map<string, string>();
@@ -58,6 +70,7 @@ export function loadOnboarding(): OnboardingData {
       heroId: p.heroId === "man" ? "man" : NEW_ONBOARDING.heroId,
       eggVariant: EGG_VARIANTS.includes(p.eggVariant as EggVariant) ? (p.eggVariant as EggVariant) : null,
       completedAt: typeof p.completedAt === "number" ? p.completedAt : null,
+      address: typeof p.address === "string" ? p.address : null,
     };
   } catch {
     return { ...NEW_ONBOARDING };

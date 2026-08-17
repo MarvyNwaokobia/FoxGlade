@@ -68,11 +68,11 @@ export function Onboarding({ onComplete, skipWelcome }: OnboardingProps) {
   const confirm = () => {
     if (!egg) return;
     const completedAt = Date.now();
-    writeOnboarding({ hasOnboarded: true, heroId: "man", eggVariant: egg, completedAt });
     // Best-effort — a wallet already restored by the time this screen shows
     // (see Game.tsx) means this device's pick is now recoverable on another
     // one too. No wallet yet is a silent no-op, same as every other chain call.
     const address = useWallet.getState().address;
+    writeOnboarding({ hasOnboarded: true, heroId: "man", eggVariant: egg, completedAt, address });
     if (address) {
       pushOnboarding(address, { heroId: "man", eggVariant: egg, hasOnboarded: true, completedAt });
       // Real, permanent claims — heroId 0 is "The Outlier", the only roster

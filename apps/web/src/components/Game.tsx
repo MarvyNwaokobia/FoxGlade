@@ -133,7 +133,11 @@ export default function Game() {
     if (mode.id !== "foxglade" || !address) return;
     let cancelled = false;
     reconcileAccount(address).then(() => {
-      if (!cancelled) setOnboarded((prev) => prev || loadOnboarding().hasOnboarded);
+      // Assignment, not `prev || ...`: reconcileAccount is the authority once
+      // it resolves, including the direction that CLEARS a stale local pick
+      // made under a different address (accountSync.ts) — ORing with `prev`
+      // would silently keep the initial mount-time guess and undo that.
+      if (!cancelled) setOnboarded(loadOnboarding().hasOnboarded);
     });
     return () => {
       cancelled = true;
