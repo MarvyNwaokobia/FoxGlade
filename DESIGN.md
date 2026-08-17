@@ -1,5 +1,5 @@
 # Foxglade
-### Game Design + Technical Spec for Avalanche Grant Build
+### Game Design + Technical Spec — an Avalanche Ecosystem Build
 
 ---
 
@@ -32,13 +32,13 @@ A single-session arena game set in a walled village: players, accompanied by a g
 > claiming one immediately reveals the next rather than ending anything, and
 > the day itself ends on quota-resolved-or-nightfall, not on a single pickup.
 
-**Design note:** keep "thieves who want your treasure" as NPCs, not other live players, for v1. Live PvP over a single objective invites camping/griefing and is a much harder balance problem than a hackathon timeline supports. It's an easy v2 mode once the core loop is proven fun.
+**Design note:** keep "thieves who want your treasure" as NPCs, not other live players, for v1. Live PvP over a single objective invites camping/griefing and is a much harder balance problem than a solo build timeline supports. It's an easy v2 mode once the core loop is proven fun.
 
 ---
 
-## 3. Why this fits Avalanche's current grant scoring
+## 3. Why this fits the Avalanche ecosystem
 
-Avalanche's Retro9000 rounds and Build Games competition weight **verifiable on-chain activity** (gas burned, real transactions, unique wallets) heavily, not just pitch quality. This design produces frequent, meaningful transactions per session, and the fox companion adds emotionally-driven transactions (egg mint, hatch, evolution) on top of the routine marketplace/treasure ones. See Section 11 for the full mapping.
+What makes a game a genuinely good fit for building on Avalanche is **verifiable on-chain activity** (gas burned, real transactions, unique wallets) that comes from actual play, not manufactured volume. This design produces frequent, meaningful transactions per session, and the fox companion adds emotionally-driven transactions (egg mint, hatch, evolution) on top of the routine marketplace/treasure ones. See Section 11 for the full mapping.
 
 ---
 
@@ -46,7 +46,7 @@ Avalanche's Retro9000 rounds and Build Games competition weight **verifiable on-
 
 | Layer | Recommendation | Why |
 |---|---|---|
-| Game engine | **Godot 4** (export to web/HTML5) or reuse whatever engine powered your GoodDollar shooter if it's portable | Godot is free/open-source (no license cost), exports to web so judges can play instantly with no download |
+| Game engine | **Godot 4** (export to web/HTML5) or reuse whatever engine powered your GoodDollar shooter if it's portable | Godot is free/open-source (no license cost), exports to web so players can play instantly with no download |
 | Alternative | Three.js/Babylon.js if you want a fully browser-native, no-plugin build | Better if you want the game embedded directly in a web dApp frontend alongside wallet connect |
 | Chain | Avalanche C-Chain | Cheapest, most compatible with standard EVM tooling you already use |
 | Contracts | Solidity + Foundry (you already use this) | Treasure NFT (ERC-721), token (ERC-20), marketplace (ERC-1155), pet NFT (ERC-721), season rewards contract |
@@ -56,8 +56,8 @@ Avalanche's Retro9000 rounds and Build Games competition weight **verifiable on-
 > **Engine decision (locked): web-native Three.js / React Three Fiber, not Godot.**
 > The build reuses systems from the Valor codebase (a shipped R3F web FPS) to
 > fast-track movement, NPC AI, game-feel, and UI, and keeps game + wallet +
-> marketplace in one app. This is the stronger fit for Avalanche's grant scoring
-> (judges play instantly in-browser; the whole Avalanche/EVM tooling stack —
+> marketplace in one app. This is the stronger fit for the Avalanche ecosystem
+> (players play instantly in-browser; the whole Avalanche/EVM tooling stack —
 > wagmi, viem, Core wallet, session keys, subnet gas sponsoring — is web-first),
 > and it's why the "Alternative" row above became the primary choice. The game
 > ships as `apps/web` (Next.js + R3F); the fox is rendered in-scene rather than
@@ -140,9 +140,9 @@ Practical starting point: one modular low-poly character pack for the player, pl
 **SeasonRewards.sol**
 - Tracks a `tournamentScore` per wallet during the active monthly window (treasures found, weighted by rarity, plus a tiebreaker like fastest average pickup time)
 - `claimReward()` is called by the player themselves after `finalizeTournament()` snapshots the top N wallets, rather than an admin batch-paying everyone, this keeps the transaction attributable to the player's own wallet
-- Pool is funded by: marketplace revenue cut + optional small entry stake per tournament pass + an initial treasury seed from grant funds if needed to bootstrap tournament 1
+- Pool is funded by: marketplace revenue cut + optional small entry stake per tournament pass + an initial treasury seed if needed to bootstrap tournament 1
 
-Keep all five contracts intentionally simple. Judges and graders can read straightforward contracts fast; over-engineering here costs time without adding to the pitch.
+Keep all five contracts intentionally simple. Anyone reviewing the code — auditors, other builders, curious players — can read straightforward contracts fast; over-engineering here costs time without adding value.
 
 **Two more shipped later, once onboarding needed something to mint (§14.12) —
 not part of the original v1 minimal set above, but built to the same
@@ -173,7 +173,7 @@ not part of the original v1 minimal set above, but built to the same
 | M6 | Fox growth-stage models/animations swap in-game, plus the fox's hint-sniffing utility ability | 3-5 days |
 | M7 | Leaderboard UI + monthly tournament tracking + `SeasonRewards.sol` integration | 4-5 days |
 | M8 | Renown/rank tiers wired to pet growth stages, decay logic, regression states | 3-5 days |
-| M9 | Polish pass, balance tuning, demo recording, grant submission materials | 4-5 days |
+| M9 | Polish pass, balance tuning, demo recording, launch materials | 4-5 days |
 
 **Total: roughly 8-9 weeks solo**, faster if fox models/animations are bought or commissioned rather than built from scratch.
 
@@ -210,7 +210,7 @@ Compared to the football idea, this is meaningfully cheaper: no full character a
 - Tournaments run once a month, over a single weekend (for example, Friday 00:00 UTC to Sunday 23:59 UTC). Outside that window, players can still play casually for `VilleToken`, cosmetics, and fox growth, but nothing feeds the prize leaderboard.
 - `tournamentScore` resets at the start of each tournament window and is weighted by treasure rarity plus a speed/efficiency tiebreaker.
 - At the end of the weekend, the top-ranked wallets call `claimReward()` themselves to receive a real prize pool (AVAX or a stablecoin), tiered by rank (1st place gets meaningfully more than 50th).
-- The pool is funded by a small cut of marketplace revenue plus, optionally, a small entry stake per tournament pass. Grant funds can seed the pool for tournament 1 to guarantee an attractive payout before organic marketplace revenue builds up.
+- The pool is funded by a small cut of marketplace revenue plus, optionally, a small entry stake per tournament pass. A treasury seed can fund the pool for tournament 1 to guarantee an attractive payout before organic marketplace revenue builds up.
 
 **Layer 3: Renown and fox growth, merged into one system**
 
@@ -247,22 +247,22 @@ The core principle: **real-time gameplay stays off-chain, meaningful economic an
 **Reducing friction without reducing real activity**
 - **Session keys / account abstraction**: player signs once per session; in-session marketplace purchases don't require a fresh wallet popup each time.
 - **Longer-term option**: deploy the game on its own Avalanche L1 (subnet), sponsoring gas so players never need AVAX in their wallet just to play, paying in `VilleToken` while the underlying gas is covered from marketplace revenue.
-- **Framing caveat for the grant pitch:** because session keys and sponsored gas deliberately hide per-purchase signing, raw marketplace-transaction counts can read as manufactured volume to a skeptical reviewer. Lead the pitch with the 1:1 player-action transactions — egg mint, evolution, treasure mint, self-initiated reward claims — as evidence of *genuine* unique-wallet activity, and present marketplace volume as supporting texture rather than the headline metric.
+- **Framing caveat for talking about this honestly:** because session keys and sponsored gas deliberately hide per-purchase signing, raw marketplace-transaction counts can read as manufactured volume to a skeptical outside observer. Lead with the 1:1 player-action transactions — egg mint, evolution, treasure mint, self-initiated reward claims — as evidence of *genuine* unique-wallet activity, and present marketplace volume as supporting texture rather than the headline metric.
 
 ---
 
 ## 12. Locked design decisions (formerly open questions)
 
-These were the open questions from earlier drafts. Each is now resolved to a concrete v1 default with a one-line rationale. Every decision leans the same direction on purpose: **maximize unique wallets and short-session transaction density, minimize barriers and long time-commitments** — that is what the grant rubric rewards and what a solo timeline can actually ship. If the grant's exact scoring weights change, revisit the ones marked *(metric-sensitive)*.
+These were the open questions from earlier drafts. Each is now resolved to a concrete v1 default with a one-line rationale. Every decision leans the same direction on purpose: **maximize unique wallets and short-session transaction density, minimize barriers and long time-commitments** — that's what makes for a healthy, active on-chain game and what a solo timeline can actually ship. If the priorities below shift, revisit the ones marked *(metric-sensitive)*.
 
 | Question | v1 Decision | Rationale |
 |---|---|---|
-| Single-player vs. shared instance | **Single-player-per-session** | Shared human instances reintroduce every problem NPC thieves were chosen to avoid (griefing, camping, sync, low-population matchmaking) and add nothing the demo needs. A shared "race" mode is a clean v2. |
-| Session length target | **2–3 min core loop, hard timer ~4 min** | Short sessions give judges multiple playthroughs per sitting, raise transactions-per-minute, and keep the tournament grind feeling like "many quick runs." Anything past ~5 min hurts the transaction-density story. *(metric-sensitive)* |
+| Single-player vs. shared instance | **Single-player-per-session** | Shared human instances reintroduce every problem NPC thieves were chosen to avoid (griefing, camping, sync, low-population matchmaking) and add nothing the current build needs. A shared "race" mode is a clean v2. |
+| Session length target | **2–3 min core loop, hard timer ~4 min** | Short sessions give players multiple playthroughs per sitting, raise transactions-per-minute, and keep the tournament grind feeling like "many quick runs." Anything past ~5 min hurts the transaction-density story. *(metric-sensitive)* |
 | Tournament window | **Last full weekend of each month, Fri 00:00 → Sun 23:59 UTC**, shown in-game as a live countdown | A fixed UTC window with a visible countdown is honest and buildable; "last full weekend" avoids ambiguity in months that start on a weekend. Rolling per-timezone windows are unbuildable for v1. |
-| Wallets paid per tournament | **Top 25** | Paying top 25 (not top 10) widens the "I could realistically place" band, driving more competitive play and more unique claiming wallets — directly good for grant metrics — while keeping 1st aspirational. *(metric-sensitive)* |
+| Wallets paid per tournament | **Top 25** | Paying top 25 (not top 10) widens the "I could realistically place" band, driving more competitive play and more unique claiming wallets — directly good for real ecosystem activity — while keeping 1st aspirational. *(metric-sensitive)* |
 | Payout tiering steepness | **Front-loaded, not winner-take-all** — roughly 1st ≈ 20%, 2nd ≈ 12%, 3rd ≈ 8%, 4th–10th split ≈ 40%, 11th–25th split ≈ 20% | Steeper and only whales bother; flatter and there's no reason to push for #1. This shape keeps the top aspirational while rewarding the whole competitive band. |
-| Entry stake in v1 | **No stake.** Pool = marketplace-revenue cut + grant seed for tournament 1 | A stake is a barrier at exactly the moment you're proving the game is fun and growing wallet count. Adding an optional stake later (for a bonus tier) is easy; removing a resented one is not. |
+| Entry stake in v1 | **No stake.** Pool = marketplace-revenue cut + treasury seed for tournament 1 | A stake is a barrier at exactly the moment you're proving the game is fun and growing wallet count. Adding an optional stake later (for a bonus tier) is easy; removing a resented one is not. |
 | Renown decay curve | **24h full-health grace, then ease-in decay to dormancy at 48h.** Model: `health = 1 − ((t − 24) / 24)²` for `t` in `[24, 48]` hours since last successful run | An ease-in (slow at first, steep near hour 48) forgives the busy-two-days case that the grace period exists to protect, while still biting hard on genuine abandonment. This supersedes the earlier *linear* 24→48 drop. |
 
 **Still genuinely a playtest question (not lockable on paper):**
@@ -281,10 +281,10 @@ These are the load-bearing risks flagged during design review. They are not bloc
 3. **Health must be *derived*, not stored-and-ticked.** A contract only knows state when called; compute `currentHealth()` as a `view` from `lastSuccessfulRunTimestamp` and only *write* on events that already cost gas. Do not pay gas to tick a clock.
 4. **Who pays for `evolve`?** If the player pays gas to level up their own pet it feels like a tax; if a keeper pays it you reintroduce trusted admin transactions. v1 choice: the authorized game server triggers `evolve`, consistent with the Renown trust boundary above.
 5. **Bomb-destroys-treasure can be a rage-quit mechanic.** If a mis-thrown bomb nukes the only on-chain payoff of a session, consider a "cracked, reduced-rarity" treasure state instead of total destruction — real punishment without zeroing the run.
-6. **Scope is the biggest grant threat.** The milestone table assumes everything goes right, solo. If the demo is what's scored, cut to one NPC archetype done well (blockers), thieves as a simple timed despawn rather than pathing AI, distractors as a stretch — and protect the fox mint/evolve loop, which is both the differentiator and the best on-chain story.
+6. **Scope is the biggest risk to shipping.** The milestone table assumes everything goes right, solo. If time runs short, cut to one NPC archetype done well (blockers), thieves as a simple timed despawn rather than pathing AI, distractors as a stretch — and protect the fox mint/evolve loop, which is both the differentiator and the best on-chain story.
 7. **Streak vs. tournament cadence.** A daily-streak retention lever ("play every day") competes with a monthly-weekend prize cadence ("the real prize is one weekend a month"). Pick the primary retention driver so the two don't dilute each other.
 8. **Cosmetics as ERC-1155 is awkward.** Fungible skin tokens model "quantity of an interchangeable skin," which is odd for cosmetics. Either accept that framing for v1 simplicity or split cosmetics into their own contract later.
-9. **Cut the Elder fox form from v1.** It implies more art and threshold-balancing than a parenthetical is worth; ship four stages and add Elder as a post-grant flourish.
+9. **Cut the Elder fox form from v1.** It implies more art and threshold-balancing than a parenthetical is worth; ship four stages and add Elder as a later flourish.
 
 ---
 
@@ -299,7 +299,7 @@ Decisions made while playing the gray-box build. These evolve the core loop — 
 
 **14.3 — Village-per-level progression.** Claiming a village's treasure **advances you to the next village** — a new, different environment for the next level. Villages change per level (layout, mood, difficulty), giving a sense of a journey rather than one repeated arena.
 
-**14.4 — Scope flag: this reintroduces the short-session tension (§12).** Multiple treasures + multiple villages pushes toward a longer, roguelike-style progression, which pulls against the *locked* "2–3 min single-session, many quick runs" decision that the grant's transaction-density story leans on. **Recommended reconciliation:** keep **each village a self-contained ~2–3 min stage** (one village = one "level"/session), and make "next village" the **next level you load into**, not a marathon chained in one sitting. That preserves short, dense, replayable runs (and the many-small-transactions argument) while delivering the journey/level-progression feel. Treasure count per village stays low (1–3) so a stage still resolves quickly. Revisit if the grant rubric shifts.
+**14.4 — Scope flag: this reintroduces the short-session tension (§12).** Multiple treasures + multiple villages pushes toward a longer, roguelike-style progression, which pulls against the *locked* "2–3 min single-session, many quick runs" decision that the transaction-density story leans on. **Recommended reconciliation:** keep **each village a self-contained ~2–3 min stage** (one village = one "level"/session), and make "next village" the **next level you load into**, not a marathon chained in one sitting. That preserves short, dense, replayable runs (and the many-small-transactions argument) while delivering the journey/level-progression feel. Treasure count per village stays low (1–3) so a stage still resolves quickly. Revisit if priorities shift.
 
 **14.5 — Art direction: toward semi-realistic.** The visual target is moving from stylized low-poly toward **semi-realistic (human-realistic, not hyper-real)** characters, foxes, and environments. This raises the art cost and argues even harder for **bought/commissioned assets over hand-built**, and for **realistic-capable generators** for concept + hero assets. The low-poly concept set is kept as a reference alternative, not discarded.
 

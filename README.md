@@ -7,8 +7,8 @@ carries forward day to day rather than resetting per session — VILLE, gear, an
 a fox companion you raise, whose growth and decay *is* your rank
 ([DESIGN.md §14.10](DESIGN.md)).
 
-**Live:** [foxglade.app](https://foxglade.app). Built for an Avalanche grant
-submission. Full design + technical spec: **[DESIGN.md](DESIGN.md)**.
+**Live:** [foxglade.app](https://foxglade.app). Built on Avalanche. Full
+design + technical spec: **[DESIGN.md](DESIGN.md)**.
 
 Foxglade is a **browser-native web game**: the game runs in the page (Three.js /
 React Three Fiber) alongside the wallet, marketplace, and leaderboard, so the
@@ -200,5 +200,6 @@ real trust boundary (the design predates it, back when this was framed around
 "off-chain Renown" specifically — see [DESIGN.md §14.14](DESIGN.md) for how
 fox growth actually works now — but the underlying boundary is unchanged); fox
 health must be *derived* not ticked; decide who pays for `evolve`; a mis-thrown
-bomb shouldn't zero a run; and **scope is the biggest grant threat** — protect
-the fox mint/evolve loop and cut NPC ambition before you cut that.
+bomb shouldn't zero a run; and **scope is the biggest execution risk on a solo
+build** — protect the fox mint/evolve loop and cut NPC ambition before you cut
+that.
