@@ -60,6 +60,15 @@ import { useWeb3AuthWallet } from "@/components/providers/Web3AuthSessionProvide
  * "page stops registering touch after a modal closes" symptom is ALSO a
  * documented WebKit bug class independent of any specific DOM leftover —
  * cheap to run even if the DOM removal above turns out to be the whole fix.
+ *
+ * Reported again (2026-08-19): the toggle itself was still leaving players
+ * stuck needing a reload. The reset back to interactive relied on a single
+ * `requestAnimationFrame` callback — fine normally, but rAF is exactly the
+ * kind of callback real WebKit can starve for a beat right after a big
+ * native-feeling sheet dismissal (this project's own headless-playtest
+ * notes hit the same rAF-starvation class from a different angle). One
+ * missed frame there meant `pointer-events` never got reset at all. A
+ * `setTimeout` fallback alongside it guarantees the reset fires either way.
  */
 function recoverFromWeb3AuthClose() {
   if (typeof document === "undefined") return;
@@ -68,9 +77,14 @@ function recoverFromWeb3AuthClose() {
   // Reading offsetHeight forces layout, so the next line's reflow isn't
   // batched away with the one above by the browser's own optimizer.
   void document.body.offsetHeight;
-  requestAnimationFrame(() => {
+  let resetDone = false;
+  const resetPointerEvents = () => {
+    if (resetDone) return;
+    resetDone = true;
     document.body.style.pointerEvents = "";
-  });
+  };
+  requestAnimationFrame(resetPointerEvents);
+  setTimeout(resetPointerEvents, 150);
 }
 
 export function ConnectGate({ checking }: { checking: boolean }) {
