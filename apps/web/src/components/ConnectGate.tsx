@@ -94,22 +94,52 @@ export function ConnectGate({ checking }: { checking: boolean }) {
     }
     useWallet.setState({ status: "sending", error: null });
     try {
-      // Bounded, not just awaited: their own source (modalManager.js
-      // connect()) DOES reject with "User closed the modal" once
-      // modalVisibility flips false — so this timeout is a fallback for
-      // whatever else can still stall (a real connection attempt that never
-      // resolves, a network hang), not the close-via-X path itself. Same
-      // shape as Game.tsx's own restore() timeout, same reason: a mandatory
-      // screen can never leave a player stuck with no way forward.
-      let timedOut = false;
-      const timeout = new Promise<void>((resolve) => setTimeout(() => { timedOut = true; resolve(); }, 20000));
-      await Promise.race([connectWeb3Auth(), timeout]);
+      // Two different failure shapes need two different timeouts. Their own
+      // source (modalManager.js connect()) DOES reject with "User closed the
+      // modal" once modalVisibility flips false, so that path is already
+      // covered by the catch block below — these timeouts are for whatever
+      // else can stall instead.
+      //
+      // Reported (2026-08-19): on real mobile WebKit, the modal's dim
+      // backdrop can appear while the wallet-list content inside it never
+      // paints — a failure mode other developers have hit against this same
+      // SDK, not something specific to us. That's dead within a couple of
+      // seconds and should recover fast rather than sit there looking
+      // broken. A modal that DID render real content, though, might
+      // legitimately run long (WalletConnect's own QR-pairing step waits on
+      // a second device) — that shouldn't get force-killed just for taking
+      // longer than a few seconds, so it gets a much longer backstop
+      // instead. Same reasoning as Game.tsx's own restore() timeout: a
+      // mandatory screen can never leave a player stuck with no way forward.
+      let outcome: "blank" | "hard-timeout" | null = null;
+      const contentWatchdog = new Promise<void>((resolve) => {
+        const started = Date.now();
+        const poll = () => {
+          const container = document.getElementById("w3a-parent-container");
+          if (container && container.innerText.trim().length > 0) return; // real content is up — stop watching
+          if (Date.now() - started > 2500) {
+            outcome = "blank";
+            resolve();
+            return;
+          }
+          setTimeout(poll, 300);
+        };
+        setTimeout(poll, 300);
+      });
+      const hardTimeout = new Promise<void>((resolve) =>
+        setTimeout(() => {
+          outcome = outcome ?? "hard-timeout";
+          resolve();
+        }, 45000),
+      );
+      await Promise.race([connectWeb3Auth(), contentWatchdog, hardTimeout]);
       // Success publishes the address asynchronously (Web3AuthSessionProvider
-      // watches the SDK's own connected state) — nothing to set here. If it
-      // timed out instead, just let the player try again rather than error —
-      // closing a wallet sheet isn't a failure worth alarming over.
-      if (timedOut && useWallet.getState().status === "sending") {
-        useWallet.setState({ status: "idle", error: null });
+      // watches the SDK's own connected state) — nothing to set here.
+      if (outcome && useWallet.getState().status === "sending") {
+        useWallet.setState({
+          status: outcome === "blank" ? "error" : "idle",
+          error: outcome === "blank" ? "Wallet connect didn't load — tap to try again." : null,
+        });
         recoverFromWeb3AuthClose();
       }
     } catch (err) {
