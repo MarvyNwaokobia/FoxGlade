@@ -199,7 +199,7 @@ export function ConnectGate({ checking }: { checking: boolean }) {
                   onClick={handleConnectWallet}
                   disabled={sending}
                 >
-                  {sending ? "CONNECTING…" : "CONNECT WALLET"}
+                  CONNECT WALLET
                 </button>
               </>
             )}
