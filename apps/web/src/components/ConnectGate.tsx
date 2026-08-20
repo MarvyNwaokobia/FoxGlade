@@ -37,32 +37,6 @@ import { useWeb3AuthWallet } from "@/components/providers/Web3AuthSessionProvide
  * live session doesn't see a login screen flash before sliding straight
  * through.
  */
-
-/**
- * Mitigates a known class of iOS Safari bug (WebKit's touch-event pipeline,
- * not anything specific to Web3Auth — the same failure mode is documented
- * against many third-party modal/bottom-sheet libraries): a modal that does
- * its own scroll-lock/cleanup can leave the page not registering ANY touch
- * at all once it closes, until something forces Safari to recompute hit-
- * testing. Reported here as "tap X to close Web3Auth's sheet, then the
- * whole connect screen is dead until reload." Toggling `pointer-events`
- * with a reflow in between is the documented practical workaround for this
- * exact symptom — called after every connect attempt settles (success,
- * error, or timeout) since the sheet may have opened and closed regardless
- * of outcome. Not a guaranteed fix (this is a WebKit quirk in code we don't
- * control), but low-risk and free to run even when it wasn't needed.
- */
-function unstickIosSafariTouch() {
-  if (typeof document === "undefined") return;
-  document.body.style.pointerEvents = "none";
-  // Reading offsetHeight forces layout, so the next line's reflow isn't
-  // batched away with the one above by the browser's own optimizer.
-  void document.body.offsetHeight;
-  requestAnimationFrame(() => {
-    document.body.style.pointerEvents = "";
-  });
-}
-
 export function ConnectGate({ checking }: { checking: boolean }) {
   const { status, error, login, loginWithGoogle, connectInjected } = useWallet();
   const { connect: connectWeb3Auth, isReady: web3authReady } = useWeb3AuthWallet();
@@ -102,8 +76,6 @@ export function ConnectGate({ checking }: { checking: boolean }) {
       }
     } catch (err) {
       useWallet.setState({ status: "error", error: err instanceof Error ? err.message : "Wallet connect failed" });
-    } finally {
-      unstickIosSafariTouch();
     }
   }
 
