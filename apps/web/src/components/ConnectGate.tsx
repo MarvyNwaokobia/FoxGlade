@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useWallet, hasInjectedProvider } from "@/engine/chain/wallet";
 import { magicConfigured } from "@/engine/chain/magic";
 import { useWeb3AuthWallet } from "@/components/providers/Web3AuthSessionProvider";
+import { walletConnectFallbackConfigured } from "@/engine/chain/walletConnectFallback";
 
 /**
  * The mandatory first screen for Foxglade (Marvy's call, 2026-08-16): every
@@ -22,11 +23,19 @@ import { useWeb3AuthWallet } from "@/components/providers/Web3AuthSessionProvide
  * one, wallet apps installed on the phone or not (there's no such thing as a
  * mobile extension), so there `hasInjectedProvider()` is false and the same
  * button instead opens Web3Auth's hosted wallet chooser, which handles the
- * pairing over managed infrastructure. Chosen over a self-hosted
- * WalletConnect connector after Valor's own history with one: its pairing
- * relay gets DNS-blackholed by a lot of consumer ISP/carrier resolvers. The
- * button only fully disappears if neither path is available (no injected
- * provider AND Web3Auth isn't configured yet).
+ * pairing over managed infrastructure. The button only fully disappears if
+ * neither path is available (no injected provider AND Web3Auth isn't
+ * configured yet).
+ *
+ * A fourth, quieter path sits below that one on mobile: Web3Auth's own
+ * WalletConnect connector hardcodes a relay host
+ * (wss://relay.walletconnect.com) that some carrier/ISP DNS resolvers don't
+ * answer for (confirmed 2026-08-20 — same failure class Valor already hit
+ * and fixed, see walletConnectFallback.ts) — CONNECT WALLET then sits on
+ * "CONNECTING…" forever with no way to recover. "USE WALLETCONNECT INSTEAD"
+ * owns its own connector pointed at a relay host those filters don't catch,
+ * so it stays tappable — its own pending state, not the shared one — even
+ * while CONNECT WALLET is stuck.
  *
  * Neither path signs anything here; every on-chain action is relayed
  * server-side off just the address (relay.ts), so this screen's only job is
@@ -65,6 +74,29 @@ export function ConnectGate({ checking }: { checking: boolean }) {
       useWallet.setState({ status: "error", error: err instanceof Error ? err.message : "Wallet connect failed" });
     }
   }
+
+  // Deliberately local, not the shared `sending`/`error` above — this button
+  // exists specifically to stay usable while CONNECT WALLET (Web3Auth) is
+  // hung, so it can't share state with the thing it's an escape hatch from.
+  const [wcPending, setWcPending] = useState(false);
+  const [wcError, setWcError] = useState<string | null>(null);
+  async function handleWalletConnectFallback() {
+    setWcPending(true);
+    setWcError(null);
+    try {
+      await useWallet.getState().connectWalletConnect();
+      const latestError = useWallet.getState().error;
+      if (useWallet.getState().status === "error" && latestError) setWcError(latestError);
+    } finally {
+      setWcPending(false);
+    }
+  }
+  // Excludes wcPending so tapping the fallback (which also writes the shared
+  // `status`, same as every other method, so its own success/error still
+  // propagates normally) doesn't paint CONNECT WALLET as busy too — that
+  // button is the one an escape hatch exists to route around, so implying
+  // it's still trying would be the most misleading place for this overlap.
+  const primarySending = sending && !wcPending;
 
   return (
     <div style={styles.root}>
@@ -139,16 +171,30 @@ export function ConnectGate({ checking }: { checking: boolean }) {
                 </div>
 
                 <button
-                  style={{ ...styles.walletBtn, ...(sending ? styles.ctaDisabled : null) }}
+                  style={{ ...styles.walletBtn, ...(primarySending ? styles.ctaDisabled : null) }}
                   onClick={handleConnectWallet}
-                  disabled={sending}
+                  disabled={primarySending}
                 >
-                  {sending ? "CONNECTING…" : "CONNECT WALLET"}
+                  {primarySending ? "CONNECTING…" : "CONNECT WALLET"}
                 </button>
+
+                {!walletAvailable && walletConnectFallbackConfigured() && (
+                  <>
+                    <button
+                      style={{ ...styles.walletBtn, ...(wcPending ? styles.ctaDisabled : null) }}
+                      onClick={handleWalletConnectFallback}
+                      disabled={wcPending}
+                    >
+                      {wcPending ? "CONNECTING…" : "USE WALLETCONNECT INSTEAD"}
+                    </button>
+                    <div style={styles.note}>Opens your wallet app — use if CONNECT WALLET hangs.</div>
+                  </>
+                )}
               </>
             )}
 
             {error && <div style={styles.error}>{error}</div>}
+            {wcError && <div style={styles.error}>{wcError}</div>}
           </>
         )}
       </div>
