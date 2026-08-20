@@ -39,31 +39,21 @@ import { useWeb3AuthWallet } from "@/components/providers/Web3AuthSessionProvide
  */
 
 /**
- * Reported: tap the X on Web3Auth's connect sheet, and the whole connect
- * screen goes dead — no touch registers anywhere until a reload. Read
- * @web3auth/modal's own source (loginModal.js) rather than guess again: it
- * creates ONE element, `#w3a-parent-container`, appended straight to
- * `document.body` (position: relative, z-index 99998 — see
- * createWrapperForModal) — and never removes it on close, only ever
- * `.remove()`s and recreates it the next time the modal opens fresh. On
- * close, hiding it is left entirely to their own React state
- * (`modalVisibility`); if that transition doesn't fully complete — plausible
- * on the exact path we hit, closing before a connection ever resolved — the
- * still-present, still-high-z-index node is left sitting over everything,
- * which is a much more concrete explanation than a generic touch-pipeline
- * glitch. Force-removing it after we've given up on a connect attempt costs
- * nothing on success (their own cleanup already ran by then) and can't
- * remove anything we still need, since `initModal` recreates the container
- * from scratch on every fresh open regardless of what's there already.
- *
- * A `pointer-events` toggle + reflow is layered on top regardless, since the
- * "page stops registering touch after a modal closes" symptom is ALSO a
- * documented WebKit bug class independent of any specific DOM leftover —
- * cheap to run even if the DOM removal above turns out to be the whole fix.
+ * Mitigates a known class of iOS Safari bug (WebKit's touch-event pipeline,
+ * not anything specific to Web3Auth — the same failure mode is documented
+ * against many third-party modal/bottom-sheet libraries): a modal that does
+ * its own scroll-lock/cleanup can leave the page not registering ANY touch
+ * at all once it closes, until something forces Safari to recompute hit-
+ * testing. Reported here as "tap X to close Web3Auth's sheet, then the
+ * whole connect screen is dead until reload." Toggling `pointer-events`
+ * with a reflow in between is the documented practical workaround for this
+ * exact symptom — called after every connect attempt settles (success,
+ * error, or timeout) since the sheet may have opened and closed regardless
+ * of outcome. Not a guaranteed fix (this is a WebKit quirk in code we don't
+ * control), but low-risk and free to run even when it wasn't needed.
  */
-function recoverFromWeb3AuthClose() {
+function unstickIosSafariTouch() {
   if (typeof document === "undefined") return;
-  document.getElementById("w3a-parent-container")?.remove();
   document.body.style.pointerEvents = "none";
   // Reading offsetHeight forces layout, so the next line's reflow isn't
   // batched away with the one above by the browser's own optimizer.
@@ -94,13 +84,12 @@ export function ConnectGate({ checking }: { checking: boolean }) {
     }
     useWallet.setState({ status: "sending", error: null });
     try {
-      // Bounded, not just awaited: their own source (modalManager.js
-      // connect()) DOES reject with "User closed the modal" once
-      // modalVisibility flips false — so this timeout is a fallback for
-      // whatever else can still stall (a real connection attempt that never
-      // resolves, a network hang), not the close-via-X path itself. Same
-      // shape as Game.tsx's own restore() timeout, same reason: a mandatory
-      // screen can never leave a player stuck with no way forward.
+      // Bounded, not just awaited: Web3Auth's connect() doesn't reliably
+      // reject when the player just closes its sheet without picking
+      // anything (observed: the sheet disappears but the promise never
+      // settles either way) — without this, `status` stays "sending"
+      // forever and CONNECT WALLET is permanently disabled until reload.
+      // Same shape as Game.tsx's own restore() timeout, same reason.
       let timedOut = false;
       const timeout = new Promise<void>((resolve) => setTimeout(() => { timedOut = true; resolve(); }, 20000));
       await Promise.race([connectWeb3Auth(), timeout]);
@@ -110,15 +99,11 @@ export function ConnectGate({ checking }: { checking: boolean }) {
       // closing a wallet sheet isn't a failure worth alarming over.
       if (timedOut && useWallet.getState().status === "sending") {
         useWallet.setState({ status: "idle", error: null });
-        recoverFromWeb3AuthClose();
       }
     } catch (err) {
-      // The expected path when the sheet is closed without connecting
-      // ("User closed the modal") lands here — recover the DOM regardless of
-      // what the error actually was, since we can't tell a genuine failure
-      // apart from a clean close without inspecting their error message.
       useWallet.setState({ status: "error", error: err instanceof Error ? err.message : "Wallet connect failed" });
-      recoverFromWeb3AuthClose();
+    } finally {
+      unstickIosSafariTouch();
     }
   }
 
