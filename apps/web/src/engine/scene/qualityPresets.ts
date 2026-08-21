@@ -6,9 +6,10 @@ import type { QualityTier } from "./deviceTier";
  * decorative draw-distance dressing (hills/treeline/chimneys/set-dressing
  * props). Deliberately does NOT touch NPC counts, spawn timing, or anything
  * else that affects difficulty — the village already caps out at a handful of
- * NPCs alive at once (2 blockers, up to 3 thieves, 6 distractors), so there
- * was never much to gain there, and thinning it out for a "low" device would
- * be a balance change wearing a performance-fix costume.
+ * NPCs alive at once per phase (up to 5 blockers, up to 3 thieves, 6
+ * distractors), so there was never much to gain there, and thinning it out
+ * for a "low" device would be a balance change wearing a performance-fix
+ * costume.
  */
 export interface QualityConfig {
   /** [min, max] passed straight to <Canvas dpr>. */

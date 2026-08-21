@@ -31,13 +31,13 @@ export interface Chapter {
 }
 
 /**
- * One new system per chapter. Dawn has no combat at all — it exists purely so
- * a first-time player can find their footing, get the guardian's briefing, and
- * take their first few steps without being shot at. That breather is
- * deliberately BRIEF now (Marvy's call, 2026-08-13): a few seconds of real
- * time or your first bank, not the better part of a chapter — blockers should
- * feel like they're already out there the moment you're properly moving, not
- * something that shows up long after you've started exploring.
+ * One new system per chapter. Dawn exists so a first-time player can find
+ * their footing and get the guardian's briefing before the day's real
+ * pressure ramps up — that breather is deliberately BRIEF (Marvy's call,
+ * 2026-08-13): a few seconds of real time or your first bank, not the better
+ * part of a chapter. As of 2026-08-21 Dawn is no longer combat-free either —
+ * see BLOCKER_SPAWNS in npc/Blockers.tsx — but its single early post is kept
+ * light next to what the later chapters field.
  */
 export const CHAPTERS: Chapter[] = [
   { name: "Dawn",      brief: "Find the first treasure. Bank it at the vault.", liars: false, thieves: false },
@@ -70,11 +70,13 @@ export const DAY = {
  * blockers or thieves to contest anything, or even for the chapter-change
  * instruction banner to be read before the day-over overlay buried it
  * (Marvy's call, 2026-08-13: the day was ending before anything had a chance
- * to happen). Starting at 3 and climbing to a cap of 8 gives every day enough
- * runway to actually pass through Morning → Afternoon → Dusk.
+ * to happen). Starting at 3 and climbing by 2 a day gives every day enough
+ * runway to actually pass through Morning → Afternoon → Dusk, and the curve
+ * keeps climbing much further now (Marvy's call, 2026-08-21: cap raised to
+ * 20) instead of flattening out after less than a week.
  */
 export function treasuresForDay(day: number): number {
-  return Math.min(day + 2, 8);
+  return Math.min(2 * day + 1, 20);
 }
 
 /** Dawn always asks for exactly one treasure — the tutorial bank that gets a
