@@ -20,6 +20,28 @@ export function useWeb3AuthWallet() {
   return useContext(Web3AuthWalletContext);
 }
 
+// The SDK appends this div straight to document.body when its modal opens
+// and never removes it on close (only replaces it the next time the modal
+// opens fresh) — confirmed by reading @web3auth/modal's own source. Left
+// behind, it's a position:relative, z-index:99998 layer sitting over the
+// whole page: address state underneath updates fine, but the player is
+// visually and pointer-wise stuck looking at what appears to still be the
+// connect screen.
+const MODAL_CONTAINER_ID = "w3a-parent-container";
+
+// Best-effort cleanup run after every connect attempt settles, success or
+// not. Removing the leftover container undoes the stuck-overlay half of the
+// iOS Safari freeze; toggling pointer-events with a forced reflow in
+// between is the standard practical workaround for the touch-pipeline half
+// of that same WebKit bug class (documented against many third-party
+// modal/bottom-sheet libraries, not specific to Web3Auth).
+function cleanupModalArtifacts(): void {
+  document.getElementById(MODAL_CONTAINER_ID)?.remove();
+  document.body.style.pointerEvents = "none";
+  void document.body.offsetHeight; // force a reflow between the two writes
+  document.body.style.pointerEvents = "";
+}
+
 // Inner half — must sit under Web3AuthProvider to use its hooks.
 function Web3AuthBridge({ children }: { children: ReactNode }) {
   const { isConnected, isInitialized, web3Auth } = useWeb3Auth();
@@ -78,7 +100,11 @@ function Web3AuthBridge({ children }: { children: ReactNode }) {
 
   const connect = useCallback(async () => {
     if (!isInitialized) throw new Error("Wallet connect is still loading — give it a moment.");
-    await web3authConnect();
+    try {
+      await web3authConnect();
+    } finally {
+      cleanupModalArtifacts();
+    }
   }, [web3authConnect, isInitialized]);
 
   return <Web3AuthWalletContext.Provider value={{ isReady: isInitialized, connect }}>{children}</Web3AuthWalletContext.Provider>;
