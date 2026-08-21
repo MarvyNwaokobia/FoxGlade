@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useWallet, hasInjectedProvider } from "@/engine/chain/wallet";
 import { magicConfigured } from "@/engine/chain/magic";
 import { web3authConfigured } from "@/engine/chain/web3auth";
+import { isTouchDevice } from "@/engine/input/touch";
 
 /**
  * The mandatory first screen for Foxglade (Marvy's call, 2026-08-16): every
@@ -19,9 +20,12 @@ import { web3authConfigured } from "@/engine/chain/web3auth";
  * in-app browser directly — one tap, no network hop — and only shows when
  * `hasInjectedProvider()` is true, since a plain mobile browser (Safari,
  * Chrome) never injects one no matter what wallet apps are installed on the
- * phone. `connectWeb3Auth` covers everything else through Web3Auth's modal
- * (engine/chain/web3auth.ts) — an injected extension too, or WalletConnect
- * for a wallet app on the same phone with no injected provider to use.
+ * phone. `connectWeb3Auth` (Web3Auth's modal, engine/chain/web3auth.ts) is
+ * mobile-only here (Marvy's call, 2026-08-21): on desktop, an injected
+ * extension is either already covered by BROWSER WALLET above or the player
+ * has no wallet at all, so a second "connect a wallet" button there is just
+ * redundant UI, not a second real path. On a touch device it's the only way
+ * in for a wallet app with no injected provider (WalletConnect).
  *
  * Neither path signs anything here; every on-chain action is relayed
  * server-side off just the address (relay.ts), so this screen's only job is
@@ -43,6 +47,9 @@ export function ConnectGate({ checking }: { checking: boolean }) {
   // later once this resolves.
   const [walletAvailable, setWalletAvailable] = useState(false);
   useEffect(() => setWalletAvailable(hasInjectedProvider()), []);
+  // Same client-only-after-mount reasoning as `walletAvailable` above.
+  const [mobile, setMobile] = useState(false);
+  useEffect(() => setMobile(isTouchDevice()), []);
 
   return (
     <div style={styles.root}>
@@ -108,7 +115,7 @@ export function ConnectGate({ checking }: { checking: boolean }) {
             </form>
             {!magicConfigured() && <div style={styles.note}>Email sign-in isn&apos;t configured on this build.</div>}
 
-            {(walletAvailable || web3authConfigured()) && (
+            {(walletAvailable || (mobile && web3authConfigured())) && (
               <div style={styles.divider}>
                 <div style={styles.dividerLine} />
                 <span>or</span>
@@ -126,7 +133,7 @@ export function ConnectGate({ checking }: { checking: boolean }) {
               </button>
             )}
 
-            {web3authConfigured() && (
+            {mobile && web3authConfigured() && (
               <button
                 style={{ ...styles.walletBtn, ...(sending ? styles.ctaDisabled : null) }}
                 onClick={() => connectWeb3Auth()}
