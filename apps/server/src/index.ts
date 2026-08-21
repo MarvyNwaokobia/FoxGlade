@@ -657,6 +657,46 @@ app.post("/event/stamp", async (req, res) => {
 });
 
 /**
+ * Admin lookup for a single wallet's join date and onboarding state — the
+ * `created_at` column has existed since the table was created but nothing
+ * ever read it back (Marvy asked when a specific player joined and there
+ * was no way to answer without raw DB access).
+ */
+app.get("/admin/player/:address", async (req, res) => {
+  if (!dbConfigured()) {
+    res.status(503).json({ error: "onboarding persistence not configured" });
+    return;
+  }
+  const { address } = req.params;
+  if (!isAddress(address)) {
+    res.status(400).json({ error: "invalid wallet address" });
+    return;
+  }
+  try {
+    const { rows } = await pool!.query(
+      `SELECT wallet_address, username, created_at, has_onboarded, completed_at
+       FROM onboarding WHERE wallet_address = $1`,
+      [address.toLowerCase()]
+    );
+    if (rows.length === 0) {
+      res.status(404).json({ error: "no onboarding row for this wallet" });
+      return;
+    }
+    const row = rows[0];
+    res.json({
+      walletAddress: row.wallet_address,
+      username: row.username,
+      createdAt: new Date(row.created_at).getTime(),
+      hasOnboarded: row.has_onboarded,
+      completedAt: row.completed_at ? new Date(row.completed_at).getTime() : null,
+    });
+  } catch (err) {
+    console.error("admin player lookup failed", err);
+    res.status(500).json({ error: "player lookup failed" });
+  }
+});
+
+/**
  * Wipes the server-side onboarding/stats mirrors so every wallet reads as
  * fresh on its next connect (Marvy's request, 2026-08-17 — a clean slate
  * for testing the new username step without every account auto-adopting
