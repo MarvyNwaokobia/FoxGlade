@@ -101,7 +101,15 @@ function Web3AuthBridge({ children }: { children: ReactNode }) {
   const connect = useCallback(async () => {
     if (!isInitialized) throw new Error("Wallet connect is still loading — give it a moment.");
     try {
-      await web3authConnect();
+      // The SDK's own connect() never rejects — internally it catches every
+      // failure and resolves with `null` instead (see
+      // @web3auth/modal/react's useWeb3AuthConnect: connection stays null in
+      // its catch block, and that's what gets returned either way). A plain
+      // `await` here previously treated every one of those failures as a
+      // success, leaving CONNECT WALLET stuck on "CONNECTING…" forever with
+      // nothing to catch and reset it.
+      const connection = await web3authConnect();
+      if (!connection) throw new Error("Wallet connect failed or was cancelled.");
     } finally {
       cleanupModalArtifacts();
     }
