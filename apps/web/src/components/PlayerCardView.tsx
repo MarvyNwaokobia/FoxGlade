@@ -57,7 +57,12 @@ export function cardGlowColor(foxHoursAway?: number, foxRustBanksLeft?: number):
 
 export interface PlayerCardData {
   avatar: string | null;
-  identityLabel: string;
+  /** The player's chosen username, or null if they haven't set one. */
+  identityLabel: string | null;
+  /** Shown alongside identityLabel, not instead of it — every player should
+   *  be able to see the wallet a card is tied to (DESIGN request, 2026-08-21:
+   *  a username used to hide the address entirely, on any auth path). */
+  walletAddress: string | null;
   day: number;
   treasuresBanked: number;
   villeBanked: number;
@@ -84,6 +89,7 @@ export interface PlayerCardData {
 export function PlayerCardView({
   avatar,
   identityLabel,
+  walletAddress,
   day,
   treasuresBanked,
   villeBanked,
@@ -107,6 +113,7 @@ export function PlayerCardView({
   const growth = foxGrowthFor(foxStage);
   const nextGrow = foxNextGrow(owned);
   const showRust = foxHoursAway !== undefined && foxRustBanksLeft !== undefined;
+  const shortAddr = walletAddress ? `${walletAddress.slice(0, 6)}…${walletAddress.slice(-4)}` : null;
   const misread = showRust
     ? Math.min(0.95, growth.misreadChance + foxRustNow(foxHoursAway!, foxRustBanksLeft!).misreadAdd)
     : growth.misreadChance;
@@ -120,7 +127,8 @@ export function PlayerCardView({
           </div>
           <div style={{ minWidth: 0 }}>
             <div style={styles.identityName}>The Outlier</div>
-            <div style={styles.identityAddr}>{identityLabel}</div>
+            <div style={styles.identityAddr}>{identityLabel ?? shortAddr ?? "Guest — no wallet connected"}</div>
+            {identityLabel && shortAddr && <div style={styles.walletAddr}>{shortAddr}</div>}
             <div style={styles.identityMeta}>
               Day {day} · {treasuresBanked} treasures banked
             </div>
@@ -215,6 +223,7 @@ export const styles: Record<string, React.CSSProperties> = {
   avatarFallback: { fontSize: 30 },
   identityName: { color: INK, fontWeight: 800, fontSize: 17 },
   identityAddr: { color: "rgba(232,238,242,0.55)", fontSize: 12, fontFamily: "ui-monospace, monospace", marginTop: 2 },
+  walletAddr: { color: "rgba(232,238,242,0.35)", fontSize: 11, fontFamily: "ui-monospace, monospace", marginTop: 1 },
   identityMeta: { color: "rgba(232,238,242,0.4)", fontSize: 11.5, marginTop: 4 },
   statsRow: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 },
   statTile: {

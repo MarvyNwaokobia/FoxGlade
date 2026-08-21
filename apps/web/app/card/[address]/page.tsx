@@ -85,7 +85,8 @@ export default function PublicCardPage() {
       <div style={styles.stack}>
         <PlayerCardView
           avatar={avatar}
-          identityLabel={username ?? `${address.slice(0, 6)}…${address.slice(-4)}`}
+          identityLabel={username}
+          walletAddress={address}
           day={stats.day}
           treasuresBanked={stats.treasuresBanked}
           villeBanked={stats.villeBanked}
