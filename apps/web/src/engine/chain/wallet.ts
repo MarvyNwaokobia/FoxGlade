@@ -1,8 +1,6 @@
 import { create } from "zustand";
 import type { MagicUserMetadata } from "magic-sdk";
 import { getMagic, magicConfigured, AUTH_CALLBACK_PATH } from "@/engine/chain/magic";
-import { disconnectWeb3Auth } from "@/engine/chain/web3authBridge";
-import { connectWalletConnectFallback, disconnectWalletConnectFallback } from "@/engine/chain/walletConnectFallback";
 
 function addressOf(info: MagicUserMetadata): string | null {
   return info.wallets?.ethereum?.publicAddress ?? null;
@@ -30,9 +28,10 @@ declare global {
  * there's no such thing as a mobile extension — no matter what wallet apps
  * are installed on the phone, so callers use this to decide whether offering
  * "connect wallet" makes sense at all rather than showing a button that can
- * only ever fail (see ConnectGate.tsx; lesson learned the hard way in Valor,
- * whose self-hosted WalletConnect connector then got dropped entirely after
- * its pairing relay proved unreachable behind many carrier/ISP resolvers).
+ * only ever fail (see ConnectGate.tsx). There's deliberately no hosted
+ * fallback for the plain-mobile-browser case (Web3Auth, then a WalletConnect
+ * relay on top of that) after both proved unreliable in practice — Magic
+ * email/Google sign-in below is the only path there now.
  */
 export function hasInjectedProvider(): boolean {
   return typeof window !== "undefined" && Boolean(window.ethereum);
@@ -40,16 +39,14 @@ export function hasInjectedProvider(): boolean {
 
 /**
  * Marks that the player deliberately signed out (Profile's "Sign out"),
- * distinct from just never having connected. Every silent-restore path
- * (this file's own `restore()`, and Web3AuthSessionProvider's own restore
- * effect) checks this and skips itself while it's set — without it, a
- * returning player who explicitly signed out would get silently
- * reconnected on their very next visit: an injected wallet's site
- * permission and a Magic/Web3Auth session both persist independently of
- * anything FoxGlade does (see the module comment on `restore` below), so
- * "sign out" alone was never enough to stop them auto-restoring. Cleared
- * the moment any connect path succeeds again — that's the explicit action
- * that makes auto-restore trustworthy again on the visit after.
+ * distinct from just never having connected. `restore()` below checks this
+ * and skips itself while it's set — without it, a returning player who
+ * explicitly signed out would get silently reconnected on their very next
+ * visit: an injected wallet's site permission and a Magic session both
+ * persist independently of anything FoxGlade does, so "sign out" alone was
+ * never enough to stop them auto-restoring. Cleared the moment any connect
+ * path succeeds again — that's the explicit action that makes auto-restore
+ * trustworthy again on the visit after.
  */
 const DISCONNECTED_KEY = "foxglade.wallet.disconnected";
 
@@ -78,7 +75,7 @@ function clearDisconnected(): void {
 }
 
 export type WalletStatus = "idle" | "sending" | "connected" | "error";
-export type WalletMethod = "magic" | "injected" | "web3auth" | "walletconnect" | null;
+export type WalletMethod = "magic" | "injected" | null;
 
 interface WalletState {
   status: WalletStatus;
@@ -102,17 +99,6 @@ interface WalletState {
   loginWithGoogle: () => Promise<void>;
   /** Browser-wallet connect — prompts the extension for account access. */
   connectInjected: () => Promise<void>;
-  /** WalletConnect via Reown's relay — the "use if others hang" fallback for
-   *  when Web3Auth's own chooser is stuck on a filtered relay (see
-   *  walletConnectFallback.ts). `onUri` fires once the pairing URI is ready,
-   *  for rendering a directly-tappable deep link. */
-  connectWalletConnect: (onUri: (uri: string) => void) => Promise<void>;
-  /** Published by Web3AuthSessionProvider once its SDK resolves (or loses)
-   *  an address — that provider owns the actual connect/disconnect calls
-   *  (they're hook-based, this store isn't), and only reports the outcome
-   *  here. Clearing (`null`) is a no-op unless web3auth was the live method,
-   *  so it can't stomp a session `login`/`connectInjected` just produced. */
-  setWeb3AuthSession: (address: string | null) => void;
   logout: () => Promise<void>;
 }
 
@@ -208,31 +194,9 @@ export const useWallet = create<WalletState>((set, get) => ({
     }
   },
 
-  connectWalletConnect: async (onUri) => {
-    set({ status: "sending", error: null });
-    try {
-      const address = await connectWalletConnectFallback(onUri);
-      clearDisconnected();
-      set({ status: "connected", address, email: null, method: "walletconnect" });
-    } catch (err) {
-      set({ status: "error", error: err instanceof Error ? err.message : "Wallet connect failed" });
-    }
-  },
-
-  setWeb3AuthSession: (address: string | null) => {
-    if (address) {
-      clearDisconnected();
-      set({ status: "connected", address, email: null, method: "web3auth" });
-    } else if (get().method === "web3auth") {
-      set({ status: "idle", address: null, email: null, method: null, error: null });
-    }
-  },
-
   logout: async () => {
     try {
       if (get().method === "magic" && magicConfigured()) await getMagic().user.logout();
-      if (get().method === "web3auth") await disconnectWeb3Auth();
-      if (get().method === "walletconnect") await disconnectWalletConnectFallback();
       // Injected wallets have no reliable programmatic disconnect (EIP-1193
       // doesn't require one) — clearing local state below is all a dapp can do;
       // the extension itself still considers this site authorized. That's what

@@ -3,8 +3,6 @@
 import { useEffect, useState } from "react";
 import { useWallet, hasInjectedProvider } from "@/engine/chain/wallet";
 import { magicConfigured } from "@/engine/chain/magic";
-import { useWeb3AuthWallet } from "@/components/providers/Web3AuthSessionProvider";
-import { walletConnectFallbackConfigured } from "@/engine/chain/walletConnectFallback";
 
 /**
  * The mandatory first screen for Foxglade (Marvy's call, 2026-08-16): every
@@ -12,30 +10,20 @@ import { walletConnectFallbackConfigured } from "@/engine/chain/walletConnectFal
  * itself, not just something offered alongside it (see Game.tsx — this
  * replaces the old guest-play-until-you-feel-like-connecting flow).
  *
- * Three ways in, same identity requirement every side: Magic email OTP or
+ * Two ways in, same identity requirement either side: Magic email OTP or
  * Google (both no extension needed, work everywhere — magic.ts's
  * OAuthExtension, redirecting through app/auth/callback and back), or
- * "connect a wallet you already have". The third path is two different
- * mechanisms behind one button
- * (engine/chain/wallet.ts): a desktop extension or a wallet's own in-app
- * browser injects `window.ethereum` directly, connecting in one tap with no
- * network hop — that's `connectInjected`. A plain mobile browser never has
- * one, wallet apps installed on the phone or not (there's no such thing as a
- * mobile extension), so there `hasInjectedProvider()` is false and the same
- * button instead opens Web3Auth's hosted wallet chooser, which handles the
- * pairing over managed infrastructure. The button only fully disappears if
- * neither path is available (no injected provider AND Web3Auth isn't
- * configured yet).
- *
- * A fourth, quieter path sits below that one on mobile: Web3Auth's own
- * WalletConnect connector hardcodes a relay host
- * (wss://relay.walletconnect.com) that some carrier/ISP DNS resolvers don't
- * answer for (confirmed 2026-08-20 — same failure class Valor already hit
- * and fixed, see walletConnectFallback.ts) — CONNECT WALLET then sits on
- * "CONNECTING…" forever with no way to recover. "USE WALLETCONNECT INSTEAD"
- * owns its own connector pointed at a relay host those filters don't catch,
- * so it stays tappable — its own pending state, not the shared one — even
- * while CONNECT WALLET is stuck.
+ * "connect a wallet you already have" — `connectInjected`
+ * (engine/chain/wallet.ts), a desktop extension or a wallet's own in-app
+ * browser injecting `window.ethereum` directly, one tap, no network hop.
+ * That button only shows when `hasInjectedProvider()` is true, since a
+ * plain mobile browser (Safari, Chrome) never injects one — there's no such
+ * thing as a mobile extension, no matter what wallet apps are installed on
+ * the phone. There's deliberately no hosted fallback for that case anymore
+ * (Web3Auth, then a WalletConnect relay on top of that): both spent a long
+ * stretch getting stuck mid-connect on real devices in ways nothing in this
+ * app could reliably recover from, so mobile players without an injected
+ * provider use Magic email/Google above instead.
  *
  * Neither path signs anything here; every on-chain action is relayed
  * server-side off just the address (relay.ts), so this screen's only job is
@@ -48,65 +36,15 @@ import { walletConnectFallbackConfigured } from "@/engine/chain/walletConnectFal
  */
 export function ConnectGate({ checking }: { checking: boolean }) {
   const { status, error, login, loginWithGoogle, connectInjected } = useWallet();
-  const { connect: connectWeb3Auth, isReady: web3authReady } = useWeb3AuthWallet();
   const [step, setStep] = useState<"intro" | "form">("intro");
   const [email, setEmail] = useState("");
   const sending = status === "sending";
   // Checked client-side, after mount, to avoid an SSR/hydration mismatch —
   // `window` doesn't exist on the server. False on first render means the
   // wallet row below is briefly absent even on desktop; it appears a beat
-  // later once this resolves (same beat Web3Auth's own `isReady` lands on,
-  // for the same reason, when there's no injected provider to fall back on).
+  // later once this resolves.
   const [walletAvailable, setWalletAvailable] = useState(false);
   useEffect(() => setWalletAvailable(hasInjectedProvider()), []);
-
-  async function handleConnectWallet() {
-    if (walletAvailable) {
-      connectInjected();
-      return;
-    }
-    useWallet.setState({ status: "sending", error: null });
-    try {
-      await connectWeb3Auth();
-      // Success publishes the address asynchronously (Web3AuthSessionProvider
-      // watches the SDK's own connected state) — nothing to set here.
-    } catch (err) {
-      useWallet.setState({ status: "error", error: err instanceof Error ? err.message : "Wallet connect failed" });
-    }
-  }
-
-  // Deliberately local, not the shared `sending`/`error` above — this button
-  // exists specifically to stay usable while CONNECT WALLET (Web3Auth) is
-  // hung, so it can't share state with the thing it's an escape hatch from.
-  const [wcPending, setWcPending] = useState(false);
-  const [wcError, setWcError] = useState<string | null>(null);
-  // Set once the pairing URI arrives (walletConnectFallback.ts's `onUri`) —
-  // rendered as a real <a href>, not auto-opened. Reown AppKit's own bundled
-  // modal (disabled via showQrModal:false) does that automatically and its
-  // Open button does nothing on iOS Safari even with the target wallet
-  // installed (confirmed on-device 2026-08-21); a plain anchor the player
-  // taps themselves is a genuine user gesture, which is what iOS actually
-  // requires to hand off to another app.
-  const [wcUri, setWcUri] = useState<string | null>(null);
-  async function handleWalletConnectFallback() {
-    setWcPending(true);
-    setWcError(null);
-    setWcUri(null);
-    try {
-      await useWallet.getState().connectWalletConnect(setWcUri);
-      const latestError = useWallet.getState().error;
-      if (useWallet.getState().status === "error" && latestError) setWcError(latestError);
-    } finally {
-      setWcPending(false);
-      setWcUri(null);
-    }
-  }
-  // Excludes wcPending so tapping the fallback (which also writes the shared
-  // `status`, same as every other method, so its own success/error still
-  // propagates normally) doesn't paint CONNECT WALLET as busy too — that
-  // button is the one an escape hatch exists to route around, so implying
-  // it's still trying would be the most misleading place for this overlap.
-  const primarySending = sending && !wcPending;
 
   return (
     <div style={styles.root}>
@@ -172,7 +110,7 @@ export function ConnectGate({ checking }: { checking: boolean }) {
             </form>
             {!magicConfigured() && <div style={styles.note}>Email sign-in isn&apos;t configured on this build.</div>}
 
-            {(walletAvailable || web3authReady) && (
+            {walletAvailable && (
               <>
                 <div style={styles.divider}>
                   <div style={styles.dividerLine} />
@@ -181,43 +119,16 @@ export function ConnectGate({ checking }: { checking: boolean }) {
                 </div>
 
                 <button
-                  style={{ ...styles.walletBtn, ...(primarySending ? styles.ctaDisabled : null) }}
-                  onClick={handleConnectWallet}
-                  disabled={primarySending}
+                  style={{ ...styles.walletBtn, ...(sending ? styles.ctaDisabled : null) }}
+                  onClick={() => connectInjected()}
+                  disabled={sending}
                 >
-                  {primarySending ? "CONNECTING…" : "CONNECT WALLET"}
+                  {sending ? "CONNECTING…" : "CONNECT WALLET"}
                 </button>
-
-                {!walletAvailable && walletConnectFallbackConfigured() && (
-                  <>
-                    {wcUri ? (
-                      // A real, directly-tapped link — not opened via script —
-                      // so iOS treats the app hand-off as a genuine user
-                      // gesture. MetaMask's documented universal link for a
-                      // WalletConnect v2 pairing URI.
-                      <a
-                        style={{ ...styles.walletBtn, display: "block", textAlign: "center", textDecoration: "none", boxSizing: "border-box" }}
-                        href={`https://metamask.app.link/wc?uri=${encodeURIComponent(wcUri)}`}
-                      >
-                        OPEN METAMASK
-                      </a>
-                    ) : (
-                      <button
-                        style={{ ...styles.walletBtn, ...(wcPending ? styles.ctaDisabled : null) }}
-                        onClick={handleWalletConnectFallback}
-                        disabled={wcPending}
-                      >
-                        {wcPending ? "PREPARING…" : "USE WALLETCONNECT INSTEAD"}
-                      </button>
-                    )}
-                    <div style={styles.note}>Opens your wallet app — use if CONNECT WALLET hangs.</div>
-                  </>
-                )}
               </>
             )}
 
             {error && <div style={styles.error}>{error}</div>}
-            {wcError && <div style={styles.error}>{wcError}</div>}
           </>
         )}
       </div>
