@@ -20,6 +20,10 @@ import {
   getPlayerStats,
   upsertPlayerStats,
   isUsernameAvailable,
+  touchSession,
+  logEvent,
+  getPlayerEvents,
+  getAdminStats,
 } from "./db.js";
 
 /** Must match apps/web/src/engine/onboarding.ts's isValidUsername — enforced
@@ -85,6 +89,10 @@ app.get("/onboarding/:address", async (req, res) => {
     res.status(400).json({ error: "invalid wallet address" });
     return;
   }
+  // Fire-and-forget: this is the one route every real session already hits
+  // on connect, so it doubles as the session ping (see touchSession) —
+  // never worth delaying or failing the actual onboarding fetch over.
+  touchSession(address).catch((err) => console.error("session touch failed", err));
   try {
     const { rows } = await pool!.query(
       `SELECT hero_id, egg_variant, has_onboarded, completed_at, username FROM onboarding WHERE wallet_address = $1`,
@@ -637,6 +645,7 @@ app.post("/event/stamp", async (req, res) => {
     return;
   }
   lastStampAt.set(key, Date.now());
+  logEvent(key, eventType).catch((err) => console.error("event log failed", err));
 
   try {
     const playerAddr = player as Address;
@@ -657,10 +666,12 @@ app.post("/event/stamp", async (req, res) => {
 });
 
 /**
- * Admin lookup for a single wallet's join date and onboarding state — the
- * `created_at` column has existed since the table was created but nothing
- * ever read it back (Marvy asked when a specific player joined and there
- * was no way to answer without raw DB access).
+ * Admin lookup for a single wallet — join date, onboarding state, session
+ * history, and recent gameplay events. `created_at` existed since the table
+ * was created but nothing ever read it back (Marvy asked when a specific
+ * player joined and there was no way to answer without raw DB access);
+ * session_count/last_seen_at/player_events (2026-08-21) fill in "is this a
+ * new or returning player, and what have they actually done."
  */
 app.get("/admin/player/:address", async (req, res) => {
   if (!dbConfigured()) {
@@ -674,7 +685,8 @@ app.get("/admin/player/:address", async (req, res) => {
   }
   try {
     const { rows } = await pool!.query(
-      `SELECT wallet_address, username, created_at, has_onboarded, completed_at
+      `SELECT wallet_address, username, created_at, has_onboarded, completed_at,
+              last_seen_at, session_count
        FROM onboarding WHERE wallet_address = $1`,
       [address.toLowerCase()]
     );
@@ -683,16 +695,39 @@ app.get("/admin/player/:address", async (req, res) => {
       return;
     }
     const row = rows[0];
+    const events = await getPlayerEvents(address);
     res.json({
       walletAddress: row.wallet_address,
       username: row.username,
       createdAt: new Date(row.created_at).getTime(),
       hasOnboarded: row.has_onboarded,
       completedAt: row.completed_at ? new Date(row.completed_at).getTime() : null,
+      lastSeenAt: row.last_seen_at ? new Date(row.last_seen_at).getTime() : null,
+      sessionCount: row.session_count,
+      recentEvents: events,
     });
   } catch (err) {
     console.error("admin player lookup failed", err);
     res.status(500).json({ error: "player lookup failed" });
+  }
+});
+
+/**
+ * Admin overview (Marvy's request, 2026-08-21): new vs returning players in
+ * the last 24h, and what the player base has actually been doing in the
+ * last 7 days (event counts from player_events). Nothing here needs a
+ * per-wallet lookup — see GET /admin/player/:address for that.
+ */
+app.get("/admin/stats", async (_req, res) => {
+  if (!dbConfigured()) {
+    res.status(503).json({ error: "onboarding persistence not configured" });
+    return;
+  }
+  try {
+    res.json(await getAdminStats());
+  } catch (err) {
+    console.error("admin stats failed", err);
+    res.status(500).json({ error: "stats fetch failed" });
   }
 });
 
