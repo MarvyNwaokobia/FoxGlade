@@ -245,7 +245,7 @@ function Interior({
   });
 
   return (
-    <group ref={grp} visible={false}>
+    <group ref={grp} visible={false} userData={{ warmupInterior: index }}>
       {/* Timber floor just above the ground plane */}
       <mesh material={floorMat} rotation={[-Math.PI / 2, 0, 0]} position={[cx, 0.02, cz]} receiveShadow>
         <planeGeometry args={[floorW, floorD]} />

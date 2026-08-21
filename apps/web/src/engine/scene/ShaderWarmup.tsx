@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
+import * as THREE from "three";
 import { useGame } from "@/engine/store";
 
 /**
@@ -26,6 +27,29 @@ import { useGame } from "@/engine/store";
  * while the map is open moves the whole stall into a moment that is already a
  * pause, and re-running it on each chapter change catches the NPCs that only
  * mount later (blockers at Morning, thieves at Dusk).
+ *
+ * House/bank interiors (Interiors.tsx, VillageMesh.tsx's EnterableHouse) don't
+ * fall out of that pass for free, and they used to still hitch on first entry
+ * even with the above running. `compile()`'s material loop walks the WHOLE
+ * scene graph regardless of visibility, so the wall/furniture materials
+ * themselves get prepared fine — but the light COUNT baked into a program's
+ * cache key comes from `traverseVisible`, which skips an invisible group
+ * entirely. Every interior sits behind `visible={false}` until the player is
+ * actually inside it (its fill light is real cost, on purpose — see the
+ * comment in Interiors.tsx), so a normal compile() pass always links these
+ * materials for the OUTDOOR light count. Walking in adds one point light,
+ * the program cache key changes, and the driver link-stalls right at the
+ * doorway — the same `GetProgramiv` hitch as above, just moved from combat to
+ * the threshold.
+ *
+ * Fixed by warming each interior's correct "+1 light" variant explicitly: the
+ * groups tagged `userData.warmupInterior` (matched by building index across
+ * both files, so a house's furniture+light layer and its wall/roof layer warm
+ * together) get flipped visible one building at a time, compiled, and flipped
+ * back — all synchronously inside this callback, before r3f's own render()
+ * call for the frame, so nothing the player sees ever shows a lit interior
+ * that isn't theirs. One building at a time (not all at once) so the baked
+ * light count matches real play exactly: only one shelter is ever active.
  */
 export function ShaderWarmup() {
   const { gl, scene, camera } = useThree();
@@ -48,6 +72,23 @@ export function ShaderWarmup() {
     pending.current = false;
     try {
       gl.compile(scene, camera);
+
+      const byBuilding = new Map<number, THREE.Object3D[]>();
+      scene.traverse((o) => {
+        const idx = o.userData.warmupInterior;
+        if (typeof idx !== "number") return;
+        const group = byBuilding.get(idx);
+        if (group) group.push(o);
+        else byBuilding.set(idx, [o]);
+      });
+      for (const group of byBuilding.values()) {
+        for (const o of group) o.visible = true;
+        try {
+          gl.compile(scene, camera);
+        } finally {
+          for (const o of group) o.visible = false;
+        }
+      }
     } catch {
       // Warmup is an optimisation, never a correctness requirement — if a driver
       // refuses, the game still runs, it just hitches the way it used to.

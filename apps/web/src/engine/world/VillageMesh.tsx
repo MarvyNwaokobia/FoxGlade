@@ -328,7 +328,7 @@ function EnterableHouse({
       <BuildingModel b={b} model={model} seed={eIndex + 3 + daySeed} hideForShelterIndex={eIndex} />
 
       {/* Furnished stone interior walls + roof (shown only while inside) */}
-      <group ref={interior} visible={false}>
+      <group ref={interior} visible={false} userData={{ warmupInterior: eIndex }}>
         {wallSegments(b).map((s, j) => (
           <mesh
             key={j}
