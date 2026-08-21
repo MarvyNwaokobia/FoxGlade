@@ -25,6 +25,7 @@ import {
   getPlayerEvents,
   getAdminStats,
   listPlayers,
+  resetPlayerStatsForWallets,
 } from "./db.js";
 
 /** Must match apps/web/src/engine/onboarding.ts's isValidUsername — enforced
@@ -745,6 +746,31 @@ app.get("/admin/players", async (_req, res) => {
   } catch (err) {
     console.error("admin players list failed", err);
     res.status(500).json({ error: "players list failed" });
+  }
+});
+
+/**
+ * Scoped cleanup for the 2026-08-21 save-scoping bug (Marvy's request):
+ * wipes player_stats for the given wallets only, leaving onboarding
+ * (username, hero, egg pick) exactly as it was — unlike /admin/reset-users,
+ * which wipes both tables for every wallet.
+ */
+app.post("/admin/reset-players", async (req, res) => {
+  if (!dbConfigured()) {
+    res.status(503).json({ error: "onboarding persistence not configured" });
+    return;
+  }
+  const { wallets } = req.body ?? {};
+  if (!Array.isArray(wallets) || wallets.length === 0 || !wallets.every((w) => typeof w === "string" && isAddress(w))) {
+    res.status(400).json({ error: "wallets must be a non-empty array of valid addresses" });
+    return;
+  }
+  try {
+    const rowsDeleted = await resetPlayerStatsForWallets(wallets);
+    res.json({ ok: true, rowsDeleted });
+  } catch (err) {
+    console.error("admin reset-players failed", err);
+    res.status(500).json({ error: "reset failed" });
   }
 });
 

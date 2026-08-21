@@ -336,3 +336,22 @@ export async function listPlayers(): Promise<PlayerSummary[]> {
     day: r.day,
   }));
 }
+
+/**
+ * Wipes ONLY player_stats (VILLE, day, treasures, gear) for a specific set
+ * of wallets — onboarding (username, hero, egg pick) is untouched, unlike
+ * /admin/reset-users' full wipe. Built for the 2026-08-21 save-scoping bug
+ * cleanup: several wallets connected the same day the bug was live picked
+ * up an earlier wallet's leftover VILLE, and that stale number got pushed
+ * to their own player_stats row before the client-side fix shipped. A
+ * DELETE, not a zeroing UPDATE — the row simply goes back to "never
+ * synced," same as a wallet that's never played, and the next real sync
+ * recreates it from scratch.
+ */
+export async function resetPlayerStatsForWallets(walletAddresses: string[]): Promise<number> {
+  if (!pool || walletAddresses.length === 0) return 0;
+  const { rowCount } = await pool.query(`DELETE FROM player_stats WHERE wallet_address = ANY($1)`, [
+    walletAddresses.map((a) => a.toLowerCase()),
+  ]);
+  return rowCount ?? 0;
+}
