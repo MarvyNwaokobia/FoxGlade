@@ -3,7 +3,7 @@ import { pullOnboarding, pushOnboarding } from "@/engine/chain/onboardingSync";
 import { pullPlayerStats, pushPlayerStats } from "@/engine/chain/playerStatsSync";
 import { claimHeroOnChain, claimPetOnChain } from "@/engine/chain/relay";
 import { useGame } from "@/engine/store";
-import { NEW_SAVE } from "@/engine/save";
+import { loadSave, NEW_SAVE } from "@/engine/save";
 
 /**
  * Reconciles this device against the server mirrors the moment a wallet
@@ -40,6 +40,16 @@ import { NEW_SAVE } from "@/engine/save";
  * fire the on-chain hero/pet mint) for the wrong account, and resuming it
  * would show one account's in-progress picks to another. It's cleared
  * instead, so this address gets a genuine wizard.
+ *
+ * The SAME guard applies to the economy save (save.ts's VILLE/day/gear,
+ * added 2026-08-21 — until then `SaveData` carried no `address` tag at all,
+ * so a second wallet tested on a browser that already had a first wallet's
+ * progress silently inherited its VILLE, day and gear, and then PUSHED that
+ * stale number up to the new wallet's own server row, making it permanent).
+ * A mismatched tag there is reset to a genuine fresh save (tagged for the
+ * address connecting now) before the hydrate/push decision below runs, so
+ * that decision only ever sees local progress that actually belongs to this
+ * account.
  */
 export async function reconcileAccount(address: string): Promise<void> {
   const local = loadOnboarding();
@@ -80,6 +90,24 @@ export async function reconcileAccount(address: string): Promise<void> {
     // draft means a second account signing in here must never see the first
     // account's in-progress picks.
     clearOnboarding();
+  }
+
+  const rawSave = loadSave();
+  const saveIsThisAccounts = rawSave.address === null || rawSave.address === address;
+  if (!saveIsThisAccounts) {
+    // This device's economy save belongs to a DIFFERENT wallet — reset to a
+    // genuine blank slate (tagged for this address by hydrateFromServer's own
+    // writeSave) before the hydrate/push decision below, so it never reads,
+    // pushes, or resumes someone else's VILLE/day/gear for this account.
+    useGame.getState().hydrateFromServer({
+      day: NEW_SAVE.day,
+      villeBanked: NEW_SAVE.villeBanked,
+      villeEarned: NEW_SAVE.villeEarned,
+      treasuresBanked: 0,
+      equippedWeapon: NEW_SAVE.equippedWeapon,
+      owned: NEW_SAVE.owned,
+      updatedAt: Date.now(),
+    });
   }
 
   const g = useGame.getState();

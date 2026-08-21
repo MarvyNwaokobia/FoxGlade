@@ -63,6 +63,14 @@ export interface SaveData {
    *  gets "now" so a fox that's never existed isn't rusty from the day the
    *  village itself was built. */
   lastPlayedAt: number;
+  /** Which wallet address this economy belongs to, if any was connected the
+   *  last time it was written — `null` for a guest save (no wallet yet).
+   *  Same purpose as OnboardingData.address (onboarding.ts): this key is one
+   *  fixed localStorage slot shared by every wallet that ever connects on
+   *  this browser, so without a tag a SECOND wallet on the same device would
+   *  silently inherit the FIRST one's VILLE/day/gear (2026-08-21 bug —
+   *  accountSync.ts's reconcileAccount checks this before trusting local). */
+  address: string | null;
 }
 
 export const NEW_SAVE: SaveData = {
@@ -73,6 +81,7 @@ export const NEW_SAVE: SaveData = {
   owned: ["w_rifle"], // the starter carbine is yours from the first morning
   equippedWeapon: DEFAULT_WEAPON,
   lastPlayedAt: Date.now(),
+  address: null,
 };
 
 /**
@@ -103,6 +112,7 @@ export function loadSave(): SaveData {
       // to buy itself out of rust), and never missing (older saves predate this
       // field — treat them as "just played" rather than maximally rusty).
       lastPlayedAt: Math.min(num(p.lastPlayedAt, Date.now()), Date.now()),
+      address: typeof p.address === "string" ? p.address : null,
     };
   } catch {
     return { ...NEW_SAVE };

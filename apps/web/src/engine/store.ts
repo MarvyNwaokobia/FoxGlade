@@ -15,6 +15,7 @@ import {
   type WeaponId,
 } from "@/engine/config/shop";
 import { clearSave, loadSave, writeSave, NEW_SAVE } from "@/engine/save";
+import { useWallet } from "@/engine/chain/wallet";
 import { claimOnChain, evolvePetOnChain, recordPetRunOnChain, revivePetOnChain, stampEvent } from "@/engine/chain/relay";
 import { pushPlayerStats, type ServerPlayerStats } from "@/engine/chain/playerStatsSync";
 import { FOX_GROW_STAGES, FOX_RUST, foxRustFor } from "@/engine/config/fox";
@@ -821,6 +822,7 @@ export const useGame = create<GameState>((set, get) => {
       villeEarned: s.villeEarned,
       owned: s.owned,
       equippedWeapon: s.equippedWeapon,
+      address: useWallet.getState().address,
     });
 
     // The board is new in the morning, and so is everything the village told you
@@ -961,7 +963,7 @@ export const useGame = create<GameState>((set, get) => {
 
   hydrateFromServer: (stats) => {
     const { day, villeBanked, villeEarned, owned, equippedWeapon } = sanitizeServerStats(stats);
-    writeSave({ day, villeBanked, villeEarned, owned, equippedWeapon });
+    writeSave({ day, villeBanked, villeEarned, owned, equippedWeapon, address: useWallet.getState().address });
 
     runtime.guardianBriefed = false;
     runtime.roundStartAt = performance.now();
@@ -1055,5 +1057,6 @@ useGame.subscribe((s, prev) => {
     villeEarned: s.villeEarned,
     owned: s.owned,
     equippedWeapon: s.equippedWeapon,
+    address: useWallet.getState().address,
   });
 });
