@@ -7,8 +7,10 @@ const GOLD = "#f2c14e";
 const INK = "#e8eef2";
 
 /**
- * The first-run guide: a few pages shown once, ever, right after the map's
- * first "Enter the village" (see MapScreen.tsx's `dismiss`).
+ * The first-run guide: a few pages shown once, ever, right at the very start
+ * of a brand-new game — BEFORE the map (see MapScreen.tsx's `newGameNonce`
+ * effect, which opens this instead of the map the first time, then this
+ * screen's own `finish` opens the map once it's done).
  *
  * This is deliberately NOT where "here's the bank, here's the market" lives —
  * Tutorial.tsx already teaches those verbs in context, the moment they become
@@ -46,7 +48,17 @@ const PAGES: Page[] = [
 export function TutorialBrief() {
   const open = useGame((s) => s.tutorialOpen);
   const closeTutorial = useGame((s) => s.closeTutorial);
+  const openMapScreen = useGame((s) => s.openMapScreen);
   const [page, setPage] = useState(0);
+
+  // However it's dismissed — GOT IT, the ✕, backdrop click, or Escape — the
+  // map is the next screen in a brand-new game's onboarding, not just a
+  // closed panel. See MapScreen.tsx's `newGameNonce` effect, which is what
+  // opened this in the first place.
+  const finish = () => {
+    closeTutorial();
+    openMapScreen();
+  };
 
   useEffect(() => {
     if (open && document.pointerLockElement) document.exitPointerLock();
@@ -58,12 +70,13 @@ export function TutorialBrief() {
     const onKey = (e: KeyboardEvent) => {
       if (e.code === "Escape") {
         e.preventDefault();
-        closeTutorial();
+        finish();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, closeTutorial]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   if (!open) return null;
 
@@ -71,11 +84,11 @@ export function TutorialBrief() {
   const current = PAGES[page];
 
   return (
-    <div style={styles.root} onClick={closeTutorial}>
+    <div style={styles.root} onClick={finish}>
       <div style={styles.panel} onClick={(e) => e.stopPropagation()}>
         <div style={styles.header}>
           <div style={styles.title}>{current.title}</div>
-          <button style={styles.close} onClick={closeTutorial} aria-label="Close">
+          <button style={styles.close} onClick={finish} aria-label="Close">
             ✕
           </button>
         </div>
@@ -94,7 +107,7 @@ export function TutorialBrief() {
             >
               BACK
             </button>
-            <button style={styles.cta} onClick={() => (last ? closeTutorial() : setPage((p) => p + 1))}>
+            <button style={styles.cta} onClick={() => (last ? finish() : setPage((p) => p + 1))}>
               {last ? "GOT IT" : "NEXT"}
             </button>
           </div>

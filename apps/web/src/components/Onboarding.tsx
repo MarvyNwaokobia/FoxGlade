@@ -525,7 +525,7 @@ function ReadyStep({
       </div>
       {error && <div style={styles.error}>{error}</div>}
       {!saved ? (
-        <StepNav onBack={onBack} onNext={onConfirm} nextLabel={busy ? "…" : "BEGIN YOUR WATCH"} nextDisabled={busy} />
+        <StepNav onBack={onBack} onNext={onConfirm} nextLabel={busy ? "…" : "CONFIRM"} nextDisabled={busy} />
       ) : (
         <div style={styles.savedRow}>
           <div style={styles.savedNote}>✓ Saved. Tell me when to wire this in.</div>

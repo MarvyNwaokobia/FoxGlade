@@ -58,15 +58,28 @@ export function MapScreen() {
   // bed put a full-screen map of a village you live in between you and your own
   // front door, every single morning. `newGameNonce` moves only when a game
   // actually begins. Tab still opens it whenever you want it.
+  //
+  // On the very first game ever, TutorialBrief goes FIRST — the shape of a day,
+  // the blockers, the menu — and only once it's dismissed does IT open the map
+  // (see TutorialBrief.tsx's `finish`). Reading the map before that explained
+  // the geography before the player had any of the vocabulary (day/blockers/
+  // menu) the brief was about to hand them a beat later. Every later "new
+  // game" (already seenBrief) skips straight to the map, same as before.
   const newGameNonce = useGame((s) => s.newGameNonce);
   useEffect(() => {
     setClosing(false);
-    openMapScreen();
+    if (gameMode().id === "foxglade" && !loadTutorial().seenBrief) {
+      writeTutorial({ seenBrief: true });
+      closeMapScreen();
+      useGame.getState().openTutorial();
+    } else {
+      openMapScreen();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newGameNonce]);
 
   // Keyboard closes are instant — no fold animation, `closing` stays false.
-  // Only a pointer dismissal (click the backdrop / "Enter the village") plays
+  // Only a pointer dismissal (click the backdrop / "BEGIN YOUR WATCH") plays
   // the fold-out via `dismiss()` below; that distinction is original to this
   // component and stays true after moving `open` into the store.
   useEffect(() => {
@@ -116,13 +129,6 @@ export function MapScreen() {
     setClosing(true);
     window.setTimeout(() => {
       closeMapScreen();
-      // First-run guide: fires once, ever, right after the very first time this
-      // map is dismissed — the natural "just entered the village" beat. Gated
-      // to Foxglade (Nighthaul shares this map but not its onboarding lore).
-      if (gameMode().id === "foxglade" && !loadTutorial().seenBrief) {
-        writeTutorial({ seenBrief: true });
-        useGame.getState().openTutorial();
-      }
     }, 340);
   };
 
@@ -139,7 +145,7 @@ export function MapScreen() {
             // Landscape phone: the sheet goes BESIDE the words instead of above
             // them. Stacked, a square map plus four lines of caption plus the
             // button needs ~700px of height, and a phone on its side has 393 —
-            // so "Enter the village" sat below the fold, unreachable, and the
+            // so "BEGIN YOUR WATCH" sat below the fold, unreachable, and the
             // game could not be started in the one orientation it should be
             // played in.
             flexDirection: landscape ? "row" : "column",
@@ -186,7 +192,7 @@ export function MapScreen() {
               )}
             </div>
             <button type="button" style={styles.enter} onClick={dismiss}>
-              Enter the village
+              BEGIN YOUR WATCH
             </button>
           </div>
         </div>
