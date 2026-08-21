@@ -24,6 +24,7 @@ import {
   logEvent,
   getPlayerEvents,
   getAdminStats,
+  listPlayers,
 } from "./db.js";
 
 /** Must match apps/web/src/engine/onboarding.ts's isValidUsername — enforced
@@ -728,6 +729,22 @@ app.get("/admin/stats", async (_req, res) => {
   } catch (err) {
     console.error("admin stats failed", err);
     res.status(500).json({ error: "stats fetch failed" });
+  }
+});
+
+/** Every wallet on file, newest first — the roster behind /admin/stats'
+ *  numbers, so "how many new users" can become "which ones, and what are
+ *  their names" without a raw DB query. */
+app.get("/admin/players", async (_req, res) => {
+  if (!dbConfigured()) {
+    res.status(503).json({ error: "onboarding persistence not configured" });
+    return;
+  }
+  try {
+    res.json(await listPlayers());
+  } catch (err) {
+    console.error("admin players list failed", err);
+    res.status(500).json({ error: "players list failed" });
   }
 });
 

@@ -302,3 +302,37 @@ export async function getAdminStats(): Promise<AdminStats> {
     eventCountsLast7d: events.rows.map((r) => ({ eventType: r.event_type, count: Number(r.count) })),
   };
 }
+
+export interface PlayerSummary {
+  walletAddress: string;
+  username: string | null;
+  createdAt: number;
+  sessionCount: number;
+  lastSeenAt: number | null;
+  villeBanked: number | null;
+  day: number | null;
+}
+
+/** Every wallet on file, newest first — the roster behind "who's actually
+ *  playing" (Marvy's request, 2026-08-21, ahead of deciding whether/what to
+ *  reset). Left-joins player_stats since a wallet can have an onboarding row
+ *  (connected, maybe still mid-wizard) with no stats pushed yet. */
+export async function listPlayers(): Promise<PlayerSummary[]> {
+  if (!pool) return [];
+  const { rows } = await pool.query(
+    `SELECT o.wallet_address, o.username, o.created_at, o.session_count, o.last_seen_at,
+            p.ville_banked, p.day
+     FROM onboarding o
+     LEFT JOIN player_stats p ON p.wallet_address = o.wallet_address
+     ORDER BY o.created_at DESC`
+  );
+  return rows.map((r) => ({
+    walletAddress: r.wallet_address,
+    username: r.username,
+    createdAt: new Date(r.created_at).getTime(),
+    sessionCount: r.session_count,
+    lastSeenAt: r.last_seen_at ? new Date(r.last_seen_at).getTime() : null,
+    villeBanked: r.ville_banked,
+    day: r.day,
+  }));
+}
