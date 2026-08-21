@@ -40,6 +40,19 @@ const DAY = "/env/day_clouds_2k.hdr";
 const DUSK = "/env/dusk_2k.hdr";
 const NIGHT = "/env/dikhololo_night_2k.hdr";
 
+// These are the single biggest asset in the game (16MB combined, uncompressed
+// RGBE) and — unlike the useGLTF.preload() calls scattered through the other
+// world/character files — a plain useLoader() call inside the component body
+// only fires once SkyDome actually renders, i.e. once the Canvas mounts,
+// i.e. after ConnectGate + Onboarding are both done. That serialized the
+// whole village behind their download, right at the door. Priming the same
+// react-three-fiber loader cache here, at module scope, starts the fetch the
+// instant this module is imported — which Game.tsx does unconditionally, so
+// it runs in parallel with the player picking a hero and reading the
+// tutorial brief. By the time SkyDome's own useLoader() call below runs, it
+// hits the warm cache instead of starting a fresh 16MB download.
+useLoader.preload(RGBELoader, [DAY, DUSK, NIGHT]);
+
 /** Comfortably inside the camera's far plane (400) and outside the village. */
 const RADIUS = 320;
 
