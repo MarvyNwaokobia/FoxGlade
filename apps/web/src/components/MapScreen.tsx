@@ -3,8 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { isTouchDevice } from "@/engine/input/touch";
 import { useGame } from "@/engine/store";
-import { gameMode } from "@/engine/config/mode";
-import { loadTutorial, writeTutorial } from "@/engine/tutorial";
 import { drawParchmentMap } from "./mapArt";
 
 /**
@@ -59,22 +57,21 @@ export function MapScreen() {
   // front door, every single morning. `newGameNonce` moves only when a game
   // actually begins. Tab still opens it whenever you want it.
   //
-  // On the very first game ever, TutorialBrief goes FIRST — the shape of a day,
-  // the blockers, the menu — and only once it's dismissed does IT open the map
-  // (see TutorialBrief.tsx's `finish`). Reading the map before that explained
-  // the geography before the player had any of the vocabulary (day/blockers/
-  // menu) the brief was about to hand them a beat later. Every later "new
-  // game" (already seenBrief) skips straight to the map, same as before.
+  // Skipped just once — the very first game for a genuinely fresh account —
+  // because Game.tsx's Onboarding onComplete already opened TutorialBrief
+  // FIRST instead (the shape of a day, the blockers, the menu) and it's
+  // TutorialBrief's own `finish` that opens the map once THAT'S dismissed.
+  // That decision is account-scoped (tied to this address's onboarding
+  // actually completing, wherever that happens), not a device-local flag —
+  // an old device-local "seen it" flag here used to mean a friend borrowing
+  // your phone with their own fresh account silently skipped the brief, and
+  // your own account on a new device saw it a second time. Checking
+  // `tutorialOpen` (rather than re-deciding anything here) is what keeps this
+  // component ignorant of accounts entirely, as it should be.
   const newGameNonce = useGame((s) => s.newGameNonce);
   useEffect(() => {
     setClosing(false);
-    if (gameMode().id === "foxglade" && !loadTutorial().seenBrief) {
-      writeTutorial({ seenBrief: true });
-      closeMapScreen();
-      useGame.getState().openTutorial();
-    } else {
-      openMapScreen();
-    }
+    if (!useGame.getState().tutorialOpen) openMapScreen();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newGameNonce]);
 

@@ -33,6 +33,7 @@ import { TutorialBrief } from "@/components/TutorialBrief";
 import { Onboarding } from "@/components/Onboarding";
 import { ConnectGate } from "@/components/ConnectGate";
 import { loadOnboarding } from "@/engine/onboarding";
+import { useGame } from "@/engine/store";
 import { useWallet } from "@/engine/chain/wallet";
 import { reconcileAccount } from "@/engine/chain/accountSync";
 import { isTouchDevice } from "@/engine/input/touch";
@@ -159,11 +160,36 @@ export default function Game() {
   }
 
   if (mode.id === "foxglade" && !onboarded) {
+    // Captured per-render, same source `retrofitUsernameOnly` reads below —
+    // true only for a genuinely fresh account (never onboarded, on ANY
+    // device), false for one that's already onboarded elsewhere and just
+    // needs the username retrofit. `writeOnboarding` only flips hasOnboarded
+    // true once `onComplete` actually fires, so this stays accurate for the
+    // whole life of this render's closure.
+    const freshOnboarding = !loadOnboarding().hasOnboarded;
     return (
       <Onboarding
-        onComplete={() => setOnboarded(true)}
+        onComplete={() => {
+          setOnboarded(true);
+          // The tutorial brief used to be gated on a device-local "seen it"
+          // flag (foxglade.tutorial) — wrong axis entirely: hand your phone
+          // to someone with their own account and they'd silently skip it
+          // (this device already saw it), while your own account on a NEW
+          // device would see it again (no server memory of it at all). This
+          // account's hasOnboarded is already the real, server-synced fact
+          // that governs every other "is this player new" decision — a
+          // FRESH completion of the full wizard (never a username-only
+          // retrofit) is the one moment that's guaranteed to happen exactly
+          // once per account, wherever it happens, so it's what triggers the
+          // brief now. MapScreen.tsx's own mount defers to `tutorialOpen`
+          // being already set here before it ever mounts.
+          if (freshOnboarding) {
+            useGame.getState().closeMapScreen();
+            useGame.getState().openTutorial();
+          }
+        }}
         skipWelcome
-        retrofitUsernameOnly={loadOnboarding().hasOnboarded}
+        retrofitUsernameOnly={!freshOnboarding}
       />
     );
   }

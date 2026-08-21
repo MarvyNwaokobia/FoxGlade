@@ -8,9 +8,13 @@ const INK = "#e8eef2";
 
 /**
  * The first-run guide: a few pages shown once, ever, right at the very start
- * of a brand-new game — BEFORE the map (see MapScreen.tsx's `newGameNonce`
- * effect, which opens this instead of the map the first time, then this
- * screen's own `finish` opens the map once it's done).
+ * of a brand-new ACCOUNT — BEFORE the map. Opened by Game.tsx's Onboarding
+ * `onComplete`, and only for a genuinely fresh completion of the full wizard
+ * (never the username-only retrofit an already-onboarded account goes
+ * through) — that's a fact about this address, synced the same way
+ * `hasOnboarded` already is, not a device-local "has this browser seen it"
+ * flag. MapScreen.tsx's own mount checks `tutorialOpen` and defers to
+ * whichever this screen's own `finish` opens the map once it's dismissed.
  *
  * This is deliberately NOT where "here's the bank, here's the market" lives —
  * Tutorial.tsx already teaches those verbs in context, the moment they become
