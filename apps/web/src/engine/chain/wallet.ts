@@ -2,7 +2,6 @@ import { create } from "zustand";
 import type { MagicUserMetadata } from "magic-sdk";
 import { getMagic, magicConfigured, AUTH_CALLBACK_PATH } from "@/engine/chain/magic";
 import { disconnectWeb3Auth } from "@/engine/chain/web3authBridge";
-import { connectWalletConnectFallback, disconnectWalletConnectFallback } from "@/engine/chain/walletConnectFallback";
 
 function addressOf(info: MagicUserMetadata): string | null {
   return info.wallets?.ethereum?.publicAddress ?? null;
@@ -78,14 +77,14 @@ function clearDisconnected(): void {
 }
 
 export type WalletStatus = "idle" | "sending" | "connected" | "error";
-export type WalletMethod = "magic" | "injected" | "web3auth" | "walletconnect" | null;
+export type WalletMethod = "magic" | "injected" | "web3auth" | null;
 
 interface WalletState {
   status: WalletStatus;
   address: string | null;
   email: string | null;
-  /** Which connect path produced the current session — decides what, if
-   *  anything, `logout` needs to unwind. */
+  /** Which of the three connect paths produced the current session — decides
+   *  what, if anything, `logout` needs to unwind. */
   method: WalletMethod;
   error: string | null;
 
@@ -102,10 +101,6 @@ interface WalletState {
   loginWithGoogle: () => Promise<void>;
   /** Browser-wallet connect — prompts the extension for account access. */
   connectInjected: () => Promise<void>;
-  /** WalletConnect via Reown's relay — the "use if others hang" fallback for
-   *  when Web3Auth's own chooser is stuck on a filtered relay (see
-   *  walletConnectFallback.ts). */
-  connectWalletConnect: () => Promise<void>;
   /** Published by Web3AuthSessionProvider once its SDK resolves (or loses)
    *  an address — that provider owns the actual connect/disconnect calls
    *  (they're hook-based, this store isn't), and only reports the outcome
@@ -207,17 +202,6 @@ export const useWallet = create<WalletState>((set, get) => ({
     }
   },
 
-  connectWalletConnect: async () => {
-    set({ status: "sending", error: null });
-    try {
-      const address = await connectWalletConnectFallback();
-      clearDisconnected();
-      set({ status: "connected", address, email: null, method: "walletconnect" });
-    } catch (err) {
-      set({ status: "error", error: err instanceof Error ? err.message : "Wallet connect failed" });
-    }
-  },
-
   setWeb3AuthSession: (address: string | null) => {
     if (address) {
       clearDisconnected();
@@ -231,7 +215,6 @@ export const useWallet = create<WalletState>((set, get) => ({
     try {
       if (get().method === "magic" && magicConfigured()) await getMagic().user.logout();
       if (get().method === "web3auth") await disconnectWeb3Auth();
-      if (get().method === "walletconnect") await disconnectWalletConnectFallback();
       // Injected wallets have no reliable programmatic disconnect (EIP-1193
       // doesn't require one) — clearing local state below is all a dapp can do;
       // the extension itself still considers this site authorized. That's what

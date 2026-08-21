@@ -20,43 +20,6 @@ export function useWeb3AuthWallet() {
   return useContext(Web3AuthWalletContext);
 }
 
-// The SDK appends this div straight to document.body when its modal opens
-// and never removes it on close (only replaces it the next time the modal
-// opens fresh) — confirmed by reading @web3auth/modal's own source. Left
-// behind, it's a position:relative, z-index:99998 layer sitting over the
-// whole page.
-const MODAL_CONTAINER_ID = "w3a-parent-container";
-// How long to wait before deciding the modal opened but never painted
-// anything (real mobile WebKit report: the screen dims but the wallet list
-// never renders) versus a modal that's legitimately still mid-flow (e.g.
-// WalletConnect's QR pairing step, which waits on a second device).
-const BLANK_MODAL_TIMEOUT_MS = 3000;
-// Hard backstop so a connect attempt can never leave the CONNECT WALLET
-// button disabled forever — the SDK's own connect() promise doesn't
-// reliably reject when the player just dismisses the sheet without picking
-// a wallet.
-const CONNECT_TIMEOUT_MS = 45000;
-
-function modalHasContent(): boolean {
-  const el = document.getElementById(MODAL_CONTAINER_ID);
-  return Boolean(el && el.innerText.trim().length > 0);
-}
-
-// Best-effort cleanup run after every connect attempt settles, success or
-// not. Removing the leftover container undoes the stuck-overlay half of the
-// iOS Safari freeze; toggling pointer-events with a forced reflow in
-// between is the standard practical workaround for the touch-pipeline half
-// of that same WebKit bug class (documented against many third-party
-// modal/bottom-sheet libraries, not specific to Web3Auth). Neither half is
-// a guaranteed fix — the actual bug lives in code this app doesn't
-// control — so this only mitigates, it doesn't promise the freeze is gone.
-function cleanupModalArtifacts(): void {
-  document.getElementById(MODAL_CONTAINER_ID)?.remove();
-  document.body.style.pointerEvents = "none";
-  void document.body.offsetHeight; // force a reflow between the two writes
-  document.body.style.pointerEvents = "";
-}
-
 // Inner half — must sit under Web3AuthProvider to use its hooks.
 function Web3AuthBridge({ children }: { children: ReactNode }) {
   const { isConnected, isInitialized, web3Auth } = useWeb3Auth();
@@ -115,23 +78,7 @@ function Web3AuthBridge({ children }: { children: ReactNode }) {
 
   const connect = useCallback(async () => {
     if (!isInitialized) throw new Error("Wallet connect is still loading — give it a moment.");
-    let blankTimer: ReturnType<typeof setTimeout> | undefined;
-    let hardTimer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      const blankWatchdog = new Promise<never>((_, reject) => {
-        blankTimer = setTimeout(() => {
-          if (!modalHasContent()) reject(new Error("Wallet connect didn't load — tap to try again."));
-        }, BLANK_MODAL_TIMEOUT_MS);
-      });
-      const hardBackstop = new Promise<never>((_, reject) => {
-        hardTimer = setTimeout(() => reject(new Error("Wallet connect timed out — try again.")), CONNECT_TIMEOUT_MS);
-      });
-      await Promise.race([web3authConnect(), blankWatchdog, hardBackstop]);
-    } finally {
-      clearTimeout(blankTimer);
-      clearTimeout(hardTimer);
-      cleanupModalArtifacts();
-    }
+    await web3authConnect();
   }, [web3authConnect, isInitialized]);
 
   return <Web3AuthWalletContext.Provider value={{ isReady: isInitialized, connect }}>{children}</Web3AuthWalletContext.Provider>;
