@@ -42,6 +42,17 @@ function cleanupModalArtifacts(): void {
   document.body.style.pointerEvents = "";
 }
 
+// Confirmed by reading @web3auth/no-modal's WalletConnectV2Connector source
+// (createNewSession -> `await approval()`, straight from WalletConnect's own
+// SignClient): that wait has no timeout anywhere in the library. If the
+// relay never delivers the wallet's session-settle message — a dead socket
+// left over from Safari backgrounding during the app-switch to the wallet,
+// or the relay host itself being unreachable (walletConnectFallback.ts) —
+// nothing in the SDK or this app ever gives up on its own. This is the only
+// thing that can. It doesn't cancel the underlying attempt (no API for
+// that), just stops waiting on it so the button can recover.
+const CONNECT_TIMEOUT_MS = 45000;
+
 // Inner half — must sit under Web3AuthProvider to use its hooks.
 function Web3AuthBridge({ children }: { children: ReactNode }) {
   const { isConnected, isInitialized, web3Auth } = useWeb3Auth();
@@ -100,7 +111,14 @@ function Web3AuthBridge({ children }: { children: ReactNode }) {
 
   const connect = useCallback(async () => {
     if (!isInitialized) throw new Error("Wallet connect is still loading — give it a moment.");
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("Wallet connect timed out — try again, or use WalletConnect below.")),
+          CONNECT_TIMEOUT_MS,
+        );
+      });
       // The SDK's own connect() never rejects — internally it catches every
       // failure and resolves with `null` instead (see
       // @web3auth/modal/react's useWeb3AuthConnect: connection stays null in
@@ -108,9 +126,10 @@ function Web3AuthBridge({ children }: { children: ReactNode }) {
       // `await` here previously treated every one of those failures as a
       // success, leaving CONNECT WALLET stuck on "CONNECTING…" forever with
       // nothing to catch and reset it.
-      const connection = await web3authConnect();
+      const connection = await Promise.race([web3authConnect(), timeout]);
       if (!connection) throw new Error("Wallet connect failed or was cancelled.");
     } finally {
+      clearTimeout(timer);
       cleanupModalArtifacts();
     }
   }, [web3authConnect, isInitialized]);
