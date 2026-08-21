@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { MagicUserMetadata } from "magic-sdk";
 import { getMagic, magicConfigured, AUTH_CALLBACK_PATH } from "@/engine/chain/magic";
+import { getWeb3Auth, web3authConfigured } from "@/engine/chain/web3auth";
 
 function addressOf(info: MagicUserMetadata): string | null {
   return info.wallets?.ethereum?.publicAddress ?? null;
@@ -26,12 +27,10 @@ declare global {
  * extension, or (on mobile) a wallet app's own in-app browser, which injects
  * one the same way. A plain mobile browser (Safari, Chrome) never has one —
  * there's no such thing as a mobile extension — no matter what wallet apps
- * are installed on the phone, so callers use this to decide whether offering
- * "connect wallet" makes sense at all rather than showing a button that can
- * only ever fail (see ConnectGate.tsx). There's deliberately no hosted
- * fallback for the plain-mobile-browser case (Web3Auth, then a WalletConnect
- * relay on top of that) after both proved unreliable in practice — Magic
- * email/Google sign-in below is the only path there now.
+ * are installed on the phone, so callers use this to decide whether the
+ * direct, zero-hop connect path (`connectInjected` below) makes sense, as
+ * opposed to routing through Web3Auth's modal (web3auth.ts), which also
+ * offers WalletConnect for the plain-mobile-browser case this can't serve.
  */
 export function hasInjectedProvider(): boolean {
   return typeof window !== "undefined" && Boolean(window.ethereum);
@@ -75,7 +74,7 @@ function clearDisconnected(): void {
 }
 
 export type WalletStatus = "idle" | "sending" | "connected" | "error";
-export type WalletMethod = "magic" | "injected" | null;
+export type WalletMethod = "magic" | "injected" | "web3auth" | null;
 
 interface WalletState {
   status: WalletStatus;
@@ -99,6 +98,8 @@ interface WalletState {
   loginWithGoogle: () => Promise<void>;
   /** Browser-wallet connect — prompts the extension for account access. */
   connectInjected: () => Promise<void>;
+  /** Web3Auth's wallet-connect modal — an injected extension or WalletConnect. */
+  connectWeb3Auth: () => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -118,7 +119,22 @@ export const useWallet = create<WalletState>((set, get) => ({
         return;
       }
     } catch {
-      // Injected wallet present but refused/erroed the silent check — fall through to Magic.
+      // Injected wallet present but refused/erroed the silent check — fall through.
+    }
+    if (web3authConfigured()) {
+      try {
+        const web3auth = await getWeb3Auth();
+        const provider = web3auth.connection?.ethereumProvider;
+        if (web3auth.connected && provider) {
+          const accounts = (await provider.request({ method: "eth_accounts" })) as string[];
+          if (accounts?.[0]) {
+            set({ status: "connected", address: accounts[0], email: null, method: "web3auth" });
+            return;
+          }
+        }
+      } catch {
+        // No cached Web3Auth session — fall through to Magic.
+      }
     }
     if (!magicConfigured()) return;
     try {
@@ -194,9 +210,30 @@ export const useWallet = create<WalletState>((set, get) => ({
     }
   },
 
+  connectWeb3Auth: async () => {
+    if (!web3authConfigured()) {
+      set({ status: "error", error: "Wallet connect isn't configured on this build." });
+      return;
+    }
+    set({ status: "sending", error: null });
+    try {
+      const web3auth = await getWeb3Auth();
+      const connection = await web3auth.connect();
+      const provider = connection?.ethereumProvider;
+      if (!provider) throw new Error("No wallet connected.");
+      const accounts = (await provider.request({ method: "eth_accounts" })) as string[];
+      if (!accounts[0]) throw new Error("No account returned.");
+      clearDisconnected();
+      set({ status: "connected", address: accounts[0], email: null, method: "web3auth" });
+    } catch (err) {
+      set({ status: "error", error: err instanceof Error ? err.message : "Wallet connect failed" });
+    }
+  },
+
   logout: async () => {
     try {
       if (get().method === "magic" && magicConfigured()) await getMagic().user.logout();
+      if (get().method === "web3auth" && web3authConfigured()) await (await getWeb3Auth()).logout();
       // Injected wallets have no reliable programmatic disconnect (EIP-1193
       // doesn't require one) — clearing local state below is all a dapp can do;
       // the extension itself still considers this site authorized. That's what

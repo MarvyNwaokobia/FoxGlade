@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useWallet, hasInjectedProvider } from "@/engine/chain/wallet";
 import { magicConfigured } from "@/engine/chain/magic";
+import { web3authConfigured } from "@/engine/chain/web3auth";
 
 /**
  * The mandatory first screen for Foxglade (Marvy's call, 2026-08-16): every
@@ -13,17 +14,14 @@ import { magicConfigured } from "@/engine/chain/magic";
  * Two ways in, same identity requirement either side: Magic email OTP or
  * Google (both no extension needed, work everywhere — magic.ts's
  * OAuthExtension, redirecting through app/auth/callback and back), or
- * "connect a wallet you already have" — `connectInjected`
- * (engine/chain/wallet.ts), a desktop extension or a wallet's own in-app
- * browser injecting `window.ethereum` directly, one tap, no network hop.
- * That button only shows when `hasInjectedProvider()` is true, since a
- * plain mobile browser (Safari, Chrome) never injects one — there's no such
- * thing as a mobile extension, no matter what wallet apps are installed on
- * the phone. There's deliberately no hosted fallback for that case anymore
- * (Web3Auth, then a WalletConnect relay on top of that): both spent a long
- * stretch getting stuck mid-connect on real devices in ways nothing in this
- * app could reliably recover from, so mobile players without an injected
- * provider use Magic email/Google above instead.
+ * "connect a wallet you already have", two ways: `connectInjected`
+ * (engine/chain/wallet.ts) talks to a desktop extension or a wallet's own
+ * in-app browser directly — one tap, no network hop — and only shows when
+ * `hasInjectedProvider()` is true, since a plain mobile browser (Safari,
+ * Chrome) never injects one no matter what wallet apps are installed on the
+ * phone. `connectWeb3Auth` covers everything else through Web3Auth's modal
+ * (engine/chain/web3auth.ts) — an injected extension too, or WalletConnect
+ * for a wallet app on the same phone with no injected provider to use.
  *
  * Neither path signs anything here; every on-chain action is relayed
  * server-side off just the address (relay.ts), so this screen's only job is
@@ -35,7 +33,7 @@ import { magicConfigured } from "@/engine/chain/magic";
  * through.
  */
 export function ConnectGate({ checking }: { checking: boolean }) {
-  const { status, error, login, loginWithGoogle, connectInjected } = useWallet();
+  const { status, error, login, loginWithGoogle, connectInjected, connectWeb3Auth } = useWallet();
   const [step, setStep] = useState<"intro" | "form">("intro");
   const [email, setEmail] = useState("");
   const sending = status === "sending";
@@ -110,22 +108,32 @@ export function ConnectGate({ checking }: { checking: boolean }) {
             </form>
             {!magicConfigured() && <div style={styles.note}>Email sign-in isn&apos;t configured on this build.</div>}
 
-            {walletAvailable && (
-              <>
-                <div style={styles.divider}>
-                  <div style={styles.dividerLine} />
-                  <span>or</span>
-                  <div style={styles.dividerLine} />
-                </div>
+            {(walletAvailable || web3authConfigured()) && (
+              <div style={styles.divider}>
+                <div style={styles.dividerLine} />
+                <span>or</span>
+                <div style={styles.dividerLine} />
+              </div>
+            )}
 
-                <button
-                  style={{ ...styles.walletBtn, ...(sending ? styles.ctaDisabled : null) }}
-                  onClick={() => connectInjected()}
-                  disabled={sending}
-                >
-                  {sending ? "CONNECTING…" : "CONNECT WALLET"}
-                </button>
-              </>
+            {walletAvailable && (
+              <button
+                style={{ ...styles.walletBtn, ...(sending ? styles.ctaDisabled : null) }}
+                onClick={() => connectInjected()}
+                disabled={sending}
+              >
+                {sending ? "CONNECTING…" : "BROWSER WALLET"}
+              </button>
+            )}
+
+            {web3authConfigured() && (
+              <button
+                style={{ ...styles.walletBtn, ...(sending ? styles.ctaDisabled : null) }}
+                onClick={() => connectWeb3Auth()}
+                disabled={sending}
+              >
+                {sending ? "CONNECTING…" : "CONNECT WALLET"}
+              </button>
             )}
 
             {error && <div style={styles.error}>{error}</div>}
