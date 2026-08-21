@@ -10,6 +10,10 @@ import type { CharacterModelId } from "@/engine/character/PlayerRig";
  */
 export type EggVariant = "ember" | "moss" | "frost";
 
+/** The wizard step a still-in-progress onboarding draft was left on — see
+ *  `OnboardingData.step`. Mirrors Onboarding.tsx's own `Step` type. */
+export type OnboardingStep = "welcome" | "username" | "hero" | "egg" | "ready";
+
 export interface OnboardingData {
   version: number;
   hasOnboarded: boolean;
@@ -29,6 +33,12 @@ export interface OnboardingData {
    *  player onboarded before this field existed also reads null until they
    *  go through it (see Game.tsx's `needsUsername`). */
   username: string | null;
+  /** Which step of the wizard a still-in-progress draft was left on — lets a
+   *  player who signs out mid-onboarding (Onboarding.tsx's sign-out button)
+   *  and logs back in on the same address resume there instead of restarting
+   *  the wizard. `null` once onboarding is complete, or before the first
+   *  step's picks have been made. */
+  step: OnboardingStep | null;
 }
 
 /** 3-20 chars, alphanumeric + underscore. Must match apps/server/src/
@@ -39,12 +49,10 @@ export function isValidUsername(name: string): boolean {
 }
 
 const KEY = "foxglade.onboarding";
-// Bumped 2026-08-17 to add `username` — also has the useful side effect of
-// invalidating every pre-existing save, same as the `address` bump just
-// before it (see git history): anyone onboarded under the old schema goes
-// through the wizard once more, this time landing on the new username step
-// instead of skipping straight past it with no name on file.
-const VERSION = 3;
+// Bumped 2026-08-21 to add `step` — same invalidate-on-bump pattern as the
+// `username` bump before it. A mid-wizard draft made under the old schema has
+// no step on file anyway, so nothing real is lost.
+const VERSION = 4;
 
 export const NEW_ONBOARDING: OnboardingData = {
   version: VERSION,
@@ -54,6 +62,7 @@ export const NEW_ONBOARDING: OnboardingData = {
   completedAt: null,
   address: null,
   username: null,
+  step: null,
 };
 
 const memory = new Map<string, string>();
@@ -72,6 +81,7 @@ function backend(): Pick<Storage, "getItem" | "setItem" | "removeItem"> {
 }
 
 const EGG_VARIANTS: EggVariant[] = ["ember", "moss", "frost"];
+const STEP_VALUES: OnboardingStep[] = ["welcome", "username", "hero", "egg", "ready"];
 
 export function loadOnboarding(): OnboardingData {
   try {
@@ -87,6 +97,7 @@ export function loadOnboarding(): OnboardingData {
       completedAt: typeof p.completedAt === "number" ? p.completedAt : null,
       address: typeof p.address === "string" ? p.address : null,
       username: typeof p.username === "string" ? p.username : null,
+      step: STEP_VALUES.includes(p.step as OnboardingStep) ? (p.step as OnboardingStep) : null,
     };
   } catch {
     return { ...NEW_ONBOARDING };

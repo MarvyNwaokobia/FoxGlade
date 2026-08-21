@@ -28,15 +28,18 @@ import { NEW_SAVE } from "@/engine/save";
  * normal push-on-mutation path (store.ts's subscribe + syncStats) will just
  * overwrite the server with local from the next bank/sleep checkpoint on.
  *
- * A third direction guards both of the above: local's `hasOnboarded` only
- * counts if its `address` tag is null (a guest pick, made before any wallet
- * connected) or matches the address connecting now. A tag for a DIFFERENT
- * address means this device has someone else's save on it — an earlier
- * email/session tested here, or (2026-08-17) onboarding completed while the
- * connect gate was briefly disabled for standalone testing — and must never
- * be adopted OR pushed for whoever connects next; that would silently claim
- * a pick, and fire the on-chain hero/pet mint, for the wrong account. It's
- * cleared instead, so this address gets a genuine wizard.
+ * A third direction guards both of the above: local's pick — complete OR a
+ * mid-wizard draft (see Onboarding.tsx's step/egg/username persistence) —
+ * only counts if its `address` tag is null (a guest pick, made before any
+ * wallet connected) or matches the address connecting now. A tag for a
+ * DIFFERENT address means this device has someone else's save (or unfinished
+ * draft) on it — an earlier email/session tested here, or (2026-08-17)
+ * onboarding completed while the connect gate was briefly disabled for
+ * standalone testing — and must never be adopted, pushed, or resumed for
+ * whoever connects next; adopting/pushing it would silently claim a pick (and
+ * fire the on-chain hero/pet mint) for the wrong account, and resuming it
+ * would show one account's in-progress picks to another. It's cleared
+ * instead, so this address gets a genuine wizard.
  */
 export async function reconcileAccount(address: string): Promise<void> {
   const local = loadOnboarding();
@@ -56,6 +59,7 @@ export async function reconcileAccount(address: string): Promise<void> {
         completedAt: server.completedAt,
         address,
         username: server.username,
+        step: null,
       });
     }
   } else if (local.hasOnboarded && local.eggVariant && local.username && localIsThisAccounts) {
@@ -69,7 +73,12 @@ export async function reconcileAccount(address: string): Promise<void> {
     });
     claimHeroOnChain(0);
     claimPetOnChain();
-  } else if (local.hasOnboarded && !localIsThisAccounts) {
+  } else if (!localIsThisAccounts) {
+    // Same guard, but now also catches a mid-wizard DRAFT (egg/username/step,
+    // hasOnboarded still false) left on this device by a different address —
+    // Onboarding.tsx's sign-out button plus its resume-in-place read of this
+    // draft means a second account signing in here must never see the first
+    // account's in-progress picks.
     clearOnboarding();
   }
 

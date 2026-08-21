@@ -72,12 +72,61 @@ export interface OnboardingProps {
 }
 
 export function Onboarding({ onComplete, skipWelcome, retrofitUsernameOnly }: OnboardingProps) {
-  const [step, setStep] = useState<Step>(skipWelcome || retrofitUsernameOnly ? "username" : "welcome");
-  const [egg, setEgg] = useState<EggVariant | null>(() => loadOnboarding().eggVariant);
-  const [username, setUsername] = useState(() => loadOnboarding().username ?? "");
+  const address = useWallet((s) => s.address);
+  const logout = useWallet((s) => s.logout);
+
+  // A draft only counts as resumable if it belongs to THIS address (or is a
+  // guest pick, address null) — same rule accountSync.ts's reconcileAccount
+  // uses, so a different account signing in on the same device never sees
+  // someone else's in-progress egg/username picks (reconcileAccount also
+  // clears such a foreign draft outright once it runs, this is just the
+  // read-side half of that same guard). Resolved once, at mount — Onboarding
+  // fully unmounts/remounts whenever Game.tsx swaps it for ConnectGate (a
+  // sign-out) or back, so a fresh mount is exactly when a new draft should be
+  // read.
+  const [step, setStep] = useState<Step>(() => {
+    if (retrofitUsernameOnly) return "username";
+    const local = loadOnboarding();
+    const ownDraft = !local.address || !address || local.address === address;
+    if (ownDraft && local.step) return local.step;
+    return skipWelcome ? "username" : "welcome";
+  });
+  const [egg, setEgg] = useState<EggVariant | null>(() => {
+    const local = loadOnboarding();
+    const ownDraft = !local.address || !address || local.address === address;
+    return ownDraft ? local.eggVariant : null;
+  });
+  const [username, setUsername] = useState(() => {
+    const local = loadOnboarding();
+    const ownDraft = !local.address || !address || local.address === address;
+    return ownDraft ? local.username ?? "" : "";
+  });
   const [saved, setSaved] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Mid-wizard resume: every step/egg/username change gets written back as a
+  // draft (hasOnboarded still false) so a player who signs out here (see the
+  // sign-out button below) and logs back in — same address, whichever method
+  // — picks up right where they left off instead of restarting the wizard.
+  // Skipped for retrofitUsernameOnly: that mount already has a completed
+  // hero/egg on file and only ever touches the username field, which
+  // confirmUsernameOnly() writes for real on submit.
+  useEffect(() => {
+    if (retrofitUsernameOnly) return;
+    const existing = loadOnboarding();
+    if (existing.hasOnboarded) return;
+    writeOnboarding({
+      hasOnboarded: false,
+      heroId: "man",
+      eggVariant: egg,
+      completedAt: null,
+      address: address ?? existing.address,
+      username: username || null,
+      step,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, egg, username, address, retrofitUsernameOnly]);
 
   const confirm = async () => {
     if (!egg || !username || confirming) return;
@@ -111,7 +160,7 @@ export function Onboarding({ onComplete, skipWelcome, retrofitUsernameOnly }: On
       claimHeroOnChain(0);
       claimPetOnChain();
     }
-    writeOnboarding({ hasOnboarded: true, heroId: "man", eggVariant: egg, completedAt, address, username });
+    writeOnboarding({ hasOnboarded: true, heroId: "man", eggVariant: egg, completedAt, address, username, step: null });
     setConfirming(false);
     setSaved(true);
     onComplete?.({ heroId: "man", eggVariant: egg });
@@ -144,6 +193,7 @@ export function Onboarding({ onComplete, skipWelcome, retrofitUsernameOnly }: On
       completedAt: existing.completedAt,
       address: address ?? existing.address,
       username,
+      step: null,
     });
     setConfirming(false);
     onComplete?.({ heroId: "man", eggVariant: existing.eggVariant });
@@ -152,6 +202,15 @@ export function Onboarding({ onComplete, skipWelcome, retrofitUsernameOnly }: On
   return (
     <div style={styles.root}>
       <div style={styles.vignette} />
+      {address && (
+        // Signing out mid-onboarding drops `address` to null, which sends
+        // Game.tsx straight back to ConnectGate (it watches useWallet's
+        // address reactively) — the draft persisted above is what lets
+        // logging back in land here again instead of at square one.
+        <button style={styles.signOut} onClick={() => logout()}>
+          Sign out
+        </button>
+      )}
       <div style={styles.panel}>
         {step === "welcome" && <WelcomeStep onNext={() => setStep("username")} />}
         {step === "username" && (
@@ -524,6 +583,21 @@ const styles: Record<string, React.CSSProperties> = {
     inset: 0,
     background: "radial-gradient(80% 60% at 50% 0%, rgba(242,193,78,0.08), transparent 60%)",
     pointerEvents: "none",
+  },
+  signOut: {
+    position: "absolute",
+    top: 20,
+    right: 24,
+    zIndex: 1,
+    color: "rgba(232,238,242,0.55)",
+    background: "transparent",
+    border: "1px solid rgba(255,255,255,0.15)",
+    borderRadius: 8,
+    padding: "8px 14px",
+    fontSize: 11.5,
+    fontWeight: 700,
+    letterSpacing: 0.5,
+    cursor: "pointer",
   },
   panel: {
     position: "relative",
