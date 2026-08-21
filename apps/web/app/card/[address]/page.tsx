@@ -28,6 +28,10 @@ export default function PublicCardPage() {
   const address = params?.address as string | undefined;
 
   const [stats, setStats] = useState<ServerPlayerStats | null>(null);
+  // Distinct from "no stats" (`stats === null` with this false): the relay
+  // hiccuped or this deployment's DB isn't configured, and a real player's
+  // progress shouldn't be reported as "No Card Yet" just because of that.
+  const [loadFailed, setLoadFailed] = useState(false);
   const [avatar, setAvatar] = useState<string | null>(null);
   const [username, setUsername] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -37,9 +41,11 @@ export default function PublicCardPage() {
     if (!address) return;
     let cancelled = false;
     (async () => {
-      const [serverStats, onboarding] = await Promise.all([pullPlayerStats(address), pullOnboarding(address)]);
+      const [statsResult, onboarding] = await Promise.all([pullPlayerStats(address), pullOnboarding(address)]);
       if (cancelled) return;
+      const serverStats = statsResult.ok ? statsResult.stats : null;
       setStats(serverStats);
+      setLoadFailed(!statsResult.ok && statsResult.reason !== "not-found");
       setUsername(onboarding?.username ?? null);
       setLoading(false);
       if (serverStats) {
@@ -68,9 +74,11 @@ export default function PublicCardPage() {
     return (
       <div style={styles.root}>
         <div style={styles.notFound}>
-          <div style={styles.notFoundTitle}>No Card Yet</div>
+          <div style={styles.notFoundTitle}>{loadFailed ? "Couldn't Load This Card" : "No Card Yet"}</div>
           <div style={styles.notFoundBody}>
-            This wallet hasn&apos;t banked anything in Foxglade yet — or hasn&apos;t connected one.
+            {loadFailed
+              ? "Something went wrong reaching the server — this doesn't mean the wallet has no progress. Try again shortly."
+              : "This wallet hasn't banked anything in Foxglade yet — or hasn't connected one."}
           </div>
           <Link href="/" style={styles.cta}>
             Enter Foxglade

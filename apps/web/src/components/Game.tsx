@@ -110,6 +110,13 @@ export default function Game() {
   // session — has had its one chance to resolve, false forever after.
   const [restoring, setRestoring] = useState(true);
   const address = useWallet((s) => s.address);
+  const accountReady = useGame((s) => s.accountReady);
+  const accountSyncError = useGame((s) => s.accountSyncError);
+  // Bumped by ConnectGate's retry button to re-run the reconcile effect below
+  // after a genuine failure (accountSyncError) — reconcileAccount itself
+  // resets both flags at the start of every attempt (store.ts's
+  // beginAccountSync), so nothing here needs to clear accountSyncError.
+  const [retryNonce, setRetryNonce] = useState(0);
 
   useEffect(() => {
     if (mode.id !== "foxglade") {
@@ -135,11 +142,15 @@ export default function Game() {
 
   // Reconcile local state against the server the moment an address is known
   // — from the silent restore() above, or from ConnectGate's email/wallet
-  // buttons. Two directions (accountSync.ts): a fresh device adopts the
-  // server's onboarding pick and progress; a device that already has a local
-  // pick or save (anyone who played before this gate existed, connecting for
-  // the first time) pushes it up, since neither was ever guaranteed to have
-  // reached the server before now.
+  // buttons — and on every retryNonce bump (ConnectGate's retry button,
+  // after a genuine accountSyncError). Two directions for onboarding
+  // (accountSync.ts): a fresh device adopts the server's pick; a device that
+  // already has a local pick (anyone who played before this gate existed,
+  // connecting for the first time) pushes it up. The economy side (VILLE/
+  // day/gear) is unconditional server-authority now (2026-08-21) — see
+  // accountSync.ts and GameState.accountReady, which the gate below waits on
+  // alongside the wallet-connect check so neither the profile nor gameplay
+  // can ever render the store's NEW_SAVE placeholder as if it were real.
   useEffect(() => {
     if (mode.id !== "foxglade" || !address) return;
     let cancelled = false;
@@ -153,10 +164,12 @@ export default function Game() {
     return () => {
       cancelled = true;
     };
-  }, [mode.id, address]);
+  }, [mode.id, address, retryNonce]);
 
-  if (CONNECT_GATE_ENABLED && mode.id === "foxglade" && (restoring || !address)) {
-    return <ConnectGate checking={restoring} />;
+  if (CONNECT_GATE_ENABLED && mode.id === "foxglade" && (restoring || !address || !accountReady)) {
+    return (
+      <ConnectGate checking={restoring} accountError={accountSyncError} onRetry={() => setRetryNonce((n) => n + 1)} />
+    );
   }
 
   if (mode.id === "foxglade" && !onboarded) {

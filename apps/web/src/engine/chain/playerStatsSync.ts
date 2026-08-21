@@ -38,15 +38,31 @@ export function pushPlayerStats(stats: {
   });
 }
 
-/** Resolves `null` on any failure (relay/DB unset, network error, or no
- *  stats synced for this wallet yet) — callers treat all three identically. */
-export async function pullPlayerStats(address: string): Promise<ServerPlayerStats | null> {
+export type PullPlayerStatsResult =
+  | { ok: true; stats: ServerPlayerStats }
+  | { ok: false; reason: "not-found" | "unavailable" | "error" };
+
+/**
+ * Three failure reasons, not one — accountSync.ts's reconcileAccount needs to
+ * tell them apart (2026-08-21, making player_stats server-authoritative):
+ * "not-found" (404 — the server confirmed this wallet has never synced) is
+ * safe to treat as a genuinely fresh account; "unavailable" (503 — this
+ * deployment has no relay/DB configured at all, e.g. local dev) is a standing
+ * fact, not this wallet's fault, and shouldn't touch its state either way;
+ * "error" (anything else, or a thrown exception) is a real, likely transient
+ * failure and must NOT be read as "this account has no progress" — doing so
+ * would make a network blip look like wiped progress for every returning
+ * player, not just the multi-wallet-on-one-device case this replaces.
+ */
+export async function pullPlayerStats(address: string): Promise<PullPlayerStatsResult> {
   try {
     const res = await fetch(`/api/chain/player?address=${encodeURIComponent(address)}`);
-    if (!res.ok) return null;
-    return (await res.json()) as ServerPlayerStats;
+    if (res.status === 404) return { ok: false, reason: "not-found" };
+    if (res.status === 503) return { ok: false, reason: "unavailable" };
+    if (!res.ok) return { ok: false, reason: "error" };
+    return { ok: true, stats: (await res.json()) as ServerPlayerStats };
   } catch (err) {
     console.warn("[chain] player stats pull failed", err);
-    return null;
+    return { ok: false, reason: "error" };
   }
 }

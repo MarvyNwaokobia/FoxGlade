@@ -34,9 +34,24 @@ import { isTouchDevice } from "@/engine/input/touch";
  * `checking` is the brief window while Game.tsx's mount-time `restore()` is
  * still in flight — shown instead of the form so a returning player with a
  * live session doesn't see a login screen flash before sliding straight
- * through.
+ * through. This screen ALSO now covers the window after that (2026-08-21):
+ * once an address is known, Game.tsx keeps this gate up until
+ * accountSync.ts's reconcileAccount has confirmed the wallet's real
+ * server-side economy state (GameState.accountReady) — `accountError` is
+ * that confirmation genuinely failing (a network/server error, not "no data
+ * yet"), which shows a retry instead of the login form: a connected
+ * returning player should never be told to "log in again" over what was
+ * actually a network blip.
  */
-export function ConnectGate({ checking }: { checking: boolean }) {
+export function ConnectGate({
+  checking,
+  accountError,
+  onRetry,
+}: {
+  checking: boolean;
+  accountError?: boolean;
+  onRetry?: () => void;
+}) {
   const { status, error, login, loginWithGoogle, connectInjected, connectWeb3Auth } = useWallet();
   const [step, setStep] = useState<"intro" | "form">("intro");
   const [email, setEmail] = useState("");
@@ -58,6 +73,15 @@ export function ConnectGate({ checking }: { checking: boolean }) {
         <div style={styles.brand}>FOXGLADE</div>
         {checking ? (
           <div style={styles.checking}>Checking for an existing session…</div>
+        ) : accountError ? (
+          <>
+            <div style={styles.tagline}>
+              Couldn&apos;t reach your account. Check your connection and try again.
+            </div>
+            <button style={styles.cta} onClick={onRetry}>
+              RETRY
+            </button>
+          </>
         ) : step === "intro" ? (
           <>
             <div style={styles.tagline}>

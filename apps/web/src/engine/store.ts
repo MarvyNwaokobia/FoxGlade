@@ -288,6 +288,22 @@ interface GameState {
    *  against — this is exactly `restart()` seeded from the server's numbers
    *  instead of NEW_SAVE's. */
   hydrateFromServer: (stats: ServerPlayerStats) => void;
+  /** True once accountSync.ts's reconcileAccount has resolved what this
+   *  wallet's REAL villeBanked/day/owned are — false the whole time the
+   *  store still holds the NEW_SAVE placeholder it was seeded with. Game.tsx
+   *  gates all of Foxglade behind this alongside the wallet-connect check, so
+   *  a player (or the profile card) can never see the placeholder rendered
+   *  as if it were real. */
+  accountReady: boolean;
+  /** True when the last reconcile attempt genuinely failed (not "confirmed
+   *  no data," an actual network/server error) — Game.tsx shows a retry
+   *  affordance instead of treating this like "not connected yet." */
+  accountSyncError: boolean;
+  /** Reset both flags at the start of every reconcile attempt (initial
+   *  connect or a retry) so the gate reliably reappears for its duration. */
+  beginAccountSync: () => void;
+  markAccountReady: () => void;
+  setAccountSyncError: () => void;
 }
 
 /**
@@ -474,8 +490,13 @@ export const useGame = create<GameState>((set, get) => {
   throwBomb: () => set((s) => ({ bombsLeft: Math.max(0, s.bombsLeft - 1) })),
 
   villeCarrying: 0,
-  villeBanked: SAVE.villeBanked,
-  villeEarned: SAVE.villeEarned,
+  // NEW_SAVE, not SAVE (2026-08-21): the module-load state must always be a
+  // harmless placeholder now, since it renders before any wallet — and thus
+  // any account — is known. accountSync.ts's reconcileAccount is the only
+  // thing that ever seeds the real number, from the server. See
+  // GameState.accountReady, which gates the game behind that resolving.
+  villeBanked: NEW_SAVE.villeBanked,
+  villeEarned: NEW_SAVE.villeEarned,
   foxHoursAway: HOURS_AWAY,
   foxRustBanksLeft: foxRustFor(HOURS_AWAY).misreadAdd > 0 ? FOX_RUST.recoverAfterBanks : 0,
   depositLoot: () => {
@@ -521,11 +542,12 @@ export const useGame = create<GameState>((set, get) => {
     }
   },
 
-  // Carried over from the last night's sleep. A brand-new save owns only the
-  // starter carbine (engine/save.ts NEW_SAVE).
-  owned: SAVE.owned,
-  equippedWeapon: SAVE.equippedWeapon,
-  ammoInMag: WEAPON_STATS[SAVE.equippedWeapon].magSize,
+  // Carried over from the last night's sleep. NEW_SAVE, not SAVE, for the same
+  // reason as villeBanked/villeEarned above — this is a placeholder until the
+  // account resolves, not a real value the player can ever see.
+  owned: NEW_SAVE.owned,
+  equippedWeapon: NEW_SAVE.equippedWeapon,
+  ammoInMag: WEAPON_STATS[NEW_SAVE.equippedWeapon].magSize,
   reloadEndsAt: -1,
   startReload: () => {
     const s = get();
@@ -755,14 +777,14 @@ export const useGame = create<GameState>((set, get) => {
     resetToDawn();
   },
 
-  day: SAVE.day,
+  day: NEW_SAVE.day,
   dayOver: false,
   dayProgress: 0,
   chapter: 0,
   phaseResolved: 0,
-  phaseRequired: phaseRequiredFor(SAVE.day, 0),
+  phaseRequired: phaseRequiredFor(NEW_SAVE.day, 0),
   treasuresBanked: 0,
-  treasuresRequired: treasuresForDay(SAVE.day),
+  treasuresRequired: treasuresForDay(NEW_SAVE.day),
   treasuresResolved: 0,
   treasuresStolen: 0,
   // Purely the sun now — atmosphere plus a backstop nightfall. Chapter changes
@@ -1026,6 +1048,12 @@ export const useGame = create<GameState>((set, get) => {
       respawnNonce: s.respawnNonce + 1,
     }));
   },
+
+  accountReady: false,
+  accountSyncError: false,
+  beginAccountSync: () => set({ accountReady: false, accountSyncError: false }),
+  markAccountReady: () => set({ accountReady: true, accountSyncError: false }),
+  setAccountSyncError: () => set({ accountSyncError: true }),
   };
 });
 
