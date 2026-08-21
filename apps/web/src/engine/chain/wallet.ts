@@ -104,8 +104,9 @@ interface WalletState {
   connectInjected: () => Promise<void>;
   /** WalletConnect via Reown's relay — the "use if others hang" fallback for
    *  when Web3Auth's own chooser is stuck on a filtered relay (see
-   *  walletConnectFallback.ts). */
-  connectWalletConnect: () => Promise<void>;
+   *  walletConnectFallback.ts). `onUri` fires once the pairing URI is ready,
+   *  for rendering a directly-tappable deep link. */
+  connectWalletConnect: (onUri: (uri: string) => void) => Promise<void>;
   /** Published by Web3AuthSessionProvider once its SDK resolves (or loses)
    *  an address — that provider owns the actual connect/disconnect calls
    *  (they're hook-based, this store isn't), and only reports the outcome
@@ -207,10 +208,10 @@ export const useWallet = create<WalletState>((set, get) => ({
     }
   },
 
-  connectWalletConnect: async () => {
+  connectWalletConnect: async (onUri) => {
     set({ status: "sending", error: null });
     try {
-      const address = await connectWalletConnectFallback();
+      const address = await connectWalletConnectFallback(onUri);
       clearDisconnected();
       set({ status: "connected", address, email: null, method: "walletconnect" });
     } catch (err) {

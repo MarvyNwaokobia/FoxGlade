@@ -80,15 +80,25 @@ export function ConnectGate({ checking }: { checking: boolean }) {
   // hung, so it can't share state with the thing it's an escape hatch from.
   const [wcPending, setWcPending] = useState(false);
   const [wcError, setWcError] = useState<string | null>(null);
+  // Set once the pairing URI arrives (walletConnectFallback.ts's `onUri`) —
+  // rendered as a real <a href>, not auto-opened. Reown AppKit's own bundled
+  // modal (disabled via showQrModal:false) does that automatically and its
+  // Open button does nothing on iOS Safari even with the target wallet
+  // installed (confirmed on-device 2026-08-21); a plain anchor the player
+  // taps themselves is a genuine user gesture, which is what iOS actually
+  // requires to hand off to another app.
+  const [wcUri, setWcUri] = useState<string | null>(null);
   async function handleWalletConnectFallback() {
     setWcPending(true);
     setWcError(null);
+    setWcUri(null);
     try {
-      await useWallet.getState().connectWalletConnect();
+      await useWallet.getState().connectWalletConnect(setWcUri);
       const latestError = useWallet.getState().error;
       if (useWallet.getState().status === "error" && latestError) setWcError(latestError);
     } finally {
       setWcPending(false);
+      setWcUri(null);
     }
   }
   // Excludes wcPending so tapping the fallback (which also writes the shared
@@ -180,13 +190,26 @@ export function ConnectGate({ checking }: { checking: boolean }) {
 
                 {!walletAvailable && walletConnectFallbackConfigured() && (
                   <>
-                    <button
-                      style={{ ...styles.walletBtn, ...(wcPending ? styles.ctaDisabled : null) }}
-                      onClick={handleWalletConnectFallback}
-                      disabled={wcPending}
-                    >
-                      {wcPending ? "CONNECTING…" : "USE WALLETCONNECT INSTEAD"}
-                    </button>
+                    {wcUri ? (
+                      // A real, directly-tapped link — not opened via script —
+                      // so iOS treats the app hand-off as a genuine user
+                      // gesture. MetaMask's documented universal link for a
+                      // WalletConnect v2 pairing URI.
+                      <a
+                        style={{ ...styles.walletBtn, display: "block", textAlign: "center", textDecoration: "none", boxSizing: "border-box" }}
+                        href={`https://metamask.app.link/wc?uri=${encodeURIComponent(wcUri)}`}
+                      >
+                        OPEN METAMASK
+                      </a>
+                    ) : (
+                      <button
+                        style={{ ...styles.walletBtn, ...(wcPending ? styles.ctaDisabled : null) }}
+                        onClick={handleWalletConnectFallback}
+                        disabled={wcPending}
+                      >
+                        {wcPending ? "PREPARING…" : "USE WALLETCONNECT INSTEAD"}
+                      </button>
+                    )}
                     <div style={styles.note}>Opens your wallet app — use if CONNECT WALLET hangs.</div>
                   </>
                 )}

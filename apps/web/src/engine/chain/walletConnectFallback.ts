@@ -60,19 +60,44 @@ function getConfig() {
           url: typeof window !== "undefined" ? window.location.origin : "https://foxglade.app",
           icons: ["https://foxglade.app/icon.png"],
         },
+        // The connector's own bundled modal (Reown AppKit) is what renders
+        // the "Continue in MetaMask" / Open screen — confirmed on-device
+        // 2026-08-21 that its Open button does nothing on iOS Safari (no app
+        // switch, no new tab), even with MetaMask installed. Disabling it
+        // and building our own single-link UI from the raw pairing URI
+        // (below) sidesteps whatever's broken in AppKit's own redirect
+        // logic entirely, in favor of a plain <a href> the browser handles
+        // natively.
+        showQrModal: false,
       }),
     ],
   });
   return config;
 }
 
-/** Opens WalletConnect's own pairing flow (QR on desktop, wallet-app deep link on mobile). Resolves with the connected address. */
-export async function connectWalletConnectFallback(): Promise<string> {
+/**
+ * Opens WalletConnect's pairing flow and resolves with the connected
+ * address. `onUri` fires once the pairing URI is available (via the
+ * connector's own `display_uri` message — see @wagmi/connectors'
+ * walletConnect.ts: `config.emitter.emit('message', { type: 'display_uri',
+ * data: uri })`) so the caller can render a real, directly-tappable deep
+ * link instead of relying on the disabled built-in modal.
+ */
+export async function connectWalletConnectFallback(onUri: (uri: string) => void): Promise<string> {
   const cfg = getConfig();
-  const result = await connect(cfg, { connector: cfg.connectors[0] });
-  const address = result.accounts[0];
-  if (!address) throw new Error("No account returned.");
-  return address;
+  const connector = cfg.connectors[0];
+  const onMessage = (event: { type: string; data?: unknown }) => {
+    if (event.type === "display_uri" && typeof event.data === "string") onUri(event.data);
+  };
+  connector.emitter.on("message", onMessage);
+  try {
+    const result = await connect(cfg, { connector });
+    const address = result.accounts[0];
+    if (!address) throw new Error("No account returned.");
+    return address;
+  } finally {
+    connector.emitter.off("message", onMessage);
+  }
 }
 
 export async function disconnectWalletConnectFallback(): Promise<void> {
